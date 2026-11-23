@@ -61,7 +61,7 @@ struct TechnicalCheckView: View {
 
     private func summary(for photo: SpottedPhoto, report: TechnicalCheckReport) -> some View {
         HStack(alignment: .center, spacing: 16) {
-            PhotoFill(imageName: photo.imageName, description: photo.imageDescription)
+            PhotoFill(image: model.image(for: photo), description: photo.imageDescription)
                 .frame(width: 96, height: 64)
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {

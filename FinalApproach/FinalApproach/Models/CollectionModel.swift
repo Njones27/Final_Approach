@@ -1,6 +1,8 @@
 import FinalApproachCore
 import Foundation
 import Observation
+import SwiftUI
+import UIKit
 
 /// The state every screen reads. It holds the user's photos, the spots, the
 /// vote queue, and the tunable grading values.
@@ -10,6 +12,9 @@ import Observation
 @Observable
 final class CollectionModel {
     private(set) var photos: [SpottedPhoto]
+    /// The images of photos imported from the library, by photo id. They
+    /// live in memory until the local collection milestone stores them.
+    private var importedImages: [String: UIImage] = [:]
     private(set) var profile: Profile
     private(set) var voteQueue: [VoteCandidate]
     /// How many photos were in today's vote set before any vote.
@@ -21,7 +26,6 @@ final class CollectionModel {
     let passingCheckScore: Double
     let gradeWeights: GradeWeights
     let votingRules: VotingRules
-    let flightData: any FlightDataProvider
 
     init(
         photos: [SpottedPhoto],
@@ -31,8 +35,7 @@ final class CollectionModel {
         thresholds: TierThresholds,
         passingCheckScore: Double,
         gradeWeights: GradeWeights = .launch,
-        votingRules: VotingRules = .launch,
-        flightData: any FlightDataProvider
+        votingRules: VotingRules = .launch
     ) {
         self.photos = photos
         self.profile = profile
@@ -43,7 +46,6 @@ final class CollectionModel {
         self.passingCheckScore = passingCheckScore
         self.gradeWeights = gradeWeights
         self.votingRules = votingRules
-        self.flightData = flightData
     }
 
     // MARK: Photos
@@ -97,20 +99,44 @@ final class CollectionModel {
         return best?.photo
     }
 
-    func add(_ photo: SpottedPhoto) {
+    /// The image to show for a photo. A sample photo comes from the asset
+    /// catalog and an imported one from the images this model holds.
+    func image(for photo: SpottedPhoto) -> Image {
+        if let name = photo.imageName {
+            return Image(name)
+        }
+        if let imported = importedImages[photo.id] {
+            return Image(uiImage: imported)
+        }
+        return Image(systemName: "photo")
+    }
+
+    /// Adds a photo to the front of the collection. Pass the image for a
+    /// photo imported from the library.
+    func add(_ photo: SpottedPhoto, image: UIImage? = nil) {
+        if let image {
+            importedImages[photo.id] = image
+        }
         photos.insert(photo, at: 0)
     }
 
-    /// Removes a photo. Once photos are stored on the device and the backend,
-    /// this must also remove the stored images.
+    /// Removes a photo and its stored image. Once photos are also stored on
+    /// disk and the backend, this must remove those copies too.
     func deletePhoto(id: String) {
         photos.removeAll { $0.id == id }
+        importedImages[id] = nil
     }
 
-    /// Removes the account's photos. Once accounts exist, this must also
-    /// delete the account and every stored image.
+    /// Removes the account's photos and their stored images. Once accounts
+    /// exist, this must also delete the account and the backend copies.
     func deleteAccountAndPhotos() {
         photos.removeAll()
+        importedImages.removeAll()
+    }
+
+    /// True when the model holds an imported image for a photo.
+    func hasStoredImage(forPhotoID id: String) -> Bool {
+        importedImages[id] != nil
     }
 
     // MARK: Profile

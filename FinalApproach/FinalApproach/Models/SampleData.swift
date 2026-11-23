@@ -1,5 +1,6 @@
 import FinalApproachCore
 import Foundation
+import UIKit
 
 /// Sample data for previews and for running the app before a backend exists.
 ///
@@ -19,8 +20,7 @@ enum SampleData {
             voteQueue: voteQueue,
             airports: airports,
             thresholds: thresholds,
-            passingCheckScore: passingCheckScore,
-            flightData: SampleFlightDataProvider()
+            passingCheckScore: passingCheckScore
         )
     }
 
@@ -42,6 +42,61 @@ enum SampleData {
     private static let b787Findings = findings(horizon: 70, sharpness: 52, exposure: 60, noise: 58, heatHaze: 66, framing: 78)
     private static let a220Findings = findings(horizon: 84, sharpness: 78, exposure: 82, noise: 76, heatHaze: 80, framing: 80)
 
+    private static let b748Camera = CameraSettings(
+        cameraMake: "SONY",
+        cameraModel: "ILCE-1",
+        lensModel: "FE 200-600mm F5.6-6.3 G OSS",
+        focalLength: 420,
+        aperture: 6.3,
+        exposureTime: 1.0 / 1250,
+        iso: 800
+    )
+    private static let a350Camera = CameraSettings(
+        cameraMake: "Canon",
+        cameraModel: "Canon EOS R5",
+        lensModel: "RF100-500mm F4.5-7.1 L IS USM",
+        focalLength: 400,
+        aperture: 7.1,
+        exposureTime: 1.0 / 640,
+        iso: 200
+    )
+    private static let b737Camera = CameraSettings(
+        cameraMake: "NIKON CORPORATION",
+        cameraModel: "NIKON Z 8",
+        lensModel: "NIKKOR Z 180-600mm f/5.6-6.3 VR",
+        focalLength: 500,
+        aperture: 6.3,
+        exposureTime: 1.0 / 2000,
+        iso: 400
+    )
+    private static let e175Camera = CameraSettings(
+        cameraMake: "FUJIFILM",
+        cameraModel: "X-T5",
+        lensModel: "XF150-600mmF5.6-8 R LM OIS WR",
+        focalLength: 350,
+        aperture: 8,
+        exposureTime: 1.0 / 1600,
+        iso: 640
+    )
+    private static let b787Camera = CameraSettings(
+        cameraMake: "Canon",
+        cameraModel: "Canon EOS R7",
+        lensModel: "RF100-400mm F5.6-8 IS USM",
+        focalLength: 300,
+        aperture: 8,
+        exposureTime: 1.0 / 800,
+        iso: 100
+    )
+    private static let a220Camera = CameraSettings(
+        cameraMake: "SONY",
+        cameraModel: "ILCE-7M4",
+        lensModel: "FE 100-400mm F4.5-5.6 GM OSS",
+        focalLength: 400,
+        aperture: 5.6,
+        exposureTime: 1.0 / 1000,
+        iso: 250
+    )
+
     static let photos: [SpottedPhoto] = [
         SpottedPhoto(
             id: "b748-n605up",
@@ -50,6 +105,8 @@ enum SampleData {
             registration: "N605UP",
             airline: "UPS",
             activity: "landing at dusk",
+            camera: b748Camera,
+            capturedAt: PhotoMetadataReader.captureDate(fromExif: "2026:11:02 17:58:41"),
             spotID: "atl-cargo-ramp",
             status: .graded(voteAverage: 4.55, voteCount: 18),
             findings: b748Findings,
@@ -62,6 +119,8 @@ enum SampleData {
             registration: "N502DN",
             airline: "Delta Air Lines",
             activity: "landing at Atlanta",
+            camera: a350Camera,
+            capturedAt: PhotoMetadataReader.captureDate(fromExif: "2026:11:14 17:42:05"),
             spotID: "atl-south-approach",
             status: .graded(voteAverage: 4.4, voteCount: 12),
             findings: [
@@ -94,6 +153,8 @@ enum SampleData {
             registration: "N8642E",
             airline: "Southwest Airlines",
             activity: "climbing out of Atlanta",
+            camera: b737Camera,
+            capturedAt: PhotoMetadataReader.captureDate(fromExif: "2026:10:26 10:15:22"),
             spotID: "atl-north-deck",
             status: .graded(voteAverage: 3.8, voteCount: 9),
             findings: b737Findings,
@@ -106,6 +167,8 @@ enum SampleData {
             registration: "N620QX",
             airline: "Horizon Air",
             activity: "taking off",
+            camera: e175Camera,
+            capturedAt: PhotoMetadataReader.captureDate(fromExif: "2026:10:19 08:47:09"),
             isLocationUndisclosed: true,
             status: .graded(voteAverage: 3.55, voteCount: 7),
             findings: e175Findings,
@@ -118,6 +181,8 @@ enum SampleData {
             registration: "N27965",
             airline: "United Airlines",
             activity: "on approach at sunset",
+            camera: b787Camera,
+            capturedAt: PhotoMetadataReader.captureDate(fromExif: "2026:11:08 17:31:50"),
             spotID: "atl-south-approach",
             status: .graded(voteAverage: 3.2, voteCount: 6),
             findings: b787Findings,
@@ -130,12 +195,39 @@ enum SampleData {
             registration: "N3008J",
             airline: "JetBlue",
             activity: "on final approach",
+            camera: a220Camera,
+            capturedAt: PhotoMetadataReader.captureDate(fromExif: "2026:11:21 14:06:33"),
             spotID: "atl-west-road",
             status: .voting(votesIn: 3, hoursLeft: 31),
             findings: a220Findings,
             fixes: stockFixes(for: a220Findings)
         ),
     ]
+
+    // MARK: Imported photos
+
+    /// A picked photo with full metadata, for previews of the Add screen.
+    static var importedPhoto: ImportedPhoto {
+        ImportedPhoto(
+            id: "preview-import",
+            image: UIImage(named: "SampleA350") ?? UIImage(),
+            metadata: PhotoMetadata(
+                camera: a350Camera,
+                capturedAt: PhotoMetadataReader.captureDate(fromExif: "2026:11:14 17:42:05"),
+                coordinate: Coordinate(latitude: 33.6215, longitude: -84.3990)
+            )
+        )
+    }
+
+    /// A picked photo that carries no metadata, such as a screenshot or an
+    /// export that stripped it.
+    static var importedPhotoWithoutMetadata: ImportedPhoto {
+        ImportedPhoto(
+            id: "preview-import-bare",
+            image: UIImage(named: "SampleB737") ?? UIImage(),
+            metadata: .empty
+        )
+    }
 
     // MARK: Voting
 

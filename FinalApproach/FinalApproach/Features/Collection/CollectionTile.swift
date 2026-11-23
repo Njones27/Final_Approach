@@ -10,7 +10,7 @@ struct CollectionTile: View {
     @Environment(CollectionModel.self) private var model
 
     var body: some View {
-        PhotoFill(imageName: photo.imageName, description: photo.imageDescription)
+        PhotoFill(image: model.image(for: photo), description: photo.imageDescription)
             .frame(maxWidth: .infinity)
             .frame(height: isHero ? 258 : 146)
             .overlay(alignment: .bottom) {

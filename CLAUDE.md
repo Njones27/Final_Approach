@@ -18,8 +18,9 @@ for decisions and milestones before starting a feature.
   file edit.
 - `FinalApproach/FinalApproach/` is the SwiftUI app. `App/` holds the entry
   point, environment, and settings. `Design/` holds the theme and shared
-  views. `Models/` holds app state and sample data. `Services/` holds the
-  protocols for external services. `Features/` holds one folder per screen.
+  views. `Models/` holds app state and sample data. `Services/` holds code
+  that reads from the system or an external service, such as the photo
+  metadata reader. `Features/` holds one folder per screen.
 - `FinalApproach/FinalApproachTests/` holds app unit tests (Swift Testing).
 - `FinalApproach/Config/App.xcconfig` holds environment build settings.
 - `FinalApproach/ci_scripts/` holds Xcode Cloud scripts.
