@@ -2,38 +2,57 @@ import FinalApproachCore
 import PhotosUI
 import SwiftUI
 
-/// Where a tap on a photo leads.
-enum PhotoRoute: Hashable {
-    case photo(String)
-    case technicalCheck(String)
-}
-
-/// How the collection grid is ordered.
-enum CollectionOrder: String, CaseIterable, Identifiable {
+/// The collection views. Three of them sort the photos into slots, where
+/// each slot keeps the best shot of one type, airline, or registration.
+enum CollectionGrouping: String, CaseIterable, Identifiable {
     case aircraftType
     case airline
-    case grade
+    case registration
+    case allPhotos
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .aircraftType: "By type"
-        case .airline: "By airline"
-        case .grade: "By grade"
+        case .aircraftType: "Types"
+        case .airline: "Airlines"
+        case .registration: "Registrations"
+        case .allPhotos: "All photos"
+        }
+    }
+
+    /// The kind of slot this view shows, or nil for the view of every
+    /// photo.
+    var slotKind: SlotKind? {
+        switch self {
+        case .aircraftType: .aircraftType
+        case .airline: .airline
+        case .registration: .registration
+        case .allPhotos: nil
+        }
+    }
+
+    /// What to say when no photo fills a slot in this view.
+    var emptyText: String {
+        switch self {
+        case .aircraftType: "No types yet."
+        case .airline: "No airlines yet. Add the airline when you log a photo."
+        case .registration: "No registrations yet. Add the registration when you log a photo."
+        case .allPhotos: "No photos yet."
         }
     }
 }
 
-/// The user's photos as a photo-first grid. The best graded photo leads at
-/// full width and the rest follow in two columns.
+/// The user's collection as a photo-first grid. The best graded photo leads
+/// at full width. Under it the grid shows one tile for each slot, or one for
+/// each photo.
 struct CollectionView: View {
     @Environment(CollectionModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Ties each tile to the photo screen it opens, so the photo grows out
     /// of its tile and shrinks back into it.
     @Namespace private var photoZoom
-    @State private var order = CollectionOrder.aircraftType
+    @State private var grouping = CollectionGrouping.aircraftType
     @State private var isPickingPhoto = false
     @State private var pickedItem: PhotosPickerItem?
     @State private var importedPhoto: ImportedPhoto?
@@ -58,10 +77,10 @@ struct CollectionView: View {
             .navigationTitle("Collection")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Menu(order.title) {
-                        Picker("Order", selection: $order) {
-                            ForEach(CollectionOrder.allCases) { order in
-                                Text(order.title).tag(order)
+                    Menu(grouping.title) {
+                        Picker("View", selection: $grouping) {
+                            ForEach(CollectionGrouping.allCases) { grouping in
+                                Text(grouping.title).tag(grouping)
                             }
                         }
                     }
@@ -72,15 +91,7 @@ struct CollectionView: View {
                     }
                 }
             }
-            .navigationDestination(for: PhotoRoute.self) { route in
-                switch route {
-                case let .photo(id):
-                    PhotoDetailView(photoID: id)
-                        .navigationTransition(.zoom(sourceID: id, in: photoZoom))
-                case let .technicalCheck(id):
-                    TechnicalCheckView(photoID: id)
-                }
-            }
+            .photoDestinations(zoomingIn: photoZoom)
             .photosPicker(
                 isPresented: $isPickingPhoto,
                 selection: $pickedItem,
@@ -103,6 +114,15 @@ struct CollectionView: View {
             } message: {
                 Text("Pick another photo or try again.")
             }
+            .alert(
+                model.storageProblem?.title ?? "",
+                isPresented: isShowingStorageProblem,
+                presenting: model.storageProblem
+            ) { _ in
+                Button("OK", role: .cancel) {}
+            } message: { problem in
+                Text(problem.message)
+            }
             .overlay {
                 ZStack {
                     if isImporting {
@@ -124,27 +144,75 @@ struct CollectionView: View {
     private var grid: some View {
         VStack(spacing: 2) {
             if let hero = model.bestPhoto {
-                NavigationLink(value: PhotoRoute.photo(hero.id)) {
-                    CollectionTile(photo: hero, isHero: true)
-                        .matchedTransitionSource(id: hero.id, in: photoZoom)
-                }
-                .buttonStyle(TilePressStyle())
+                photoTile(for: hero, isHero: true, source: .hero(hero.id))
             }
-            LazyVGrid(columns: columns, spacing: 2) {
-                ForEach(remainingPhotos) { photo in
-                    NavigationLink(value: PhotoRoute.photo(photo.id)) {
-                        CollectionTile(photo: photo, isHero: false)
-                            .matchedTransitionSource(id: photo.id, in: photoZoom)
+            if let kind = grouping.slotKind {
+                let slots = model.slots(kind)
+                LazyVGrid(columns: columns, spacing: 2) {
+                    ForEach(slots) { slot in
+                        slotTile(for: slot)
                     }
-                    .buttonStyle(TilePressStyle())
+                }
+                if slots.isEmpty {
+                    Text(grouping.emptyText)
+                        .font(.footnote)
+                        .foregroundStyle(Theme.secondaryText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 16)
+                }
+            } else {
+                LazyVGrid(columns: columns, spacing: 2) {
+                    ForEach(remainingPhotos) { photo in
+                        photoTile(for: photo, isHero: false, source: .tile(photo.id))
+                    }
                 }
             }
         }
         .padding(.top, 8)
-        // Tiles slide to their new places when the order changes or a photo
+        // Tiles slide to their new places when the view changes or a photo
         // joins or leaves.
-        .animation(reduceMotion ? nil : Motion.swap, value: order)
+        .animation(reduceMotion ? nil : Motion.swap, value: grouping)
         .animation(reduceMotion ? nil : Motion.swap, value: model.photos.map(\.id))
+    }
+
+    /// A tile for one photo. It opens the photo, which grows out of it.
+    private func photoTile(for photo: SpottedPhoto, isHero: Bool, source: ZoomSource) -> some View {
+        NavigationLink(value: PhotoRoute.photo(id: photo.id, source: source)) {
+            CollectionTile(photo: photo, isHero: isHero)
+                .matchedTransitionSource(id: source, in: photoZoom)
+        }
+        .buttonStyle(TilePressStyle())
+    }
+
+    /// A tile for one slot, showing its best shot. A slot with one shot
+    /// opens that photo. A slot with more opens its own screen.
+    @ViewBuilder
+    private func slotTile(for slot: CollectionEntry) -> some View {
+        if let best = model.photo(id: slot.bestPhotoID) {
+            let source = ZoomSource.tile(slot.id)
+            let route = slot.photoIDs.count > 1
+                ? PhotoRoute.slot(kind: slot.kind, key: slot.key)
+                : PhotoRoute.photo(id: best.id, source: source)
+            NavigationLink(value: route) {
+                CollectionTile(photo: best, isHero: false, title: slot.title, shotCount: slot.photoIDs.count)
+                    .matchedTransitionSource(id: source, in: photoZoom)
+            }
+            .buttonStyle(TilePressStyle())
+        }
+    }
+
+    /// Shows the alert while the model reports a storage problem, and
+    /// clears the problem when the alert closes.
+    private var isShowingStorageProblem: Binding<Bool> {
+        Binding(
+            get: { model.storageProblem != nil },
+            set: { isShowing in
+                if !isShowing {
+                    model.storageProblem = nil
+                }
+            }
+        )
     }
 
     /// The import notice fades in and grows a little. With Reduce Motion on
@@ -185,35 +253,12 @@ struct CollectionView: View {
         importedPhoto = photo
     }
 
-    /// Every photo except the one that leads, in the chosen order.
+    /// Every photo except the one that leads, newest first.
     private var remainingPhotos: [SpottedPhoto] {
         let heroID = model.bestPhoto?.id
-        let rest = model.photos.filter { $0.id != heroID }
-        switch order {
-        case .aircraftType:
-            return rest.sorted {
-                $0.aircraftType.localizedStandardCompare($1.aircraftType) == .orderedAscending
-            }
-        case .airline:
-            return rest.sorted {
-                $0.airline.localizedStandardCompare($1.airline) == .orderedAscending
-            }
-        case .grade:
-            // Graded photos come first, best first. Ungraded ones follow.
-            return rest.sorted {
-                (model.finalScore(for: $0) ?? -1) > (model.finalScore(for: $1) ?? -1)
-            }
-        }
-    }
-}
-
-/// Dims and shrinks a tile a little while it is pressed.
-private struct TilePressStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .opacity(configuration.isPressed ? 0.85 : 1)
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            .animation(Motion.press, value: configuration.isPressed)
+        return model.photos
+            .filter { $0.id != heroID }
+            .sorted { $0.loggedAt > $1.loggedAt }
     }
 }
 

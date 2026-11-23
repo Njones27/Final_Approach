@@ -94,6 +94,16 @@ struct ScoreMeter: View {
     }
 }
 
+/// Dims and shrinks a photo tile a little while it is pressed.
+struct TilePressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.85 : 1)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .animation(Motion.press, value: configuration.isPressed)
+    }
+}
+
 /// The one filled button on a screen.
 struct PrimaryButtonStyle: ButtonStyle {
     var minHeight: CGFloat = 50

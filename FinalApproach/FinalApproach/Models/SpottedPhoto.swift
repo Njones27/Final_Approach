@@ -2,7 +2,7 @@ import FinalApproachCore
 import Foundation
 
 /// Where a photo is in the grading process.
-enum GradeStatus {
+enum GradeStatus: Equatable, Codable {
     /// Logged, with no grade yet.
     case logged
     /// Open for community votes.
@@ -12,7 +12,7 @@ enum GradeStatus {
 }
 
 /// One finding from the technical check, written for the photographer.
-struct CheckFinding: Identifiable {
+struct CheckFinding: Identifiable, Equatable, Codable {
     let result: CheckResult
     /// What the check saw, and how to fix it when it needs work.
     let detail: String
@@ -21,7 +21,7 @@ struct CheckFinding: Identifiable {
 }
 
 /// A fix that would raise the grade, with the points it is worth.
-struct SuggestedFix: Identifiable {
+struct SuggestedFix: Identifiable, Equatable, Codable {
     let kind: CheckKind
     /// A verb and an object, such as "Straighten the horizon".
     let title: String
@@ -32,10 +32,13 @@ struct SuggestedFix: Identifiable {
 }
 
 /// One photo of one aircraft in the user's collection.
-struct SpottedPhoto: Identifiable {
+///
+/// It is `Codable` so a logged photo can be saved on the device. A new
+/// stored property needs a default when it is read from an older file.
+struct SpottedPhoto: Identifiable, Equatable, Codable {
     let id: String
     /// The name of a sample image in the asset catalog. It is nil for a photo
-    /// imported from the library, whose image the collection model holds.
+    /// imported from the library, whose image is saved on the device.
     let imageName: String?
     let aircraftType: String
     /// The airline or operator, or an empty string when the user left it out.
@@ -47,6 +50,9 @@ struct SpottedPhoto: Identifiable {
     let camera: CameraSettings?
     /// When the photo was taken, by the camera's clock.
     let capturedAt: Date?
+    /// When the photo joined the collection. The collection fills its slots
+    /// in this order.
+    let loggedAt: Date
     /// The id of the spot the photo was taken from, when one is known.
     let spotID: String?
     /// True when the owner chose to keep the location private. No other user
@@ -73,6 +79,7 @@ struct SpottedPhoto: Identifiable {
         activity: String,
         camera: CameraSettings? = nil,
         capturedAt: Date? = nil,
+        loggedAt: Date? = nil,
         captureCoordinate: Coordinate? = nil,
         spotID: String? = nil,
         isLocationUndisclosed: Bool = false,
@@ -90,6 +97,8 @@ struct SpottedPhoto: Identifiable {
         self.activity = activity
         self.camera = camera
         self.capturedAt = capturedAt
+        // A photo with no logging time counts from when it was taken.
+        self.loggedAt = loggedAt ?? capturedAt ?? Date(timeIntervalSince1970: 0)
         self.captureCoordinate = captureCoordinate
         self.spotID = spotID
         self.isLocationUndisclosed = isLocationUndisclosed
@@ -123,6 +132,31 @@ struct SpottedPhoto: Identifiable {
         captureCoordinate != nil
     }
 
+    /// Where the photo was taken, for the owner's own screens. It is set
+    /// even when the photo is undisclosed, so nothing shown to another
+    /// person may read it. Those screens use `publicCaptureCoordinate`.
+    var ownerCaptureCoordinate: Coordinate? {
+        captureCoordinate
+    }
+
+    /// True for one of the sample photos that ship with the app.
+    var isSample: Bool {
+        imageName != nil
+    }
+
+    /// What this photo offers the collection. A blocked registration is
+    /// left out, so it never names a slot.
+    func slotShot(score: Double?) -> SlotShot {
+        SlotShot(
+            photoID: id,
+            aircraftType: aircraftType,
+            airline: airline,
+            registration: visibleRegistration ?? "",
+            score: score,
+            loggedAt: loggedAt
+        )
+    }
+
     /// The airline and the activity as one line, such as "Delta Air Lines,
     /// landing at Atlanta". It is nil when both are empty.
     var operatorLine: String? {
@@ -137,18 +171,9 @@ struct SpottedPhoto: Identifiable {
     }
 }
 
-/// A point on the map.
-struct Coordinate: Equatable {
-    let latitude: Double
-    let longitude: Double
-
-    /// Returns nil when either value is outside the range of a real place.
-    init?(latitude: Double, longitude: Double) {
-        guard (-90...90).contains(latitude), (-180...180).contains(longitude) else { return nil }
-        self.latitude = latitude
-        self.longitude = longitude
-    }
-}
+/// A point on the map. The core package owns the type, so distances can be
+/// worked out and tested there.
+typealias Coordinate = GeoPoint
 
 /// A place to photograph aircraft from.
 struct Spot: Identifiable {
@@ -162,6 +187,10 @@ struct Spot: Identifiable {
     /// Asset names of a few shared photos from this spot. Only photos whose
     /// owners disclosed the location may appear here.
     let photoNames: [String]
+
+    var coordinate: Coordinate? {
+        Coordinate(latitude: latitude, longitude: longitude)
+    }
 }
 
 /// An airport and the spots around it.

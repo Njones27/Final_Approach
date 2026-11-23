@@ -20,7 +20,8 @@ for decisions and milestones before starting a feature.
   point, environment, and settings. `Design/` holds the theme and shared
   views. `Models/` holds app state and sample data. `Services/` holds code
   that reads from the system or an external service, such as the photo
-  metadata reader. `Features/` holds one folder per screen.
+  metadata reader and the on-device photo store. `Features/` holds one folder
+  per screen.
 - `FinalApproach/FinalApproachTests/` holds app unit tests (Swift Testing).
 - `FinalApproach/Config/App.xcconfig` holds environment build settings.
 - `FinalApproach/ci_scripts/` holds Xcode Cloud scripts.
@@ -91,7 +92,8 @@ on this Mac.
 - Hide the identity of blocked registrations, such as aircraft on the FAA
   LADD list.
 - A post marked undisclosed shows no location to any other user.
-- Deleting a photo or an account removes the stored images.
+- Deleting a photo or an account removes the stored images. A new place that
+  keeps a copy of a photo must be cleared by both deletes.
 - Do not scrape other photo sites, and follow the flight data provider's
   license terms.
 
