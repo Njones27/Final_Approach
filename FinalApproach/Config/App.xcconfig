@@ -1,0 +1,14 @@
+// Build settings shared by every configuration of the app target.
+//
+// Local builds use the values below. In Xcode Cloud, ci_scripts/ci_post_clone.sh
+// writes Environment.generated.xcconfig next to this file, and the optional
+// include at the bottom lets those values win.
+//
+// API_HOST holds a bare host name with no scheme. A double slash starts a
+// comment in an xcconfig file, so a full URL would be cut off.
+
+APP_ENVIRONMENT = dev
+APP_DISPLAY_NAME = Approach Dev
+API_HOST =
+
+#include? "Environment.generated.xcconfig"
