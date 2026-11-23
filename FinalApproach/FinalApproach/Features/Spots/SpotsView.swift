@@ -39,7 +39,7 @@ struct SpotsView: View {
                         anchor: .center
                     ) {
                         SpotPin(spot: spot, isSelected: spot.id == selectedSpot?.id) {
-                            withAnimation(.snappy) {
+                            withAnimation(Motion.swap) {
                                 selectedSpotID = spot.id
                             }
                         }
@@ -49,14 +49,18 @@ struct SpotsView: View {
             }
             .mapStyle(.standard(pointsOfInterest: .excludingAll))
             .safeAreaInset(edge: .bottom) {
-                if let spot = selectedSpot {
-                    SpotCard(spot: spot) {
-                        openDirections(to: spot)
+                ZStack(alignment: .bottom) {
+                    if let spot = selectedSpot {
+                        SpotCard(spot: spot) {
+                            openDirections(to: spot)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 8)
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 8)
                 }
+                .animation(Motion.swap, value: selectedSpot?.id)
             }
+            .sensoryFeedback(.selection, trigger: selectedSpotID)
             .navigationTitle("Spots")
             .toolbarTitleDisplayMode(.inlineLarge)
             .toolbar {
@@ -91,7 +95,7 @@ struct SpotsView: View {
             set: { newID in
                 airportID = newID
                 selectedSpotID = nil
-                withAnimation(.snappy) {
+                withAnimation(Motion.swap) {
                     position = .automatic
                 }
             }
@@ -138,26 +142,37 @@ private struct SpotCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(spot.name)
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(Theme.ink)
-                Text(spot.summary)
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.secondaryText)
-            }
-            HStack(spacing: 6) {
-                ForEach(spot.photoNames, id: \.self) { name in
-                    PhotoFill(imageName: name, description: "A photo taken from \(spot.name)")
-                        .frame(height: 70)
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            // The card and its buttons stay where they are when the spot
+            // changes. Only the words and photos fade to the new spot.
+            VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(spot.name)
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(Theme.ink)
+                    Text(spot.summary)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondaryText)
+                        // Room for two lines is always kept, so the card
+                        // and the map under it hold still between spots.
+                        .lineLimit(2, reservesSpace: true)
+                }
+                HStack(spacing: 6) {
+                    ForEach(spot.photoNames, id: \.self) { name in
+                        PhotoFill(imageName: name, description: "A photo taken from \(spot.name)")
+                            .frame(height: 70)
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
                 }
             }
+            .id(spot.id)
+            .transition(.fadeThrough)
+
             HStack(spacing: 8) {
                 Button("Get directions", action: getDirections)
                     .buttonStyle(.primaryCompact)
                 NavigationLink(value: SpotRoute.photos(spot.id)) {
                     Text("See all \(spot.photoCount) photos")
+                        .contentTransition(.numericText())
                 }
                 .buttonStyle(.secondary)
             }

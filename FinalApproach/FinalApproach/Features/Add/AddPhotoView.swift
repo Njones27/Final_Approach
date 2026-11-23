@@ -49,6 +49,7 @@ struct AddPhotoView: View {
                 }
                 .buttonStyle(.primary)
                 .opacity(canLog ? 1 : 0.4)
+                .animation(Motion.press, value: canLog)
                 .disabled(!canLog)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)

@@ -79,6 +79,9 @@ on this Mac.
 - Use the system tab bar, toolbars, and sheets so they keep Liquid Glass. The
   tab bar holds sections only. An action is a button.
 - A control that has no destination yet is left out until its milestone.
+- Take every animation's timing from `Motion` in `Design/Motion.swift`. Do not
+  write a duration in a screen. Anything that travels gets a still or fading
+  version for Reduce Motion.
 - A file that uses a type from `FinalApproachCore` imports it, because member
   import visibility is on.
 

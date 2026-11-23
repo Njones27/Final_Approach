@@ -5,6 +5,7 @@ import SwiftUI
 /// photographer and the score stay hidden so they cannot sway the vote.
 struct VoteView: View {
     @Environment(CollectionModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         NavigationStack {
@@ -25,7 +26,7 @@ struct VoteView: View {
                 if model.currentVoteCandidate != nil {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("Skip") {
-                            withAnimation(.snappy) {
+                            withAnimation(Motion.swap) {
                                 model.skipVote()
                             }
                         }
@@ -41,6 +42,8 @@ struct VoteView: View {
             VStack(alignment: .leading, spacing: 0) {
                 Text("Photo \(model.votePosition) of \(model.voteSetSize) in today's set")
                     .font(.subheadline)
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
                     .foregroundStyle(Theme.secondaryText)
                     .padding(.horizontal, 20)
                     .padding(.bottom, 12)
@@ -48,13 +51,15 @@ struct VoteView: View {
                 PhotoFill(imageName: candidate.imageName, description: candidate.aircraftType)
                     .aspectRatio(3 / 2, contentMode: .fit)
                     .id(candidate.id)
-                    .transition(.opacity)
+                    .transition(photoTransition)
 
                 VStack(alignment: .leading, spacing: 20) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(candidate.aircraftType)
                             .font(.title2.weight(.bold))
                             .foregroundStyle(Theme.ink)
+                            .id(candidate.id)
+                            .transition(.fadeThrough)
                         Text("The photographer and the score stay hidden until you vote.")
                             .font(.subheadline)
                             .foregroundStyle(Theme.secondaryText)
@@ -73,6 +78,16 @@ struct VoteView: View {
         }
     }
 
+    /// The voted photo leaves to the leading side as the next one arrives
+    /// from the trailing side. With Reduce Motion on they fade.
+    private var photoTransition: AnyTransition {
+        guard !reduceMotion else { return .opacity }
+        return .asymmetric(
+            insertion: .move(edge: .trailing).combined(with: .opacity),
+            removal: .move(edge: .leading).combined(with: .opacity)
+        )
+    }
+
     /// One round button for each value on the voting scale.
     private var scale: some View {
         let votes = Array(model.votingRules.scale)
@@ -80,7 +95,7 @@ struct VoteView: View {
             HStack(spacing: 0) {
                 ForEach(votes, id: \.self) { vote in
                     Button {
-                        withAnimation(.snappy) {
+                        withAnimation(Motion.swap) {
                             model.castVote(vote)
                         }
                     } label: {
@@ -121,7 +136,7 @@ private struct VoteButtonStyle: ButtonStyle {
             .background(Theme.controlFill, in: Circle())
             .opacity(configuration.isPressed ? 0.7 : 1)
             .scaleEffect(configuration.isPressed ? 0.94 : 1)
-            .animation(.snappy(duration: 0.2), value: configuration.isPressed)
+            .animation(Motion.press, value: configuration.isPressed)
     }
 }
 

@@ -29,6 +29,10 @@ enum CollectionOrder: String, CaseIterable, Identifiable {
 /// full width and the rest follow in two columns.
 struct CollectionView: View {
     @Environment(CollectionModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Ties each tile to the photo screen it opens, so the photo grows out
+    /// of its tile and shrinks back into it.
+    @Namespace private var photoZoom
     @State private var order = CollectionOrder.aircraftType
     @State private var isPickingPhoto = false
     @State private var pickedItem: PhotosPickerItem?
@@ -72,6 +76,7 @@ struct CollectionView: View {
                 switch route {
                 case let .photo(id):
                     PhotoDetailView(photoID: id)
+                        .navigationTransition(.zoom(sourceID: id, in: photoZoom))
                 case let .technicalCheck(id):
                     TechnicalCheckView(photoID: id)
                 }
@@ -99,11 +104,19 @@ struct CollectionView: View {
                 Text("Pick another photo or try again.")
             }
             .overlay {
-                if isImporting {
-                    ProgressView("Reading your photo")
-                        .padding(20)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                ZStack {
+                    if isImporting {
+                        ProgressView("Reading your photo")
+                            .padding(20)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .transition(importNoticeTransition)
+                    }
                 }
+                .animation(Motion.press, value: isImporting)
+            }
+            // A photo that joins the collection is confirmed with a tap.
+            .sensoryFeedback(trigger: model.photos.count) { old, new in
+                new > old ? .success : nil
             }
         }
     }
@@ -113,6 +126,7 @@ struct CollectionView: View {
             if let hero = model.bestPhoto {
                 NavigationLink(value: PhotoRoute.photo(hero.id)) {
                     CollectionTile(photo: hero, isHero: true)
+                        .matchedTransitionSource(id: hero.id, in: photoZoom)
                 }
                 .buttonStyle(TilePressStyle())
             }
@@ -120,12 +134,24 @@ struct CollectionView: View {
                 ForEach(remainingPhotos) { photo in
                     NavigationLink(value: PhotoRoute.photo(photo.id)) {
                         CollectionTile(photo: photo, isHero: false)
+                            .matchedTransitionSource(id: photo.id, in: photoZoom)
                     }
                     .buttonStyle(TilePressStyle())
                 }
             }
         }
         .padding(.top, 8)
+        // Tiles slide to their new places when the order changes or a photo
+        // joins or leaves.
+        .animation(reduceMotion ? nil : Motion.swap, value: order)
+        .animation(reduceMotion ? nil : Motion.swap, value: model.photos.map(\.id))
+    }
+
+    /// The import notice fades in and grows a little. With Reduce Motion on
+    /// it only fades.
+    private var importNoticeTransition: AnyTransition {
+        guard !reduceMotion else { return .opacity }
+        return .opacity.combined(with: .scale(scale: 0.96))
     }
 
     private var emptyState: some View {
@@ -187,7 +213,7 @@ private struct TilePressStyle: ButtonStyle {
         configuration.label
             .opacity(configuration.isPressed ? 0.85 : 1)
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            .animation(.snappy(duration: 0.2), value: configuration.isPressed)
+            .animation(Motion.press, value: configuration.isPressed)
     }
 }
 

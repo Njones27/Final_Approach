@@ -52,10 +52,17 @@ struct TierLabel: View {
     }
 }
 
-/// A thin horizontal meter for a score from 0 to 100.
+/// A thin horizontal meter for a score from 0 to 100. It fills to its score
+/// the first time it appears.
 struct ScoreMeter: View {
     let score: Double
     let tint: Color
+    /// Where the meter sits in a group, so a list of meters fills one after
+    /// another.
+    var order = 0
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isFilled = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -63,11 +70,27 @@ struct ScoreMeter: View {
                 Capsule().fill(Theme.track)
                 Capsule()
                     .fill(tint)
-                    .frame(width: proxy.size.width * CGFloat(min(max(score / 100, 0), 1)))
+                    .frame(width: proxy.size.width * (isFilled ? fraction : 0))
             }
         }
         .frame(height: 3)
         .accessibilityHidden(true)
+        .animation(reduceMotion ? nil : Motion.fill, value: score)
+        .onAppear {
+            guard !isFilled else { return }
+            if reduceMotion {
+                isFilled = true
+            } else {
+                withAnimation(Motion.fill.delay(Motion.delay(for: order))) {
+                    isFilled = true
+                }
+            }
+        }
+    }
+
+    /// The score as a share of the meter's width.
+    private var fraction: CGFloat {
+        CGFloat(min(max(score / 100, 0), 1))
     }
 }
 
@@ -84,7 +107,7 @@ struct PrimaryButtonStyle: ButtonStyle {
             .background(Theme.ink, in: Capsule())
             .opacity(configuration.isPressed ? 0.8 : 1)
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(.snappy(duration: 0.2), value: configuration.isPressed)
+            .animation(Motion.press, value: configuration.isPressed)
     }
 }
 
@@ -98,7 +121,7 @@ struct SecondaryButtonStyle: ButtonStyle {
             .background(Theme.controlFill, in: Capsule())
             .opacity(configuration.isPressed ? 0.7 : 1)
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(.snappy(duration: 0.2), value: configuration.isPressed)
+            .animation(Motion.press, value: configuration.isPressed)
     }
 }
 
