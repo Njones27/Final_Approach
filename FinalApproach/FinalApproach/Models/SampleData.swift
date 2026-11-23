@@ -167,7 +167,7 @@ enum SampleData {
         SpottedPhoto(
             id: "f22-raptor",
             imageName: "SampleF22",
-            aircraftType: "Lockheed Martin F-22 Raptor",
+            aircraftType: "F-22 Raptor",
             registration: "",
             airline: "US Air Force",
             activity: "turning on afterburner",
@@ -181,7 +181,7 @@ enum SampleData {
         SpottedPhoto(
             id: "fa18-blue-angels-5",
             imageName: "SampleFA18",
-            aircraftType: "Boeing F/A-18E Super Hornet",
+            aircraftType: "F/A-18E Super Hornet",
             registration: "",
             airline: "US Navy Blue Angels",
             activity: "banking past",
@@ -195,7 +195,7 @@ enum SampleData {
         SpottedPhoto(
             id: "b2-spirit",
             imageName: "SampleB2",
-            aircraftType: "Northrop Grumman B-2 Spirit",
+            aircraftType: "B-2 Spirit",
             registration: "",
             airline: "US Air Force",
             activity: "passing overhead",
@@ -268,7 +268,7 @@ enum SampleData {
     static let unfoundPhoto = SpottedPhoto(
         id: "preview-unfound",
         imageName: "SampleB2",
-        aircraftType: "Northrop Grumman B-2 Spirit",
+        aircraftType: "B-2 Spirit",
         registration: "",
         airline: "US Air Force",
         activity: "",
@@ -281,9 +281,9 @@ enum SampleData {
 
     static let voteQueue: [VoteCandidate] = [
         VoteCandidate(id: "vote-e175", imageName: "SampleE175", aircraftType: "Embraer E175"),
-        VoteCandidate(id: "vote-fa18", imageName: "SampleFA18", aircraftType: "Boeing F/A-18E Super Hornet"),
-        VoteCandidate(id: "vote-b2", imageName: "SampleB2", aircraftType: "Northrop Grumman B-2 Spirit"),
-        VoteCandidate(id: "vote-f22", imageName: "SampleF22", aircraftType: "Lockheed Martin F-22 Raptor"),
+        VoteCandidate(id: "vote-fa18", imageName: "SampleFA18", aircraftType: "F/A-18E Super Hornet"),
+        VoteCandidate(id: "vote-b2", imageName: "SampleB2", aircraftType: "B-2 Spirit"),
+        VoteCandidate(id: "vote-f22", imageName: "SampleF22", aircraftType: "F-22 Raptor"),
         VoteCandidate(id: "vote-vc25a", imageName: "SampleVC25A", aircraftType: "Boeing VC-25A"),
         VoteCandidate(id: "vote-b737", imageName: "SampleB737", aircraftType: "Boeing 737 MAX 8"),
     ]
