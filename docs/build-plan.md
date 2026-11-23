@@ -36,8 +36,8 @@ The look is called Darkroom. The rules below apply to every screen.
   distance to the next tier is visible. Feedback is a short list of fixes,
   each with the points it is worth.
 - The tier thresholds of 50, 65, and 80, the passing score of 75 for one
-  check, and the points for each fix are placeholders in `SampleData`. They
-  are passed in as data and are not decided yet.
+  check, and the points for each fix on the sample photos are placeholders in
+  `SampleData`. They are passed in as data and are not decided yet.
 
 Two controls from the mockups wait for the milestone that gives them something
 to do. "Pick a different aircraft" on the Add screen arrives with
@@ -57,6 +57,34 @@ their features.
   stores it on the device.
 - The wording for camera settings, such as "1/640 s" and "f/7.1", lives in the
   core package so it is tested on Linux.
+
+## Technical check
+
+- A picked photo is measured on the device before the Add screen opens.
+  `Services/PhotoAnalyzer.swift` does it away from the main thread. Vision
+  finds the most prominent object, which is taken to be the aircraft, and the
+  horizon. The brightness of the pixels gives the sharpness, as the variance
+  of the Laplacian over the aircraft, and the exposure, as the share of that
+  area that is blown out or crushed.
+- The scoring and the wording live in the core package, in `CheckRules` and
+  `TechnicalCheckEngine`, so they are tested on Linux. Each measurement is
+  scored by a curve of points, and the curves are data.
+- Four checks run now, which are level horizon, sharpness, exposure, and
+  framing. Noise and heat haze are not built yet. A check with nothing to
+  measure is left out, and the technical check screen names it as not
+  checked. A photo of an aircraft against open sky has no horizon, for
+  example.
+- A photo passes when no check that ran needs work. Passing is the gate
+  before voting.
+- A fix is worth the points the grade would gain if that check reached the
+  fix target score. That is the gain in the technical score times the
+  technical check's share of the grade.
+- The rules in `SampleData` are placeholders. None has been tuned against
+  real photos, so the scores are not yet meaningful. Three limits are known.
+  The aircraft is the most prominent object Vision finds, which can be
+  something else. Sharpness and exposure are measured over the box around
+  the aircraft, which includes some sky. A level fuselage can be read as a
+  horizon.
 
 ## Identification
 

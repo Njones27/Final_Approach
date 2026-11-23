@@ -156,6 +156,28 @@ struct CollectionModelTests {
         #expect(model.bestPhoto?.id == nil)
     }
 
+    @Test func theTechnicalCheckNamesWhatToFixWeakestFirst() {
+        let check = model.technicalCheck(for: SampleData.softTiltedMeasurements, camera: nil)
+        #expect(check.findings.count == 4)
+        #expect(check.fixes.map(\.title) == ["Use a faster shutter", "Straighten the horizon"])
+        #expect(check.fixes.map(\.detail) == ["The aircraft is soft.", "It tilts about 1.8°."])
+        #expect(check.fixes.map(\.points) == [3, 2])
+    }
+
+    @Test func aPhotoWithNothingMeasuredHasNoCheck() {
+        let check = model.technicalCheck(for: .none, camera: nil)
+        #expect(check.findings.isEmpty)
+        #expect(check.fixes.isEmpty)
+    }
+
+    @Test func aCheckedPhotoHasATechnicalScoreAndNoGrade() {
+        let photo = SampleData.checkedPhoto(in: model)
+        model.add(photo)
+        #expect(model.technicalScore(for: photo)?.rounded() == 72)
+        #expect(model.finalScore(for: photo) == nil)
+        #expect(photo.fixes.first?.detail == "The aircraft is soft at 1/2000 s.")
+    }
+
     @Test func aVoteMovesToTheNextPhotoAndCounts() {
         let firstID = model.currentVoteCandidate?.id
         let votesBefore = model.profile.votesCast

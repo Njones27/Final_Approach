@@ -4,8 +4,9 @@ import SwiftUI
 
 /// Logs a photo picked from the library. It shows what was read from the
 /// photo, takes the aircraft details, and lets the user keep the location
-/// private. Automatic identification replaces the typed details in the
-/// identification milestone.
+/// private. Logging the photo also scores its technical check. Automatic
+/// identification replaces the typed details in the identification
+/// milestone.
 struct AddPhotoView: View {
     let photo: ImportedPhoto
 
@@ -154,6 +155,7 @@ struct AddPhotoView: View {
 
     private func log() {
         guard canLog else { return }
+        let check = model.technicalCheck(for: photo.measurements, camera: photo.metadata.camera)
         let spotted = SpottedPhoto(
             id: photo.id,
             imageName: nil,
@@ -165,7 +167,9 @@ struct AddPhotoView: View {
             capturedAt: photo.metadata.capturedAt,
             captureCoordinate: photo.metadata.coordinate,
             isLocationUndisclosed: photo.metadata.coordinate != nil && !showsSpot,
-            status: .logged
+            status: .logged,
+            findings: check.findings,
+            fixes: check.fixes
         )
         model.add(spotted, image: photo.image)
         dismiss()

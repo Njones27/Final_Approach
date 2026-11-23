@@ -132,11 +132,32 @@ struct PhotoDetailView: View {
                 technicalLine(for: photo)
             }
         case .logged:
-            VStack(alignment: .leading, spacing: 3) {
+            checkVerdict(for: photo)
+        }
+    }
+
+    /// What the technical check decided for a photo that has no grade yet.
+    /// The check is the gate before voting, so the verdict leads.
+    private func checkVerdict(for photo: SpottedPhoto) -> some View {
+        let technical = model.technicalScore(for: photo)
+        let passed = model.checkReport(for: photo).isPassed
+        return VStack(alignment: .leading, spacing: 3) {
+            if let technical {
+                Text(passed ? "Technical check passed" : "Technical check needs work")
+                    .font(.headline)
+                    .foregroundStyle(Theme.ink)
+                Text(
+                    passed
+                        ? "It scored \(technical.scoreText). Votes decide the rest of the grade."
+                        : "It scored \(technical.scoreText). The fixes below would lift it."
+                )
+                .font(.footnote)
+                .monospacedDigit()
+                .foregroundStyle(Theme.secondaryText)
+            } else {
                 Text("Not graded yet")
                     .font(.headline)
                     .foregroundStyle(Theme.ink)
-                technicalLine(for: photo)
             }
         }
     }
@@ -326,6 +347,15 @@ private struct FixRow: View {
         PhotoDetailView(photoID: "a350-n502dn")
     }
     .environment(SampleData.model())
+}
+
+#Preview("Checked, not graded") {
+    let model = SampleData.model()
+    model.add(SampleData.checkedPhoto(in: model))
+    return NavigationStack {
+        PhotoDetailView(photoID: "preview-checked")
+    }
+    .environment(model)
 }
 
 #Preview("Voting") {

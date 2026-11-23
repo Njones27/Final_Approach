@@ -12,6 +12,22 @@ enum SampleData {
     static let thresholds = TierThresholds(bronze: 50, silver: 65, gold: 80)!
     /// Placeholder passing score for one technical check.
     static let passingCheckScore = 75.0
+    /// Placeholder score a check is expected to reach once it is fixed.
+    static let fixTargetScore = 90.0
+    /// Placeholder rules for the technical check. None of these numbers has
+    /// been tuned against real photos yet.
+    static let checkRules = CheckRules(
+        analysisPixelSize: 1600,
+        sharpness: ScoreCurve(pairs: [(10, 10), (50, 50), (100, 75), (300, 90), (800, 100)])!,
+        tilt: ScoreCurve(pairs: [(0, 100), (0.5, 90), (1, 75), (2, 55), (5, 20), (10, 0)])!,
+        maximumTilt: 10,
+        highlightLevel: 252,
+        shadowLevel: 3,
+        clipping: ScoreCurve(pairs: [(0, 100), (0.005, 90), (0.02, 75), (0.05, 55), (0.2, 10), (0.5, 0)])!,
+        subjectSize: ScoreCurve(pairs: [(0.01, 10), (0.05, 50), (0.12, 75), (0.25, 90), (0.4, 100)])!,
+        edgeMargin: 0.01,
+        cutOffScore: 40
+    )
 
     static func model() -> CollectionModel {
         CollectionModel(
@@ -20,7 +36,9 @@ enum SampleData {
             voteQueue: voteQueue,
             airports: airports,
             thresholds: thresholds,
-            passingCheckScore: passingCheckScore
+            passingCheckScore: passingCheckScore,
+            checkRules: checkRules,
+            fixTargetScore: fixTargetScore
         )
     }
 
@@ -226,6 +244,36 @@ enum SampleData {
             id: "preview-import-bare",
             image: UIImage(named: "SampleB737") ?? UIImage(),
             metadata: .empty
+        )
+    }
+
+    // MARK: Technical check
+
+    /// What the device might measure in a soft photo with a tilted horizon.
+    /// The exposure and the framing are fine.
+    static let softTiltedMeasurements = PhotoMeasurements(
+        subject: FrameRegion(x: 0.2, y: 0.3, width: 0.6, height: 0.35),
+        sharpness: 45,
+        blownHighlights: 0.001,
+        crushedShadows: 0,
+        tiltDegrees: 1.8
+    )
+
+    /// A logged photo that has been through the technical check and has no
+    /// grade yet, which is how a photo looks right after it is imported.
+    static func checkedPhoto(in model: CollectionModel) -> SpottedPhoto {
+        let check = model.technicalCheck(for: softTiltedMeasurements, camera: b737Camera)
+        return SpottedPhoto(
+            id: "preview-checked",
+            imageName: "SampleB737",
+            aircraftType: "Boeing 737-800",
+            registration: "N8642E",
+            airline: "Southwest Airlines",
+            activity: "",
+            camera: b737Camera,
+            status: .logged,
+            findings: check.findings,
+            fixes: check.fixes
         )
     }
 
