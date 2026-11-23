@@ -44,6 +44,8 @@ struct PhotoDetailView: View {
                         .revealed(order: 2)
                     cameraSection(for: photo)
                         .revealed(order: 3)
+                    locationSection(for: photo)
+                        .revealed(order: 4)
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 18)
@@ -289,6 +291,38 @@ struct PhotoDetailView: View {
                 }
             }
         }
+    }
+
+    // MARK: Location
+
+    /// Where the photo was taken, as its owner sees it. This screen shows
+    /// only the user's own photos, so an undisclosed one is still placed.
+    @ViewBuilder
+    private func locationSection(for photo: SpottedPhoto) -> some View {
+        if photo.hasCaptureLocation || photo.spotID != nil {
+            VStack(alignment: .leading, spacing: 14) {
+                Rectangle()
+                    .fill(Theme.hairline)
+                    .frame(height: 1)
+                    .padding(.bottom, 4)
+                SectionHeading("Location")
+                Label(locationText(for: photo), systemImage: "mappin.and.ellipse")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.secondaryText)
+                if photo.isLocationUndisclosed {
+                    Label("Only you can see where this was taken.", systemImage: "lock")
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondaryText)
+                }
+            }
+        }
+    }
+
+    private func locationText(for photo: SpottedPhoto) -> String {
+        guard let spotID = photo.spotID, let spot = model.spot(id: spotID) else {
+            return "Taken away from the listed spots"
+        }
+        return "Taken near \(spot.name)"
     }
 
     /// The settings a photo carries, each as a value over a label.

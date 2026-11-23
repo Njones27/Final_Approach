@@ -1,4 +1,5 @@
 import CoreLocation
+import FinalApproachCore
 import MapKit
 import SwiftUI
 
@@ -7,26 +8,89 @@ enum SpotRoute: Hashable {
     case photos(String)
 }
 
-/// A map of the curated spots around one airport. Each pin shows how many
-/// photos were shared from that spot, and the selected spot has a card.
+/// What the card under the map is about.
+private enum MapSelection: Equatable {
+    case spot(String)
+    /// One of the user's own photos.
+    case photo(String)
+}
+
+/// One of the user's own photos placed on the map.
+private struct OwnPhotoPlace: Identifiable {
+    let photo: SpottedPhoto
+    let coordinate: CLLocationCoordinate2D
+
+    var id: String { photo.id }
+}
+
+/// A map of the curated spots around one airport, with the user's own
+/// located photos on top. Each spot pin shows how many photos were shared
+/// from that spot, and the selected spot or photo has a card.
+///
+/// Only the owner uses this screen, so their undisclosed photos are placed
+/// on it too. Nothing here is shown to another person.
 struct SpotsView: View {
     @Environment(CollectionModel.self) private var model
     @Environment(\.openURL) private var openURL
+    @Namespace private var photoZoom
     @State private var airportID: String?
-    @State private var selectedSpotID: String?
+    @State private var selection: MapSelection?
     @State private var position = MapCameraPosition.automatic
+    @State private var hasFramedMap = false
+
+    /// How much room to leave around the framed places, as a share of
+    /// their spread.
+    private static let framePadding = 0.6
+    /// The smallest area the map frames, in degrees, so one place alone is
+    /// not shown from street level.
+    private static let minimumFrameSpan = 0.02
 
     /// The chosen airport, or the first one until the user picks.
     private var airport: Airport? {
         model.airports.first { $0.id == airportID } ?? model.airports.first
     }
 
-    /// The chosen spot, or the busiest one at this airport until the user
+    /// The busiest spot at this airport, which has the card until the user
     /// picks.
+    private var busiestSpot: Spot? {
+        airport?.spots.max { $0.photoCount < $1.photoCount }
+    }
+
+    /// The user's photo whose card is showing, when one is selected and it
+    /// is still in the collection.
+    private var selectedPhoto: SpottedPhoto? {
+        guard case let .photo(id) = selection else { return nil }
+        return model.photo(id: id)
+    }
+
+    /// The spot whose card is showing. It is nil while one of the user's
+    /// photos has the card.
     private var selectedSpot: Spot? {
-        guard let airport else { return nil }
-        return airport.spots.first { $0.id == selectedSpotID }
-            ?? airport.spots.max { $0.photoCount < $1.photoCount }
+        switch selection {
+        case let .some(.spot(id)):
+            return airport?.spots.first { $0.id == id } ?? busiestSpot
+        case .some(.photo):
+            // A selected photo that has since been deleted gives the card
+            // back to the busiest spot.
+            return selectedPhoto == nil ? busiestSpot : nil
+        case .none:
+            return busiestSpot
+        }
+    }
+
+    /// The user's photos that carry a location, as places on the map.
+    private var ownPhotoPlaces: [OwnPhotoPlace] {
+        model.locatedPhotos.compactMap { photo in
+            guard let coordinate = photo.ownerCaptureCoordinate else { return nil }
+            return OwnPhotoPlace(photo: photo, coordinate: mapCoordinate(coordinate))
+        }
+    }
+
+    /// What the card shows, so it can fade when that changes.
+    private var cardID: String {
+        if let selectedPhoto { return "photo:\(selectedPhoto.id)" }
+        if let selectedSpot { return "spot:\(selectedSpot.id)" }
+        return ""
     }
 
     var body: some View {
@@ -40,7 +104,23 @@ struct SpotsView: View {
                     ) {
                         SpotPin(spot: spot, isSelected: spot.id == selectedSpot?.id) {
                             withAnimation(Motion.swap) {
-                                selectedSpotID = spot.id
+                                selection = .spot(spot.id)
+                            }
+                        }
+                    }
+                    .annotationTitles(.hidden)
+                }
+                ForEach(ownPhotoPlaces) { place in
+                    // A photo pin stands above its place, so it does not cover
+                    // the pin of the spot it was taken from.
+                    Annotation(place.photo.aircraftType, coordinate: place.coordinate, anchor: .bottom) {
+                        PhotoPin(
+                            image: model.image(for: place.photo),
+                            description: place.photo.imageDescription,
+                            isSelected: place.id == selectedPhoto?.id
+                        ) {
+                            withAnimation(Motion.swap) {
+                                selection = .photo(place.id)
                             }
                         }
                     }
@@ -48,19 +128,33 @@ struct SpotsView: View {
                 }
             }
             .mapStyle(.standard(pointsOfInterest: .excludingAll))
+            // The map fills the screen, so it fades in and stays put. The
+            // card over it slides in as the other tabs' content does.
+            .arrivesWithTab(travels: false)
+            .background(Theme.ground)
             .safeAreaInset(edge: .bottom) {
                 ZStack(alignment: .bottom) {
-                    if let spot = selectedSpot {
+                    if let photo = selectedPhoto {
+                        OwnPhotoCard(
+                            photo: photo,
+                            image: model.image(for: photo),
+                            spotName: photo.spotID.flatMap { model.spot(id: $0)?.name },
+                            zoomNamespace: photoZoom
+                        )
+                        .transition(.opacity)
+                    } else if let spot = selectedSpot {
                         SpotCard(spot: spot) {
                             openDirections(to: spot)
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 8)
+                        .transition(.opacity)
                     }
                 }
-                .animation(Motion.swap, value: selectedSpot?.id)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 8)
+                .animation(Motion.swap, value: cardID)
+                .arrivesWithTab()
             }
-            .sensoryFeedback(.selection, trigger: selectedSpotID)
+            .sensoryFeedback(.selection, trigger: selection)
             .navigationTitle("Spots")
             .toolbarTitleDisplayMode(.inlineLarge)
             .toolbar {
@@ -74,6 +168,14 @@ struct SpotsView: View {
                     SpotPhotosView(spotID: spotID)
                 }
             }
+            .photoDestinations(zoomingIn: photoZoom)
+            .onAppear {
+                // The map opens on the airport's spots. Framing them by hand
+                // keeps a photo taken far away from pulling the view out.
+                guard !hasFramedMap else { return }
+                hasFramedMap = true
+                frameAirport(animated: false)
+            }
         }
     }
 
@@ -84,22 +186,63 @@ struct SpotsView: View {
                     Text(airport.displayName).tag(airport.id)
                 }
             }
+            if !ownPhotoPlaces.isEmpty {
+                Button("Your photos", systemImage: "photo.on.rectangle") {
+                    showOwnPhotos()
+                }
+            }
         }
     }
 
-    /// Reads the airport on screen and, on a change, clears the selected
-    /// spot and frames the new airport's spots.
+    /// Reads the airport on screen and, on a change, clears the selection
+    /// and frames the new airport's spots.
     private var airportSelection: Binding<String> {
         Binding(
             get: { airport?.id ?? "" },
             set: { newID in
                 airportID = newID
-                selectedSpotID = nil
-                withAnimation(Motion.swap) {
-                    position = .automatic
-                }
+                selection = nil
+                frameAirport(animated: true)
             }
         )
+    }
+
+    // MARK: Framing
+
+    private func mapCoordinate(_ coordinate: Coordinate) -> CLLocationCoordinate2D {
+        CLLocationCoordinate2D(latitude: coordinate.latitude, longitude: coordinate.longitude)
+    }
+
+    /// Moves the map so every point is in view with room around it.
+    private func showOnMap(_ points: [Coordinate], animated: Bool) {
+        guard let bounds = GeoBounds(points: points) else { return }
+        let spans = bounds.framedSpans(padding: Self.framePadding, minimumSpan: Self.minimumFrameSpan)
+        let region = MKCoordinateRegion(
+            center: mapCoordinate(bounds.center),
+            span: MKCoordinateSpan(latitudeDelta: spans.latitude, longitudeDelta: spans.longitude)
+        )
+        if animated {
+            withAnimation(Motion.swap) {
+                position = .region(region)
+            }
+        } else {
+            position = .region(region)
+        }
+    }
+
+    private func frameAirport(animated: Bool) {
+        showOnMap((airport?.spots ?? []).compactMap(\.coordinate), animated: animated)
+    }
+
+    /// Frames every one of the user's located photos and gives the newest
+    /// one the card.
+    private func showOwnPhotos() {
+        let places = ownPhotoPlaces
+        guard let newest = places.first else { return }
+        showOnMap(places.compactMap(\.photo.ownerCaptureCoordinate), animated: true)
+        withAnimation(Motion.swap) {
+            selection = .photo(newest.id)
+        }
     }
 
     private func openDirections(to spot: Spot) {
@@ -132,6 +275,96 @@ private struct SpotPin: View {
         .buttonStyle(.plain)
         .accessibilityLabel("\(spot.name), \(spot.photoCount) photos")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+/// A small square of one of the user's own photos, with a pointer down to
+/// where it was taken. The square stands clear of that place, because a
+/// photo is often taken at a listed spot and would cover the spot's pin.
+private struct PhotoPin: View {
+    let image: Image
+    let description: String
+    let isSelected: Bool
+    let select: () -> Void
+
+    /// The room left between the pointer and the place, which clears a
+    /// selected spot pin.
+    private static let clearance: CGFloat = 28
+
+    var body: some View {
+        VStack(spacing: -2) {
+            Button(action: select) {
+                PhotoFill(image: image, description: description)
+                    .frame(width: isSelected ? 52 : 40, height: isSelected ? 52 : 40)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(Theme.ink, lineWidth: isSelected ? 3 : 2)
+                    }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Your photo, \(description)")
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+
+            Image(systemName: "arrowtriangle.down.fill")
+                .font(.system(size: 10))
+                .foregroundStyle(Theme.ink)
+                .accessibilityHidden(true)
+                .allowsHitTesting(false)
+        }
+        .padding(.bottom, Self.clearance)
+    }
+}
+
+/// The card for one of the user's own photos on the map. It says which
+/// listed spot the photo was taken near and opens the photo.
+private struct OwnPhotoCard: View {
+    let photo: SpottedPhoto
+    let image: Image
+    /// The name of the spot the photo is linked to, when there is one.
+    let spotName: String?
+    let zoomNamespace: Namespace.ID
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // The card and its button stay where they are when the photo
+            // changes. Only the picture and words fade to the new one. The
+            // card is laid out as the spot card is, with the same heights,
+            // so the map under it holds still when one card takes the
+            // other's place.
+            VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(photo.aircraftType)
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(Theme.ink)
+                        .lineLimit(1)
+                    Text(placeText)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondaryText)
+                        .lineLimit(2, reservesSpace: true)
+                }
+                PhotoFill(image: image, description: photo.imageDescription)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 70)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .matchedTransitionSource(id: ZoomSource.mapCard(photo.id), in: zoomNamespace)
+            }
+            .id(photo.id)
+            .transition(.fadeThrough)
+
+            NavigationLink(value: PhotoRoute.photo(id: photo.id, source: .mapCard(photo.id))) {
+                Text("Open your photo")
+            }
+            .buttonStyle(.primaryCompact)
+        }
+        .padding(16)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .shadow(color: Theme.scrim.opacity(0.25), radius: 17, y: 12)
+    }
+
+    private var placeText: String {
+        let place = spotName.map { "Taken near \($0)." } ?? "Taken away from the listed spots."
+        return photo.isLocationUndisclosed ? "\(place) Only you can see this." : place
     }
 }
 

@@ -5,9 +5,10 @@ import UIKit
 /// Sample data for previews and for running the app before a backend exists.
 ///
 /// The photos are the owner's own, from their portfolio site, with the
-/// camera settings they were taken at. The grades, findings, votes, and
-/// spots attached to them are invented, and the tier thresholds and passing
-/// score are placeholders until the product decides the real values.
+/// camera settings they were taken at. The grades, findings, votes, spots,
+/// and map locations attached to them are invented, and the tier thresholds
+/// and passing score are placeholders until the product decides the real
+/// values.
 enum SampleData {
     /// Placeholder tier thresholds.
     static let thresholds = TierThresholds(bronze: 50, silver: 65, gold: 80)!
@@ -43,7 +44,15 @@ enum SampleData {
         cutOffScore: 40
     )
 
-    static func model() -> CollectionModel {
+    /// Placeholder distance, in meters, within which a photo counts as
+    /// taken from a spot.
+    static let spotMatchRadius = 1_500.0
+    /// How strongly a logged photo's saved copy is compressed.
+    static let storedImageQuality = 0.9
+
+    /// The app's state on sample data. Pass a store to keep logged photos
+    /// on the device. Previews and tests leave it out and stay in memory.
+    static func model(store: (any PhotoStore)? = nil) -> CollectionModel {
         CollectionModel(
             photos: photos,
             profile: profile,
@@ -52,7 +61,10 @@ enum SampleData {
             thresholds: thresholds,
             passingCheckScore: passingCheckScore,
             checkRules: checkRules,
-            fixTargetScore: fixTargetScore
+            fixTargetScore: fixTargetScore,
+            spotMatchRadius: spotMatchRadius,
+            storedImageQuality: storedImageQuality,
+            store: store
         )
     }
 
@@ -110,6 +122,7 @@ enum SampleData {
             activity: "in a flyover",
             camera: vc25Camera,
             capturedAt: PhotoMetadataReader.captureDate(fromExif: "2026:07:04 19:18:20"),
+            captureCoordinate: Coordinate(latitude: 33.6497, longitude: -84.4058),
             spotID: "atl-cargo-ramp",
             status: .graded(voteAverage: 4.55, voteCount: 18),
             findings: vc25Findings,
@@ -124,6 +137,7 @@ enum SampleData {
             activity: "on the runway at dusk",
             camera: b737Camera,
             capturedAt: PhotoMetadataReader.captureDate(fromExif: "2026:05:17 20:33:01"),
+            captureCoordinate: Coordinate(latitude: 33.6221, longitude: -84.3998),
             spotID: "atl-south-approach",
             status: .graded(voteAverage: 4.4, voteCount: 12),
             findings: [
@@ -201,6 +215,7 @@ enum SampleData {
             activity: "passing overhead",
             camera: b2Camera,
             capturedAt: PhotoMetadataReader.captureDate(fromExif: "2026:06:24 19:45:40"),
+            captureCoordinate: Coordinate(latitude: 33.6389, longitude: -84.4569),
             spotID: "atl-west-road",
             status: .voting(votesIn: 3, hoursLeft: 31),
             findings: b2Findings,

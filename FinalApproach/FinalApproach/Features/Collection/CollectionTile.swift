@@ -1,11 +1,21 @@
 import FinalApproachCore
 import SwiftUI
 
-/// One photo in the collection grid, with its type and grade over a scrim.
+/// One photo in the collection grid, with its name and grade over a scrim.
+/// A tile can stand for one photo or for a slot, which shows its best photo.
 struct CollectionTile: View {
     let photo: SpottedPhoto
     /// The leading tile is taller and shows the registration and tier name.
     let isHero: Bool
+    /// The name to show in place of the aircraft type, such as an airline
+    /// when the tile stands for an airline slot.
+    var title: String?
+    /// How many shots the slot holds. A slot with more than one says so.
+    var shotCount = 1
+
+    private var shownTitle: String {
+        title ?? photo.aircraftType
+    }
 
     @Environment(CollectionModel.self) private var model
 
@@ -38,7 +48,7 @@ struct CollectionTile: View {
     private var labels: some View {
         HStack(alignment: .lastTextBaseline, spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(photo.aircraftType)
+                Text(shownTitle)
                     .font(isHero ? .title3.weight(.bold) : .subheadline.weight(.semibold))
                     .foregroundStyle(Theme.onPhoto)
                     .lineLimit(1)
@@ -57,12 +67,10 @@ struct CollectionTile: View {
                     }
                 }
                 if case let .voting(_, hoursLeft) = photo.status {
-                    Text("Voting, \(hoursLeft) h left")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Theme.onPhoto)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(Theme.onPhoto.opacity(0.22), in: Capsule())
+                    badge("Voting, \(hoursLeft) h left")
+                }
+                if shotCount > 1 {
+                    badge("\(shotCount) shots")
                 }
             }
             Spacer(minLength: 0)
@@ -81,8 +89,21 @@ struct CollectionTile: View {
         }
     }
 
+    /// A small label on the photo, such as how many shots a slot holds.
+    private func badge(_ text: String) -> some View {
+        Text(text)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(Theme.onPhoto)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Theme.onPhoto.opacity(0.22), in: Capsule())
+    }
+
     private var accessibilityText: String {
-        var parts = [photo.aircraftType]
+        var parts = [shownTitle]
+        if shotCount > 1 {
+            parts.append("\(shotCount) shots")
+        }
         if let registration = photo.visibleRegistration {
             parts.append(registration)
         }

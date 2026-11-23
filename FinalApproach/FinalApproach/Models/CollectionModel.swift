@@ -4,6 +4,32 @@ import Observation
 import SwiftUI
 import UIKit
 
+/// What went wrong with the photos saved on the device.
+enum StorageProblem: Identifiable {
+    /// The saved collection could not be read when the app opened.
+    case couldNotOpen
+    /// A photo or a change could not be written.
+    case couldNotSave
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .couldNotOpen: "Your saved photos could not be opened"
+        case .couldNotSave: "This change could not be saved"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .couldNotOpen:
+            "They are still on this iPhone. Photos you add now will not be saved until the app can open them again."
+        case .couldNotSave:
+            "It will last until you close the app. Free up some space on this iPhone and try again."
+        }
+    }
+}
+
 /// The state every screen reads. It holds the user's photos, the spots, the
 /// vote queue, and the tunable grading values.
 ///
@@ -12,9 +38,18 @@ import UIKit
 @Observable
 final class CollectionModel {
     private(set) var photos: [SpottedPhoto]
-    /// The images of photos imported from the library, by photo id. They
-    /// live in memory until the local collection milestone stores them.
-    private var importedImages: [String: UIImage] = [:]
+    /// Where logged photos and their images are saved. It is nil in
+    /// previews and tests that keep everything in memory.
+    @ObservationIgnored private let store: (any PhotoStore)?
+    /// The sample photos the user deleted, so they stay deleted.
+    @ObservationIgnored private var removedSampleIDs: [String] = []
+    /// The images of logged photos that have been shown, by photo id. With
+    /// a store this is only a cache, and the saved file is the real copy.
+    /// It is not observed, because an image never changes once it is logged.
+    @ObservationIgnored private var loadedImages: [String: UIImage] = [:]
+    /// Set when the saved collection could not be opened or a change could
+    /// not be saved. The Collection screen tells the user and clears it.
+    var storageProblem: StorageProblem?
     private(set) var profile: Profile
     private(set) var voteQueue: [VoteCandidate]
     /// How many photos were in today's vote set before any vote.
@@ -31,7 +66,16 @@ final class CollectionModel {
     let fixTargetScore: Double
     let gradeWeights: GradeWeights
     let votingRules: VotingRules
+    /// How close, in meters, a photo must be to a spot to count as taken
+    /// from it.
+    let spotMatchRadius: Double
+    /// How strongly a saved image is compressed, from 0 to 1.
+    let storedImageQuality: Double
 
+    /// - Parameters:
+    ///   - photos: The sample photos the app ships with.
+    ///   - store: Where logged photos are saved. Photos already saved there
+    ///     join the collection ahead of the samples.
     init(
         photos: [SpottedPhoto],
         profile: Profile,
@@ -42,9 +86,29 @@ final class CollectionModel {
         checkRules: CheckRules,
         fixTargetScore: Double,
         gradeWeights: GradeWeights = .launch,
-        votingRules: VotingRules = .launch
+        votingRules: VotingRules = .launch,
+        spotMatchRadius: Double,
+        storedImageQuality: Double,
+        store: (any PhotoStore)? = nil
     ) {
-        self.photos = photos
+        self.spotMatchRadius = spotMatchRadius
+        self.storedImageQuality = storedImageQuality
+        var saved = StoredLibrary()
+        var usableStore = store
+        if let store {
+            do {
+                saved = try store.loadLibrary()
+            } catch {
+                // A library that cannot be read is left on the device as it
+                // is. Nothing is saved this session, so it is never written
+                // over, and the app tells the user.
+                usableStore = nil
+            }
+        }
+        self.store = usableStore
+        removedSampleIDs = saved.removedSampleIDs
+        let keptSamples = photos.filter { !saved.removedSampleIDs.contains($0.id) }
+        self.photos = saved.photos + keptSamples
         self.profile = profile
         self.voteQueue = voteQueue
         voteSetSize = voteQueue.count
@@ -55,6 +119,9 @@ final class CollectionModel {
         self.fixTargetScore = fixTargetScore
         self.gradeWeights = gradeWeights
         self.votingRules = votingRules
+        if store != nil, usableStore == nil {
+            storageProblem = .couldNotOpen
+        }
     }
 
     // MARK: Photos
@@ -144,49 +211,127 @@ final class CollectionModel {
     }
 
     /// The image to show for a photo. A sample photo comes from the asset
-    /// catalog and an imported one from the images this model holds.
+    /// catalog and a logged one from the file saved on the device.
     func image(for photo: SpottedPhoto) -> Image {
         if let name = photo.imageName {
             return Image(name)
         }
-        if let imported = importedImages[photo.id] {
-            return Image(uiImage: imported)
+        if let logged = loggedImage(forPhotoID: photo.id) {
+            return Image(uiImage: logged)
         }
         return Image(systemName: "photo")
     }
 
-    /// Adds a photo to the front of the collection. Pass the image for a
-    /// photo imported from the library.
+    /// The image of a logged photo, read from the device the first time it
+    /// is asked for.
+    private func loggedImage(forPhotoID id: String) -> UIImage? {
+        if let loaded = loadedImages[id] {
+            return loaded
+        }
+        guard let data = store?.imageData(forPhotoID: id), let image = UIImage(data: data) else {
+            return nil
+        }
+        loadedImages[id] = image
+        return image
+    }
+
+    /// Adds a photo to the front of the collection and saves it on the
+    /// device. Pass the image for a photo imported from the library.
     func add(_ photo: SpottedPhoto, image: UIImage? = nil) {
         if let image {
-            importedImages[photo.id] = image
+            loadedImages[photo.id] = image
         }
         photos.insert(photo, at: 0)
+        guard let store else { return }
+        do {
+            if let image, let data = image.jpegData(compressionQuality: storedImageQuality) {
+                try store.saveImage(data, forPhotoID: photo.id)
+            }
+            try saveLibrary(to: store)
+        } catch {
+            storageProblem = .couldNotSave
+        }
     }
 
-    /// Removes a photo and its stored image. Once photos are also stored on
-    /// disk and the backend, this must remove those copies too.
+    /// Removes a photo and its saved image from the device. Once photos are
+    /// also kept on the backend, this must remove that copy too.
     func deletePhoto(id: String) {
+        guard let photo = photo(id: id) else { return }
         photos.removeAll { $0.id == id }
-        importedImages[id] = nil
+        loadedImages[id] = nil
+        if photo.isSample, !removedSampleIDs.contains(id) {
+            removedSampleIDs.append(id)
+        }
+        guard let store else { return }
+        do {
+            try store.deleteImage(forPhotoID: id)
+            try saveLibrary(to: store)
+        } catch {
+            storageProblem = .couldNotSave
+        }
     }
 
-    /// Removes the account's photos and their stored images. Once accounts
-    /// exist, this must also delete the account and the backend copies.
+    /// Removes the account's photos and every saved image from the device.
+    /// Once accounts exist, this must also delete the account and the
+    /// backend copies.
     func deleteAccountAndPhotos() {
+        for photo in photos where photo.isSample && !removedSampleIDs.contains(photo.id) {
+            removedSampleIDs.append(photo.id)
+        }
         photos.removeAll()
-        importedImages.removeAll()
+        loadedImages.removeAll()
+        guard let store else { return }
+        do {
+            try store.deleteEverything()
+            // The list of deleted samples is written back, so they do not
+            // return the next time the app opens.
+            try saveLibrary(to: store)
+        } catch {
+            storageProblem = .couldNotSave
+        }
     }
 
-    /// True when the model holds an imported image for a photo.
+    /// True when a logged photo still has an image, in memory or saved on
+    /// the device.
     func hasStoredImage(forPhotoID id: String) -> Bool {
-        importedImages[id] != nil
+        loadedImages[id] != nil || store?.imageData(forPhotoID: id) != nil
+    }
+
+    /// Writes the logged photos and the deleted samples to the device. The
+    /// samples themselves ship with the app and are never written.
+    private func saveLibrary(to store: any PhotoStore) throws {
+        try store.saveLibrary(
+            StoredLibrary(
+                photos: photos.filter { !$0.isSample },
+                removedSampleIDs: removedSampleIDs
+            )
+        )
+    }
+
+    // MARK: Collection slots
+
+    /// The slots of one collection view, in name order. Each slot keeps the
+    /// user's best shot of one type, airline, or registration.
+    func slots(_ kind: SlotKind) -> [CollectionEntry] {
+        let shots = photos.map { $0.slotShot(score: finalScore(for: $0)) }
+        return CollectionBook.entries(for: shots, kind: kind, thresholds: thresholds)
+            .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+    }
+
+    /// One slot, or nil when no photo fills it any more.
+    func slot(_ kind: SlotKind, key: String) -> CollectionEntry? {
+        slots(kind).first { $0.key == key }
+    }
+
+    /// The photos in a slot, best first.
+    func photos(in entry: CollectionEntry) -> [SpottedPhoto] {
+        entry.photoIDs.compactMap { photo(id: $0) }
     }
 
     // MARK: Profile
 
     var typesCollected: Int {
-        Set(photos.map(\.aircraftType)).count
+        slots(.aircraftType).count
     }
 
     var photosGraded: Int {
@@ -228,5 +373,23 @@ final class CollectionModel {
             }
         }
         return nil
+    }
+
+    /// The listed spot closest to where a photo was taken, or nil when none
+    /// is within `spotMatchRadius`.
+    func nearestSpot(to coordinate: Coordinate) -> Spot? {
+        let landmarks = airports.flatMap(\.spots).compactMap { spot in
+            spot.coordinate.map { Landmark(id: spot.id, point: $0) }
+        }
+        let found = NearestLandmark.find(to: coordinate, among: landmarks, within: spotMatchRadius)
+        return found.flatMap { spot(id: $0.landmark.id) }
+    }
+
+    /// The user's own photos that carry a location, newest first. The owner
+    /// sees every one of them on the map, shared or not.
+    var locatedPhotos: [SpottedPhoto] {
+        photos
+            .filter(\.hasCaptureLocation)
+            .sorted { $0.loggedAt > $1.loggedAt }
     }
 }

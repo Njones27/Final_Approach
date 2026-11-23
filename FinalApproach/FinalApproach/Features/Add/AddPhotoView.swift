@@ -4,7 +4,8 @@ import SwiftUI
 
 /// Logs a photo picked from the library. It shows what was read from the
 /// photo, takes the aircraft details, and lets the user keep the location
-/// private. Logging the photo also scores its technical check. Automatic
+/// private. Logging the photo also scores its technical check, saves it on
+/// the device, and links it to the nearest listed spot. Automatic
 /// identification replaces the typed details in the identification
 /// milestone.
 struct AddPhotoView: View {
@@ -97,7 +98,7 @@ struct AddPhotoView: View {
             )
             FactRow(
                 systemImage: photo.metadata.coordinate == nil ? "location.slash" : "location",
-                title: photo.metadata.coordinate == nil ? "No location" : "Location saved",
+                title: locationText,
                 detail: photo.metadata.coordinate == nil
                     ? "The photo does not carry one."
                     : "Where it was taken"
@@ -130,6 +131,17 @@ struct AddPhotoView: View {
     }
 
     // MARK: Text
+
+    /// The listed spot the photo was taken near, when there is one.
+    private var nearestSpot: Spot? {
+        photo.metadata.coordinate.flatMap { model.nearestSpot(to: $0) }
+    }
+
+    private var locationText: String {
+        guard photo.metadata.coordinate != nil else { return "No location" }
+        guard let nearestSpot else { return "Location saved" }
+        return "Near \(nearestSpot.name)"
+    }
 
     private var captureTimeText: String? {
         photo.metadata.capturedAt?.formatted(date: .abbreviated, time: .shortened)
@@ -166,7 +178,9 @@ struct AddPhotoView: View {
             activity: "",
             camera: photo.metadata.camera,
             capturedAt: photo.metadata.capturedAt,
+            loggedAt: Date.now,
             captureCoordinate: photo.metadata.coordinate,
+            spotID: nearestSpot?.id,
             isLocationUndisclosed: photo.metadata.coordinate != nil && !showsSpot,
             status: .logged,
             findings: check.findings,

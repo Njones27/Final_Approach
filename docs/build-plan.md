@@ -39,8 +39,9 @@ The look is called Darkroom. The rules below apply to every screen.
   `Design/Motion.swift`. A photo grows out of its collection tile and shrinks
   back into it. The grade marker travels up the tier scale, meters fill from
   the top down, the next photo to vote on slides in, and the grid slides to a
-  new order. With Reduce Motion on, anything that travels fades or stays
-  still.
+  new order. The system tab view swaps tabs with no motion, so each tab's
+  content fades in and slides from the side its tab sits on. With Reduce
+  Motion on, anything that travels fades or stays still.
 - The tier thresholds of 50, 65, and 80, the passing score of 75 for one
   check, and the points for each fix on the sample photos are placeholders in
   `SampleData`. They are passed in as data and are not decided yet.
@@ -59,15 +60,41 @@ their features.
   and makes a copy of the image sized for the screen.
 - Until identification exists, the user types the aircraft type, the
   registration, and the airline on the Add screen. Only the type is required.
-- An imported image lives in memory for now. The local collection milestone
-  stores it on the device.
-- A photo's saved location is kept with the photo, but it does not appear on
-  the Spots map yet. The map shows only the curated sample spots. The local
-  collection milestone puts the user's own located photos on the map and
-  links each one to the nearest spot. The spot map milestone shows disclosed
-  photos to other people.
+- A photo's saved location is kept with the photo. The spot map milestone
+  shows disclosed photos to other people.
 - The wording for camera settings, such as "1/640 s" and "f/7.1", lives in the
   core package so it is tested on Linux.
+
+## Local collection
+
+- A logged photo is saved on the device. `Services/PhotoStore.swift` keeps
+  the photos in one JSON file and each image as a JPEG, inside Application
+  Support. The saved image is the copy made for the screen, which carries no
+  metadata, so the file holds no location.
+- The store sits behind a protocol. Previews and tests run with no store and
+  keep everything in memory.
+- Deleting a photo removes its image file. Deleting the account removes every
+  file. A sample photo the user deletes stays deleted, because its id is
+  saved in a short list.
+- A collection that cannot be read is left on the device as it is. The app
+  says so and saves nothing that session, so the file is never written over.
+- The collection has four views. Types, Airlines, and Registrations show one
+  tile for each slot, and All photos shows one for each photo. A slot keeps
+  the best shot, and a later shot takes it only with a strictly higher
+  grade. A graded shot always beats an ungraded one.
+- The slots are worked out from the photos each time by `CollectionBook` in
+  the core package. Nothing about a slot is saved, so a deleted photo leaves
+  no stale slot. Names that differ only in case or spacing share a slot.
+- A blocked registration names no slot. A photo with no airline or no
+  registration fills no slot in that view.
+- A slot does not show a rarity yet. Rarity needs airframe counts and flight
+  history, which arrive with identification and the backend.
+- A logged photo with a location is linked to the nearest listed spot within
+  1,500 meters, a placeholder in `SampleData`. The owner's located photos
+  appear on the Spots map as small photo pins, shared or not, because only
+  the owner sees that map. "Your photos" in the airport menu frames them all.
+- Images are read from the device the first time each is shown and are not
+  resized for the grid yet. A collection of many photos will want thumbnails.
 
 ## Technical check
 
