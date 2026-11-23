@@ -36,8 +36,8 @@ The look is called Darkroom. The rules below apply to every screen.
   distance to the next tier is visible. Feedback is a short list of fixes,
   each with the points it is worth.
 - The tier thresholds of 50, 65, and 80, the passing score of 75 for one
-  check, and the points for each fix are placeholders in `SampleData`. They
-  are passed in as data and are not decided yet.
+  check, and the points for each fix on the sample photos are placeholders in
+  `SampleData`. They are passed in as data and are not decided yet.
 
 Two controls from the mockups wait for the milestone that gives them something
 to do. "Pick a different aircraft" on the Add screen arrives with
@@ -55,8 +55,63 @@ their features.
   registration, and the airline on the Add screen. Only the type is required.
 - An imported image lives in memory for now. The local collection milestone
   stores it on the device.
+- A photo's saved location is kept with the photo, but it does not appear on
+  the Spots map yet. The map shows only the curated sample spots. The local
+  collection milestone puts the user's own located photos on the map and
+  links each one to the nearest spot. The spot map milestone shows disclosed
+  photos to other people.
 - The wording for camera settings, such as "1/640 s" and "f/7.1", lives in the
   core package so it is tested on Linux.
+
+## Technical check
+
+- A picked photo is measured on the device before the Add screen opens.
+  `Services/PhotoAnalyzer.swift` does it away from the main thread. Vision's
+  foreground mask marks the aircraft's own pixels, and a formation comes back
+  as one mask. When there is no mask, a box around the most prominent object
+  stands in for it.
+- Sharpness is the variance of the Laplacian over the aircraft's pixels.
+  Exposure is the share of those pixels that is blown out or crushed.
+  Framing uses the rectangle around the mask.
+- A matte or dark aircraft has little detail to measure, so its sharpness
+  reads low even in focus. Sharpness is therefore also divided by the
+  variance of the aircraft's brightness, and the score is the better of the
+  two readings.
+- The scoring and the wording live in the core package, in `CheckRules` and
+  `TechnicalCheckEngine`, so they are tested on Linux. Each measurement is
+  scored by a curve of points, and the curves are data.
+- Three checks run now, which are sharpness, exposure, and framing. A check
+  that did not run is named as not checked on the technical check screen.
+  - **Level horizon is built but turned off in the rules.** On 40 real
+    photos Vision reported a tilt three times, each on an aircraft against
+    open sky where it followed the wings, and never on the four photos with
+    a real ground line. It needs another method before it is turned on.
+  - Noise and heat haze are not built yet.
+  - Every check needs the aircraft to be found. Detail over a whole photo
+    did not tell sharp photos from soft ones, and blown pixels there are as
+    likely to be clouds. A photo with no aircraft found is not scored, and
+    its page says so.
+  - Soft feedback reads the shutter speed. At the fast shutter time in the
+    rules or faster it points to focus, haze, or a heavy crop, and not to
+    the shutter.
+  - Framing needs the mask. A box alone misses wingtips, rotors, and the
+    rest of a formation.
+  - An aircraft that fills most of the photo is treated as a deliberate
+    close-up, so reaching a side is not held against it.
+- A photo passes when no check that ran needs work. Passing is the gate
+  before voting.
+- A fix is worth the points the grade would gain if that check reached the
+  fix target score. That is the gain in the technical score times the
+  technical check's share of the grade.
+- The rules in `SampleData` are provisional. They come from 40 finished
+  photos measured on a Mac on 2026-11-23. That set holds no rejects, so the
+  low end of each curve is a guess, and the photos were edited web exports
+  and not camera originals. Tuning needs soft, blurred, hazy, and badly
+  exposed photos next.
+- The iOS simulator cannot run the Vision requests that find the aircraft,
+  and asking for the processor does not help. A photo imported there is not
+  scored. The requests run on a Mac. Results on a real iPhone have not been
+  checked yet.
 
 ## Identification
 
@@ -95,12 +150,15 @@ launch.
 4. **Technical check.** Sharpness, exposure, tilt, and framing run on the
    device and return feedback that names what to fix.
 5. **Local collection.** Quickshot logging, slots, and upgrades, stored on the
-   device.
+   device. The user's own located photos appear on the Spots map, each linked
+   to the nearest spot.
 6. **Identification.** Location tagging, registration reading, the flight data
    lookup, and the automatic description.
 7. **Backend foundation.** Sign in with Apple, photo upload, and sync in the
    beta account.
 8. **Voting and final grades.**
-9. **Spot map and spot pages.**
+9. **Spot map and spot pages.** Real spots from the backend, with the
+   disclosed photos other people took there. An undisclosed photo never
+   appears.
 10. **Launch preparation.** Prod account, Release workflow, external
     TestFlight, App Store review.

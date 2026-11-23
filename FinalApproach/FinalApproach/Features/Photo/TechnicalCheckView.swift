@@ -52,6 +52,12 @@ struct TechnicalCheckView: View {
                         }
                     }
                 }
+
+                if let notChecked = notCheckedSummary(for: photo) {
+                    Text(notChecked)
+                        .font(.footnote)
+                        .foregroundStyle(Theme.secondaryText)
+                }
             }
             .padding(.horizontal, 20)
             .padding(.top, 12)
@@ -81,6 +87,21 @@ struct TechnicalCheckView: View {
     /// The technical check's share of the final grade, as a whole percent.
     private var technicalShare: Int {
         Int((model.gradeWeights.ai * 100).rounded())
+    }
+
+    /// A sentence that names the checks that did not run on this photo, or
+    /// nil when every check ran. A check is left out when there was nothing
+    /// to measure, such as a horizon in a photo of open sky.
+    private func notCheckedSummary(for photo: SpottedPhoto) -> String? {
+        let names = CheckKind.allCases
+            .filter { kind in !photo.findings.contains { $0.result.kind == kind } }
+            .map { $0.displayName.lowercased() }
+        guard let first = names.first else { return nil }
+        let list = names.formatted(.list(type: .and))
+        let sentence = first.prefix(1).uppercased() + String(list.dropFirst())
+        return names.count == 1
+            ? "\(sentence) was not checked on this photo."
+            : "\(sentence) were not checked on this photo."
     }
 
     /// The written findings for a list of results, in the same order.
@@ -121,7 +142,16 @@ private struct CheckRow: View {
 
 #Preview {
     NavigationStack {
-        TechnicalCheckView(photoID: "a350-n502dn")
+        TechnicalCheckView(photoID: "b737-n823ak")
     }
     .environment(SampleData.model())
+}
+
+#Preview("Imported photo") {
+    let model = SampleData.model()
+    model.add(SampleData.checkedPhoto(in: model))
+    return NavigationStack {
+        TechnicalCheckView(photoID: "preview-checked")
+    }
+    .environment(model)
 }

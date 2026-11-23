@@ -1,3 +1,4 @@
+import FinalApproachCore
 import Testing
 import UIKit
 
@@ -8,18 +9,18 @@ struct CollectionModelTests {
     let model = SampleData.model()
 
     @Test func blendsTheTechnicalCheckAndVotesIntoAWholeNumberGrade() throws {
-        let photo = try #require(model.photo(id: "a350-n502dn"))
+        let photo = try #require(model.photo(id: "b737-n823ak"))
         #expect(model.technicalScore(for: photo) == 78)
         #expect(model.finalScore(for: photo) == 83)
     }
 
     @Test func everySampleGradeMatchesTheDesign() throws {
         let expected = [
-            "b748-n605up": 88.0,
-            "a350-n502dn": 83.0,
-            "b737-n8642e": 71.0,
-            "e175-n620qx": 66.0,
-            "b787-n27965": 58.0,
+            "vc25a-29000": 88.0,
+            "b737-n823ak": 83.0,
+            "e175-delta": 71.0,
+            "f22-raptor": 66.0,
+            "fa18-blue-angels-5": 58.0,
         ]
         for (id, grade) in expected {
             let photo = try #require(model.photo(id: id))
@@ -28,18 +29,18 @@ struct CollectionModelTests {
     }
 
     @Test func aPhotoStillInVotingHasNoGrade() throws {
-        let photo = try #require(model.photo(id: "a220-n3008j"))
+        let photo = try #require(model.photo(id: "b2-spirit"))
         #expect(model.finalScore(for: photo) == nil)
     }
 
     @Test func theBestGradedPhotoLeadsTheCollection() {
-        #expect(model.bestPhoto?.id == "b748-n605up")
+        #expect(model.bestPhoto?.id == "vc25a-29000")
     }
 
     @Test func aBlockedRegistrationIsNeverShown() {
         let photo = SpottedPhoto(
             id: "blocked",
-            imageName: "SampleA350",
+            imageName: "SampleB737",
             aircraftType: "Gulfstream G650",
             registration: "N1AB",
             isRegistrationBlocked: true,
@@ -53,7 +54,7 @@ struct CollectionModelTests {
     @Test func anUndisclosedPhotoHasNoPublicSpot() {
         var photo = SpottedPhoto(
             id: "private",
-            imageName: "SampleA350",
+            imageName: "SampleB737",
             aircraftType: "Airbus A350-900",
             registration: "N502DN",
             airline: "Delta Air Lines",
@@ -82,9 +83,9 @@ struct CollectionModelTests {
     }
 
     @Test func theOperatorLineJoinsWhatIsKnown() throws {
-        let sample = try #require(model.photo(id: "a350-n502dn"))
-        #expect(sample.operatorLine == "Delta Air Lines, landing at Atlanta")
-        #expect(sample.imageDescription == "Delta Air Lines Airbus A350-900, landing at Atlanta")
+        let sample = try #require(model.photo(id: "b737-n823ak"))
+        #expect(sample.operatorLine == "Alaska Airlines, on the runway at dusk")
+        #expect(sample.imageDescription == "Alaska Airlines Boeing 737 MAX 8, on the runway at dusk")
     }
 
     @Test func anUndisclosedPhotoSharesNoCoordinate() throws {
@@ -145,8 +146,8 @@ struct CollectionModelTests {
     }
 
     @Test func deletingAPhotoRemovesItFromTheCollection() {
-        model.deletePhoto(id: "a350-n502dn")
-        #expect(model.photo(id: "a350-n502dn")?.id == nil)
+        model.deletePhoto(id: "b737-n823ak")
+        #expect(model.photo(id: "b737-n823ak")?.id == nil)
         #expect(model.photos.count == 5)
     }
 
@@ -154,6 +155,38 @@ struct CollectionModelTests {
         model.deleteAccountAndPhotos()
         #expect(model.photos.isEmpty)
         #expect(model.bestPhoto?.id == nil)
+    }
+
+    @Test func theTechnicalCheckNamesWhatToFixWeakestFirst() {
+        let check = model.technicalCheck(for: SampleData.softBrightMeasurements, camera: nil)
+        #expect(check.findings.count == 3)
+        #expect(check.fixes.map(\.title) == ["Check focus and shutter speed", "Lower the exposure"])
+        #expect(check.fixes.map(\.detail) == ["The aircraft is soft.", "Bright parts of the aircraft lose detail."])
+        #expect(check.fixes.map(\.points) == [5, 4])
+    }
+
+    @Test func aPhotoWithNothingMeasuredHasNoCheck() {
+        let check = model.technicalCheck(for: .none, camera: nil)
+        #expect(check.findings.isEmpty)
+        #expect(check.fixes.isEmpty)
+    }
+
+    @Test func aCheckedPhotoHasATechnicalScoreAndNoGrade() {
+        let photo = SampleData.checkedPhoto(in: model)
+        model.add(photo)
+        #expect(model.technicalScore(for: photo)?.rounded() == 59)
+        #expect(model.finalScore(for: photo) == nil)
+        // 1/2000 s freezes an aircraft, so the shutter is not blamed.
+        #expect(photo.fixes.first?.title == "Check focus and haze")
+        #expect(photo.fixes.first?.detail == "The aircraft is soft at 1/2000 s.")
+    }
+
+    @Test func aPhotoWithNoAircraftFoundIsNotScored() {
+        let photo = SampleData.unfoundPhoto
+        model.add(photo)
+        #expect(!photo.isAircraftFound)
+        #expect(model.technicalScore(for: photo) == nil)
+        #expect(!model.checkReport(for: photo).isPassed)
     }
 
     @Test func aVoteMovesToTheNextPhotoAndCounts() {

@@ -141,17 +141,21 @@ struct CollectionView: View {
         .padding(.top, 80)
     }
 
-    /// Loads the picked file and reads its image and metadata. The photo is
-    /// not added to the collection until the user logs it.
+    /// Loads the picked file, reads its image and metadata, and measures it
+    /// for the technical check. The photo is not added to the collection
+    /// until the user logs it.
     private func importPhoto(from item: PhotosPickerItem) async {
         isImporting = true
         defer { isImporting = false }
         guard let data = try? await item.loadTransferable(type: Data.self),
-              let photo = PhotoMetadataReader.importPhoto(from: data)
+              var photo = PhotoMetadataReader.importPhoto(from: data)
         else {
             importFailed = true
             return
         }
+        // The technical check measures the photo now, so its feedback is
+        // ready the moment the photo is logged.
+        photo.measurements = await PhotoAnalyzer.measurements(for: photo.image, rules: model.checkRules)
         importedPhoto = photo
     }
 

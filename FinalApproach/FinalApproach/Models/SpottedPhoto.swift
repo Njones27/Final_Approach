@@ -55,6 +55,9 @@ struct SpottedPhoto: Identifiable {
     var status: GradeStatus
     let findings: [CheckFinding]
     let fixes: [SuggestedFix]
+    /// False when the technical check could not find an aircraft in the
+    /// photo, so it had nothing to score.
+    let isAircraftFound: Bool
 
     private let registration: String
     private let isRegistrationBlocked: Bool
@@ -75,7 +78,8 @@ struct SpottedPhoto: Identifiable {
         isLocationUndisclosed: Bool = false,
         status: GradeStatus,
         findings: [CheckFinding] = [],
-        fixes: [SuggestedFix] = []
+        fixes: [SuggestedFix] = [],
+        isAircraftFound: Bool = true
     ) {
         self.id = id
         self.imageName = imageName
@@ -92,6 +96,7 @@ struct SpottedPhoto: Identifiable {
         self.status = status
         self.findings = findings
         self.fixes = fixes
+        self.isAircraftFound = isAircraftFound
     }
 
     /// The registration to show, or nil when there is none or the aircraft

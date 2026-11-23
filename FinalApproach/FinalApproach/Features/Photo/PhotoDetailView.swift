@@ -132,13 +132,52 @@ struct PhotoDetailView: View {
                 technicalLine(for: photo)
             }
         case .logged:
-            VStack(alignment: .leading, spacing: 3) {
+            checkVerdict(for: photo)
+        }
+    }
+
+    /// What the technical check decided for a photo that has no grade yet.
+    /// The check is the gate before voting, so the verdict leads.
+    private func checkVerdict(for photo: SpottedPhoto) -> some View {
+        let technical = model.technicalScore(for: photo)
+        let passed = model.checkReport(for: photo).isPassed
+        return VStack(alignment: .leading, spacing: 3) {
+            if let technical {
+                Text(passed ? "Technical check passed" : "Technical check needs work")
+                    .font(.headline)
+                    .foregroundStyle(Theme.ink)
+                Text(
+                    passed
+                        ? "It scored \(technical.scoreText). Votes decide the rest of the grade."
+                        : "It scored \(technical.scoreText). The fixes below would lift it."
+                )
+                .font(.footnote)
+                .monospacedDigit()
+                .foregroundStyle(Theme.secondaryText)
+            } else if !photo.isAircraftFound {
+                Text("Aircraft not found")
+                    .font(.headline)
+                    .foregroundStyle(Theme.ink)
+                Text(aircraftNotFoundDetail)
+                    .font(.footnote)
+                    .foregroundStyle(Theme.secondaryText)
+            } else {
                 Text("Not graded yet")
                     .font(.headline)
                     .foregroundStyle(Theme.ink)
-                technicalLine(for: photo)
             }
         }
+    }
+
+    /// Why a photo has no technical check. The simulator cannot run the
+    /// request that finds the aircraft, so there it says where to try.
+    private var aircraftNotFoundDetail: String {
+        #if targetEnvironment(simulator)
+        return "The check could not find an aircraft, so this photo was not scored. "
+            + "The simulator cannot find aircraft, so try it on an iPhone."
+        #else
+        return "The check could not find an aircraft, so this photo was not scored."
+        #endif
     }
 
     @ViewBuilder
@@ -323,14 +362,32 @@ private struct FixRow: View {
 
 #Preview("Graded") {
     NavigationStack {
-        PhotoDetailView(photoID: "a350-n502dn")
+        PhotoDetailView(photoID: "b737-n823ak")
     }
     .environment(SampleData.model())
 }
 
+#Preview("Checked, not graded") {
+    let model = SampleData.model()
+    model.add(SampleData.checkedPhoto(in: model))
+    return NavigationStack {
+        PhotoDetailView(photoID: "preview-checked")
+    }
+    .environment(model)
+}
+
+#Preview("Aircraft not found") {
+    let model = SampleData.model()
+    model.add(SampleData.unfoundPhoto)
+    return NavigationStack {
+        PhotoDetailView(photoID: "preview-unfound")
+    }
+    .environment(model)
+}
+
 #Preview("Voting") {
     NavigationStack {
-        PhotoDetailView(photoID: "a220-n3008j")
+        PhotoDetailView(photoID: "b2-spirit")
     }
     .environment(SampleData.model())
 }

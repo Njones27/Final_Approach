@@ -24,6 +24,11 @@ final class CollectionModel {
     let thresholds: TierThresholds
     /// The lowest technical check score that counts as passed.
     let passingCheckScore: Double
+    /// The values that turn a photo's measurements into check scores.
+    let checkRules: CheckRules
+    /// The score a check is expected to reach once its fix is made. It sets
+    /// how many points a fix is worth.
+    let fixTargetScore: Double
     let gradeWeights: GradeWeights
     let votingRules: VotingRules
 
@@ -34,6 +39,8 @@ final class CollectionModel {
         airports: [Airport],
         thresholds: TierThresholds,
         passingCheckScore: Double,
+        checkRules: CheckRules,
+        fixTargetScore: Double,
         gradeWeights: GradeWeights = .launch,
         votingRules: VotingRules = .launch
     ) {
@@ -44,6 +51,8 @@ final class CollectionModel {
         self.airports = airports
         self.thresholds = thresholds
         self.passingCheckScore = passingCheckScore
+        self.checkRules = checkRules
+        self.fixTargetScore = fixTargetScore
         self.gradeWeights = gradeWeights
         self.votingRules = votingRules
     }
@@ -60,6 +69,41 @@ final class CollectionModel {
             results: photo.findings.map(\.result),
             passingScore: passingCheckScore
         )
+    }
+
+    /// Scores what was measured in a photo and writes the feedback. A check
+    /// that could not be measured is left out. The fixes come weakest check
+    /// first, which is also the largest gain first.
+    func technicalCheck(
+        for measurements: PhotoMeasurements,
+        camera: CameraSettings?
+    ) -> (findings: [CheckFinding], fixes: [SuggestedFix]) {
+        let outcomes = TechnicalCheckEngine.outcomes(
+            for: measurements,
+            rules: checkRules,
+            passingScore: passingCheckScore,
+            camera: camera
+        )
+        let report = TechnicalCheckReport(
+            results: outcomes.map(\.result),
+            passingScore: passingCheckScore
+        )
+        let findings = outcomes.map { CheckFinding(result: $0.result, detail: $0.detail) }
+        let fixes = report.needsWork.compactMap { result -> SuggestedFix? in
+            guard let advice = outcomes.first(where: { $0.result.kind == result.kind })?.advice else {
+                return nil
+            }
+            // The technical check is only part of the grade, so a fix is
+            // worth its gain in the check times that share.
+            let gain = report.overallGain(raising: result.kind, to: fixTargetScore) * gradeWeights.ai
+            return SuggestedFix(
+                kind: result.kind,
+                title: advice.title,
+                detail: advice.detail,
+                points: max(1, Int(gain.rounded()))
+            )
+        }
+        return (findings, fixes)
     }
 
     /// The technical check score, or nil when the check has not run.

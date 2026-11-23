@@ -21,6 +21,9 @@ struct ImportedPhoto: Identifiable {
     /// A copy sized for the screen. The full file is not kept in memory.
     let image: UIImage
     let metadata: PhotoMetadata
+    /// What the technical check measured in the photo. It stays empty until
+    /// the photo has been measured.
+    var measurements = PhotoMeasurements.none
 }
 
 /// Reads the image and its saved metadata from a photo file with ImageIO.
@@ -77,7 +80,8 @@ enum PhotoMetadataReader {
 
         return PhotoMetadata(
             camera: camera.isEmpty ? nil : camera,
-            capturedAt: (exif[kCGImagePropertyExifDateTimeOriginal] as? String).flatMap(captureDate(fromExif:)),
+            capturedAt: (exif[kCGImagePropertyExifDateTimeOriginal] as? String)
+                .flatMap { captureDate(fromExif: $0) },
             coordinate: coordinate(from: gps)
         )
     }
