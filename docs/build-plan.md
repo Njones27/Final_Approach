@@ -15,6 +15,34 @@ order of work. The design context stays the source for product requirements.
 | Spots | Curated at launch |
 | Reuse | Grading logic lives in `Packages/FinalApproachCore` so a car photography version could share it |
 | Order of work | UI design first, then one small milestone at a time |
+| Look | Darkroom. A true black ground in dark mode and white in light mode, photos first, one condensed face for numbers. See the next section |
+| Appearance | Follows the iPhone setting, with a System, Light, or Dark choice in Profile |
+
+## Interface
+
+The look is called Darkroom. The rules below apply to every screen.
+
+- Four tabs hold the four sections, which are Collection, Spots, Vote, and
+  Profile. Adding a photo is an action, so it is a button on Collection and
+  not a tab. The tab bar hides on pushed screens.
+- The system tab bar, toolbars, and sheets are used as they are, so they pick
+  up Liquid Glass on iOS 26 with no custom drawing.
+- The system font carries the interface. Barlow Condensed is bundled and used
+  only for grade numbers, registrations, and counts.
+- Colors live in `Design/Theme.swift`. Each one has a dark and a light value
+  under one name, so no screen branches on the color scheme. Labels that sit
+  on a photo stay white in both appearances.
+- A grade is shown on a scale that is split at the tier thresholds, so the
+  distance to the next tier is visible. Feedback is a short list of fixes,
+  each with the points it is worth.
+- The tier thresholds of 50, 65, and 80, the passing score of 75 for one
+  check, and the points for each fix are placeholders in `SampleData`. They
+  are passed in as data and are not decided yet.
+
+Two controls from the mockups wait for the milestone that gives them something
+to do. "Pick a different aircraft" on the Add screen arrives with
+identification, and the Notifications and Help rows in Profile arrive with
+their features.
 
 ## Identification
 

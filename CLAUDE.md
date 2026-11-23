@@ -17,7 +17,9 @@ for decisions and milestones before starting a feature.
   or `FinalApproach/FinalApproachTests/` joins its target without a project
   file edit.
 - `FinalApproach/FinalApproach/` is the SwiftUI app. `App/` holds the entry
-  point and environment, and `Features/` holds one folder or file per screen.
+  point, environment, and settings. `Design/` holds the theme and shared
+  views. `Models/` holds app state and sample data. `Services/` holds the
+  protocols for external services. `Features/` holds one folder per screen.
 - `FinalApproach/FinalApproachTests/` holds app unit tests (Swift Testing).
 - `FinalApproach/Config/App.xcconfig` holds environment build settings.
 - `FinalApproach/ci_scripts/` holds Xcode Cloud scripts.
@@ -66,6 +68,18 @@ on this Mac.
   `locale = Locale(identifier: "en_US_POSIX")`.
 - Wrap debug-only logging in `#if DEBUG`.
 - Every new screen gets a `#Preview` that uses sample data.
+
+## Interface conventions
+
+- Take every color from `Theme` in `Design/Theme.swift`. Do not write a color
+  literal in a screen, and do not branch on the color scheme.
+- Use the system font for interface text. Use `Font.condensed` only for grade
+  numbers, registrations, and counts.
+- Use the system tab bar, toolbars, and sheets so they keep Liquid Glass. The
+  tab bar holds sections only. An action is a button.
+- A control that has no destination yet is left out until its milestone.
+- A file that uses a type from `FinalApproachCore` imports it, because member
+  import visibility is on.
 
 ## Product constraints that affect code
 

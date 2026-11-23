@@ -7,5 +7,11 @@
 	<string>$(APP_ENVIRONMENT)</string>
 	<key>APIHost</key>
 	<string>$(API_HOST)</string>
+	<!-- Bundled fonts in Resources/Fonts. They are copied to the bundle root. -->
+	<key>UIAppFonts</key>
+	<array>
+		<string>BarlowCondensed-Medium.ttf</string>
+		<string>BarlowCondensed-SemiBold.ttf</string>
+	</array>
 </dict>
 </plist>

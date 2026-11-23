@@ -4,7 +4,8 @@ import SwiftUI
 struct FinalApproachApp: App {
     var body: some Scene {
         WindowGroup {
-            RootView()
+            // The app runs on sample data until the backend exists.
+            RootView(model: SampleData.model())
         }
     }
 }

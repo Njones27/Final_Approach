@@ -1,41 +1,36 @@
 import SwiftUI
 
-/// The five top-level tabs. Each tab is a placeholder until the UI pass
-/// replaces it with a designed screen.
+/// The four top-level sections. Adding a photo is an action, so it is a
+/// button on the Collection screen and not a tab.
 struct RootView: View {
+    @State private var model: CollectionModel
+    @AppStorage(AppearanceSetting.storageKey) private var appearance = AppearanceSetting.system
+
+    init(model: CollectionModel) {
+        _model = State(initialValue: model)
+    }
+
     var body: some View {
         TabView {
             Tab("Collection", systemImage: "square.grid.2x2") {
                 CollectionView()
             }
-            Tab("Map", systemImage: "map") {
-                PlaceholderScreen(
-                    title: "Map",
-                    systemImage: "map",
-                    message: "Spotting locations will appear here."
-                )
-            }
-            Tab("Add", systemImage: "plus.circle") {
-                PlaceholderScreen(
-                    title: "Add",
-                    systemImage: "camera",
-                    message: "Capture or import a photo to log an aircraft."
-                )
+            Tab("Spots", systemImage: "mappin.and.ellipse") {
+                SpotsView()
             }
             Tab("Vote", systemImage: "star") {
-                PlaceholderScreen(
-                    title: "Vote",
-                    systemImage: "star",
-                    message: "Photos waiting for your vote will appear here."
-                )
+                VoteView()
             }
-            Tab("Profile", systemImage: "person.crop.circle") {
+            Tab("Profile", systemImage: "person") {
                 ProfileView()
             }
         }
+        .tint(Theme.ink)
+        .environment(model)
+        .preferredColorScheme(appearance.colorScheme)
     }
 }
 
 #Preview {
-    RootView()
+    RootView(model: SampleData.model())
 }
