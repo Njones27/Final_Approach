@@ -55,6 +55,11 @@ their features.
   registration, and the airline on the Add screen. Only the type is required.
 - An imported image lives in memory for now. The local collection milestone
   stores it on the device.
+- A photo's saved location is kept with the photo, but it does not appear on
+  the Spots map yet. The map shows only the curated sample spots. The local
+  collection milestone puts the user's own located photos on the map and
+  links each one to the nearest spot. The spot map milestone shows disclosed
+  photos to other people.
 - The wording for camera settings, such as "1/640 s" and "f/7.1", lives in the
   core package so it is tested on Linux.
 
@@ -123,12 +128,15 @@ launch.
 4. **Technical check.** Sharpness, exposure, tilt, and framing run on the
    device and return feedback that names what to fix.
 5. **Local collection.** Quickshot logging, slots, and upgrades, stored on the
-   device.
+   device. The user's own located photos appear on the Spots map, each linked
+   to the nearest spot.
 6. **Identification.** Location tagging, registration reading, the flight data
    lookup, and the automatic description.
 7. **Backend foundation.** Sign in with Apple, photo upload, and sync in the
    beta account.
 8. **Voting and final grades.**
-9. **Spot map and spot pages.**
+9. **Spot map and spot pages.** Real spots from the backend, with the
+   disclosed photos other people took there. An undisclosed photo never
+   appears.
 10. **Launch preparation.** Prod account, Release workflow, external
     TestFlight, App Store review.
