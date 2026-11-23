@@ -8,9 +8,11 @@ import SwiftUI
 /// the device, and links it to the nearest listed spot.
 ///
 /// The screen suggests the aircraft from the registration read off the
-/// photo and from what was flying there, and fills in what it is sure of.
-/// The user can change every field. A photo with no saved location can be
-/// tagged with a listed spot.
+/// photo and from what was flying there. It fills the fields by itself only
+/// when both agree. A registration that was only read is offered for the
+/// user to tap, because part of it may be hidden in the photo. The user can
+/// change every field. A photo with no saved location can be tagged with a
+/// listed spot.
 struct AddPhotoView: View {
     let photo: ImportedPhoto
 
@@ -25,6 +27,12 @@ struct AddPhotoView: View {
     /// The flight the details came from, picked by the user or confirmed by
     /// the registration.
     @State private var chosenFlightID: String?
+    /// The details the app last filled in from a flight. A field that still
+    /// holds one of them was not typed by the user, so another flight may
+    /// replace or clear it.
+    @State private var filledType: String?
+    @State private var filledRegistration: String?
+    @State private var filledAirline: String?
     /// The spot the user tagged, for a photo that carries no location.
     @State private var taggedSpotID: String?
 
@@ -105,21 +113,37 @@ struct AddPhotoView: View {
                 text: $registration,
                 capitalization: .characters
             )
+            // A hardware keyboard ignores the capitals setting.
+            .onChange(of: registration) { _, typed in
+                let capitals = typed.uppercased()
+                if capitals != typed {
+                    registration = capitals
+                }
+            }
             DetailField(label: "Airline", prompt: "Southwest Airlines", text: $airline)
         }
     }
 
-    /// What the app worked out about the aircraft. Tapping a flight fills
-    /// the fields from it.
+    /// How many registrations read off the photo to offer.
+    private static let readingLimit = 3
+
+    /// What the app worked out about the aircraft. Tapping a row fills the
+    /// fields from it.
     private var suggestions: some View {
         VStack(alignment: .leading, spacing: 14) {
             SectionHeading("Suggested")
-            if let reading = identification.readings.first {
-                FactRow(
+            ForEach(identification.readings.prefix(Self.readingLimit)) { reading in
+                SuggestionRow(
                     systemImage: "text.viewfinder",
                     title: reading.registration,
-                    detail: "Read off the aircraft. Registered in \(reading.country)."
-                )
+                    detail: "Read off the aircraft. Check it, as part may be hidden. Registered in \(reading.country).",
+                    isChosen: trimmed(registration).uppercased() == reading.registration
+                ) {
+                    withAnimation(Motion.press) {
+                        registration = reading.registration
+                    }
+                }
+                .accessibilityHint("Fills in the registration")
             }
             ForEach(identification.flights) { flight in
                 FlightRow(
@@ -265,27 +289,44 @@ struct AddPhotoView: View {
                 self.chosenFlightID = nil
             }
         }
+        // Only a flight that the registration confirms is filled in
+        // without a tap. A registration that was only read may be cut
+        // short by a wing or a winglet, so the user picks it.
         if let confirmed = result.confirmedFlight {
             apply(confirmed.sighting, replacingTypedDetails: false)
-        }
-        if trimmed(registration).isEmpty, let reading = result.readings.first {
-            registration = reading.registration
         }
     }
 
     /// Fills the fields from a flight. A suggestion made by the app never
     /// writes over what the user typed. A flight the user tapped does.
+    ///
+    /// A detail the flight does not carry clears a field that still holds
+    /// what an earlier flight filled in, so one aircraft's details are
+    /// never logged with another's flight.
     private func apply(_ sighting: FlightSighting, replacingTypedDetails: Bool) {
-        if let value = sighting.aircraftType, replacingTypedDetails || trimmed(aircraftType).isEmpty {
-            aircraftType = value
-        }
-        if let value = sighting.registration, replacingTypedDetails || trimmed(registration).isEmpty {
-            registration = value
-        }
-        if let value = sighting.airline, replacingTypedDetails || trimmed(airline).isEmpty {
-            airline = value
-        }
+        aircraftType = filled(
+            aircraftType, from: sighting.aircraftType, lastFilled: filledType, replacing: replacingTypedDetails
+        )
+        registration = filled(
+            registration, from: sighting.registration, lastFilled: filledRegistration, replacing: replacingTypedDetails
+        )
+        airline = filled(
+            airline, from: sighting.airline, lastFilled: filledAirline, replacing: replacingTypedDetails
+        )
+        filledType = sighting.aircraftType
+        filledRegistration = sighting.registration
+        filledAirline = sighting.airline
         chosenFlightID = sighting.id
+    }
+
+    /// What one field should hold after a flight is applied.
+    private func filled(_ current: String, from value: String?, lastFilled: String?, replacing: Bool) -> String {
+        if let value {
+            return replacing || trimmed(current).isEmpty ? value : current
+        }
+        // The flight does not know this detail. What an earlier flight
+        // filled in goes, and what the user typed stays.
+        return current == lastFilled ? "" : current
     }
 
     /// The flight and route of the chosen flight, such as "flight AS331
@@ -376,31 +417,19 @@ private struct FactRow: View {
     }
 }
 
-/// One aircraft that was flying near the photo. Tapping it fills the
-/// fields from it.
-private struct FlightRow: View {
-    let flight: RankedFlight
+/// One suggestion the user can tap to fill the fields, with a check mark
+/// when it is the one in use.
+private struct SuggestionRow: View {
+    let systemImage: String
+    let title: String
+    let detail: String
     let isChosen: Bool
-    /// True when the registration read off the photo matches this flight.
-    let isConfirmed: Bool
     let choose: () -> Void
-
-    private var title: String {
-        flight.sighting.aircraftType ?? flight.sighting.callsign
-    }
-
-    private var detail: String {
-        let distance = Measurement(value: flight.distance, unit: UnitLength.meters)
-            .formatted(.measurement(width: .abbreviated, usage: .road))
-        let parts = [flight.sighting.airline, flight.sighting.activity, "\(distance) away"].compactMap { $0 }
-        let line = parts.joined(separator: ", ")
-        return isConfirmed ? "Matches the registration. \(line)" : line
-    }
 
     var body: some View {
         Button(action: choose) {
             HStack(alignment: .center, spacing: 14) {
-                Image(systemName: "airplane")
+                Image(systemName: systemImage)
                     .font(.body)
                     .foregroundStyle(Theme.ink)
                     .frame(width: 28)
@@ -425,8 +454,50 @@ private struct FlightRow: View {
         }
         .buttonStyle(TilePressStyle())
         .accessibilityElement(children: .combine)
-        .accessibilityHint("Fills in the aircraft details")
         .accessibilityAddTraits(isChosen ? .isSelected : [])
+    }
+}
+
+/// One aircraft that was flying near the photo. Tapping it fills the
+/// fields from it.
+private struct FlightRow: View {
+    let flight: RankedFlight
+    let isChosen: Bool
+    /// True when the registration read off the photo matches this flight.
+    let isConfirmed: Bool
+    let choose: () -> Void
+
+    /// The flight and its route with a capital, such as "Flight DAL1482".
+    private var flightText: String {
+        let activity = flight.sighting.activity
+        return activity.prefix(1).uppercased() + activity.dropFirst()
+    }
+
+    /// The aircraft type, or the flight when the provider gave only a
+    /// callsign.
+    private var title: String {
+        flight.sighting.aircraftType ?? flightText
+    }
+
+    private var detail: String {
+        let distance = Measurement(value: flight.distance, unit: UnitLength.meters)
+            .formatted(.measurement(width: .abbreviated, usage: .road))
+        // The flight is already the title when there is no type.
+        let activity: String? = flight.sighting.aircraftType == nil ? nil : flight.sighting.activity
+        let parts = [flight.sighting.airline, activity, "\(distance) away"].compactMap { $0 }
+        let line = parts.joined(separator: ", ")
+        return isConfirmed ? "Matches the registration. \(line)" : line
+    }
+
+    var body: some View {
+        SuggestionRow(
+            systemImage: "airplane",
+            title: title,
+            detail: detail,
+            isChosen: isChosen,
+            choose: choose
+        )
+        .accessibilityHint("Fills in the aircraft details")
     }
 }
 
