@@ -59,7 +59,7 @@ struct VoteView: View {
                             .font(.title2.weight(.bold))
                             .foregroundStyle(Theme.ink)
                             .id(candidate.id)
-                            .transition(.opacity)
+                            .transition(.fadeThrough)
                         Text("The photographer and the score stay hidden until you vote.")
                             .font(.subheadline)
                             .foregroundStyle(Theme.secondaryText)

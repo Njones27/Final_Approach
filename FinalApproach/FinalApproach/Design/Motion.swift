@@ -23,12 +23,19 @@ enum Motion {
     /// A marker travelling to its value and settling there.
     static let settle = Animation.spring(duration: 0.6, bounce: 0.18)
 
+    /// Old content fading away before its replacement arrives.
+    static let leave = Animation.easeOut(duration: 0.12)
+
+    /// The replacement fading in once the old content has gone.
+    static let arrive = Animation.easeOut(duration: 0.22).delay(0.1)
+
     /// How long content waits after its screen starts to open, so it moves
-    /// once the screen has arrived and not while it is still travelling.
-    static let arrival = 0.15
+    /// once the screen has arrived and not while it is still travelling. A
+    /// screen takes about a third of a second to open.
+    static let arrival = 0.3
 
     /// The pause between one item in a group and the next.
-    static let stagger = 0.05
+    static let stagger = 0.04
 
     /// How far revealed content rises into place.
     static let revealDistance: CGFloat = 10
@@ -57,6 +64,17 @@ private struct RevealOnAppear: ViewModifier {
                     isShown = true
                 }
             }
+    }
+}
+
+extension AnyTransition {
+    /// Old content fades out before its replacement fades in, so two pieces
+    /// of text never sit on top of each other.
+    static var fadeThrough: AnyTransition {
+        .asymmetric(
+            insertion: .opacity.animation(Motion.arrive),
+            removal: .opacity.animation(Motion.leave)
+        )
     }
 }
 
