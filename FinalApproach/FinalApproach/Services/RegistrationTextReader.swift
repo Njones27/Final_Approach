@@ -15,7 +15,7 @@ enum RegistrationTextReader {
 
     /// Reads a photo away from the main thread. A photo that cannot be
     /// read gives no text.
-    static func recognizedText(in image: UIImage) async -> [RecognizedText] {
+    static func recognizedText(in image: UIImage) async -> [FinalApproachCore.RecognizedText] {
         guard let cgImage = image.cgImage else { return [] }
         return await Task.detached(priority: .userInitiated) {
             read(cgImage)
@@ -23,7 +23,7 @@ enum RegistrationTextReader {
     }
 
     /// Reads an image that is already the right way up.
-    nonisolated static func read(_ image: CGImage) -> [RecognizedText] {
+    nonisolated static func read(_ image: CGImage) -> [FinalApproachCore.RecognizedText] {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         // Language correction turns a registration into the nearest word.
@@ -40,7 +40,7 @@ enum RegistrationTextReader {
         let observations = request.results ?? []
         return observations.flatMap { observation in
             observation.topCandidates(readingsPerLine).map { candidate in
-                RecognizedText(text: candidate.string, confidence: Double(candidate.confidence))
+                FinalApproachCore.RecognizedText(text: candidate.string, confidence: Double(candidate.confidence))
             }
         }
     }
