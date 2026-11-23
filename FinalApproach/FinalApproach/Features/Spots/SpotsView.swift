@@ -111,7 +111,9 @@ struct SpotsView: View {
                     .annotationTitles(.hidden)
                 }
                 ForEach(ownPhotoPlaces) { place in
-                    Annotation(place.photo.aircraftType, coordinate: place.coordinate, anchor: .center) {
+                    // A photo pin stands above its place, so it does not cover
+                    // the pin of the spot it was taken from.
+                    Annotation(place.photo.aircraftType, coordinate: place.coordinate, anchor: .bottom) {
                         PhotoPin(
                             image: model.image(for: place.photo),
                             description: place.photo.imageDescription,
@@ -276,27 +278,41 @@ private struct SpotPin: View {
     }
 }
 
-/// A small square of one of the user's own photos, placed where it was
-/// taken.
+/// A small square of one of the user's own photos, with a pointer down to
+/// where it was taken. The square stands clear of that place, because a
+/// photo is often taken at a listed spot and would cover the spot's pin.
 private struct PhotoPin: View {
     let image: Image
     let description: String
     let isSelected: Bool
     let select: () -> Void
 
+    /// The room left between the pointer and the place, which clears a
+    /// selected spot pin.
+    private static let clearance: CGFloat = 28
+
     var body: some View {
-        Button(action: select) {
-            PhotoFill(image: image, description: description)
-                .frame(width: isSelected ? 52 : 40, height: isSelected ? 52 : 40)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(Theme.ink, lineWidth: isSelected ? 3 : 2)
-                }
+        VStack(spacing: -2) {
+            Button(action: select) {
+                PhotoFill(image: image, description: description)
+                    .frame(width: isSelected ? 52 : 40, height: isSelected ? 52 : 40)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(Theme.ink, lineWidth: isSelected ? 3 : 2)
+                    }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Your photo, \(description)")
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+
+            Image(systemName: "arrowtriangle.down.fill")
+                .font(.system(size: 10))
+                .foregroundStyle(Theme.ink)
+                .accessibilityHidden(true)
+                .allowsHitTesting(false)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Your photo, \(description)")
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .padding(.bottom, Self.clearance)
     }
 }
 
@@ -312,12 +328,11 @@ private struct OwnPhotoCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             // The card and its button stay where they are when the photo
-            // changes. Only the picture and words fade to the new one.
-            HStack(alignment: .center, spacing: 12) {
-                PhotoFill(image: image, description: photo.imageDescription)
-                    .frame(width: 96, height: 64)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .matchedTransitionSource(id: ZoomSource.mapCard(photo.id), in: zoomNamespace)
+            // changes. Only the picture and words fade to the new one. The
+            // card is laid out as the spot card is, with the same heights,
+            // so the map under it holds still when one card takes the
+            // other's place.
+            VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(photo.aircraftType)
                         .font(.title3.weight(.bold))
@@ -328,7 +343,11 @@ private struct OwnPhotoCard: View {
                         .foregroundStyle(Theme.secondaryText)
                         .lineLimit(2, reservesSpace: true)
                 }
-                Spacer(minLength: 0)
+                PhotoFill(image: image, description: photo.imageDescription)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 70)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .matchedTransitionSource(id: ZoomSource.mapCard(photo.id), in: zoomNamespace)
             }
             .id(photo.id)
             .transition(.fadeThrough)
