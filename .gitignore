@@ -1,0 +1,29 @@
+# macOS
+.DS_Store
+
+# Env files (keep template tracked)
+.env
+.env.*
+!.env.example
+
+# Editors/IDEs
+.vscode/
+.idea/
+*.swp
+
+# Xcode / SwiftPM
+DerivedData/
+**/xcuserdata/
+*.xcuserstate
+.swiftpm/
+.build/
+
+# Written by FinalApproach/ci_scripts/ci_post_clone.sh in Xcode Cloud
+FinalApproach/Config/Environment.generated.xcconfig
+
+# Node / CDK (backend, added later)
+node_modules/
+cdk.out/
+
+# Claude Code local settings
+.claude/settings.local.json

@@ -1,0 +1,65 @@
+name: Core checks
+
+# Shared gate for pull requests and pushes to main (ci.yml). Uses no secrets.
+# Everything here runs on Linux, which keeps Xcode Cloud compute hours for the
+# builds that reach testers. The iOS app itself is built by Xcode Cloud; see
+# docs/ci-cd.md.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  core-package:
+    name: Core package tests
+    runs-on: ubuntu-latest
+    # Official Swift toolchain image. Keep the version in step with the Swift
+    # version of the Xcode release selected in the Xcode Cloud workflows.
+    container: swift:6.2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Build
+        run: swift build --package-path Packages/FinalApproachCore
+
+      - name: Test
+        run: swift test --package-path Packages/FinalApproachCore
+
+  ci-scripts:
+    name: Xcode Cloud script checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      # shellcheck ships with the hosted Ubuntu runner image.
+      - name: Lint ci_scripts
+        run: shellcheck FinalApproach/ci_scripts/*.sh
+
+      - name: Scripts are executable
+        run: |
+          for script in FinalApproach/ci_scripts/*.sh; do
+            test -x "$script" || { echo "$script is not executable"; exit 1; }
+          done
+
+      - name: Post-clone script writes the selected environment
+        run: |
+          workdir="$(mktemp -d)"
+          mkdir -p "$workdir/FinalApproach/Config"
+          CI_PRIMARY_REPOSITORY_PATH="$workdir" APP_ENVIRONMENT=beta API_HOST=api.example.com \
+            FinalApproach/ci_scripts/ci_post_clone.sh
+          grep -qx 'APP_ENVIRONMENT = beta' "$workdir/FinalApproach/Config/Environment.generated.xcconfig"
+          grep -qx 'API_HOST = api.example.com' "$workdir/FinalApproach/Config/Environment.generated.xcconfig"
+
+      - name: Post-clone script rejects a missing or unknown environment
+        run: |
+          workdir="$(mktemp -d)"
+          mkdir -p "$workdir/FinalApproach/Config"
+          if CI_PRIMARY_REPOSITORY_PATH="$workdir" FinalApproach/ci_scripts/ci_post_clone.sh; then
+            echo "expected a failure when APP_ENVIRONMENT is unset"; exit 1
+          fi
+          if CI_PRIMARY_REPOSITORY_PATH="$workdir" APP_ENVIRONMENT=staging FinalApproach/ci_scripts/ci_post_clone.sh; then
+            echo "expected a failure for an unknown environment"; exit 1
+          fi
