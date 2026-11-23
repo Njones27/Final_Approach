@@ -362,7 +362,7 @@ private struct FixRow: View {
 
 #Preview("Graded") {
     NavigationStack {
-        PhotoDetailView(photoID: "a350-n502dn")
+        PhotoDetailView(photoID: "b737-n823ak")
     }
     .environment(SampleData.model())
 }
@@ -387,7 +387,7 @@ private struct FixRow: View {
 
 #Preview("Voting") {
     NavigationStack {
-        PhotoDetailView(photoID: "a220-n3008j")
+        PhotoDetailView(photoID: "b2-spirit")
     }
     .environment(SampleData.model())
 }

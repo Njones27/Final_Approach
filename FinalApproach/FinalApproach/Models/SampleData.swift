@@ -4,9 +4,10 @@ import UIKit
 
 /// Sample data for previews and for running the app before a backend exists.
 ///
-/// The photos are drawn stand-ins, the spots are invented, and the tier
-/// thresholds and passing score are placeholders until the product decides
-/// the real values.
+/// The photos are the owner's own, from their portfolio site, with the
+/// camera settings they were taken at. The grades, findings, votes, and
+/// spots attached to them are invented, and the tier thresholds and passing
+/// score are placeholders until the product decides the real values.
 enum SampleData {
     /// Placeholder tier thresholds.
     static let thresholds = TierThresholds(bronze: 50, silver: 65, gold: 80)!
@@ -67,98 +68,69 @@ enum SampleData {
 
     // MARK: Photos
 
-    private static let b748Findings = findings(horizon: 92, sharpness: 88, exposure: 90, noise: 84, heatHaze: 80, framing: 82)
-    private static let b737Findings = findings(horizon: 88, sharpness: 62, exposure: 70, noise: 76, heatHaze: 68, framing: 80)
-    private static let e175Findings = findings(horizon: 78, sharpness: 72, exposure: 58, noise: 66, heatHaze: 74, framing: 72)
-    private static let b787Findings = findings(horizon: 70, sharpness: 52, exposure: 60, noise: 58, heatHaze: 66, framing: 78)
-    private static let a220Findings = findings(horizon: 84, sharpness: 78, exposure: 82, noise: 76, heatHaze: 80, framing: 80)
+    private static let vc25Findings = findings(horizon: 92, sharpness: 88, exposure: 90, noise: 84, heatHaze: 80, framing: 82)
+    private static let e175Findings = findings(horizon: 88, sharpness: 62, exposure: 70, noise: 76, heatHaze: 68, framing: 80)
+    private static let f22Findings = findings(horizon: 78, sharpness: 72, exposure: 58, noise: 66, heatHaze: 74, framing: 72)
+    private static let fa18Findings = findings(horizon: 70, sharpness: 52, exposure: 60, noise: 58, heatHaze: 66, framing: 78)
+    private static let b2Findings = findings(horizon: 84, sharpness: 78, exposure: 82, noise: 76, heatHaze: 80, framing: 80)
 
-    private static let b748Camera = CameraSettings(
-        cameraMake: "SONY",
-        cameraModel: "ILCE-1",
-        lensModel: "FE 200-600mm F5.6-6.3 G OSS",
-        focalLength: 420,
-        aperture: 6.3,
-        exposureTime: 1.0 / 1250,
-        iso: 800
-    )
-    private static let a350Camera = CameraSettings(
-        cameraMake: "Canon",
-        cameraModel: "Canon EOS R5",
-        lensModel: "RF100-500mm F4.5-7.1 L IS USM",
-        focalLength: 400,
-        aperture: 7.1,
-        exposureTime: 1.0 / 640,
-        iso: 200
-    )
-    private static let b737Camera = CameraSettings(
-        cameraMake: "NIKON CORPORATION",
-        cameraModel: "NIKON Z 8",
-        lensModel: "NIKKOR Z 180-600mm f/5.6-6.3 VR",
-        focalLength: 500,
-        aperture: 6.3,
-        exposureTime: 1.0 / 2000,
-        iso: 400
-    )
-    private static let e175Camera = CameraSettings(
-        cameraMake: "FUJIFILM",
-        cameraModel: "X-T5",
-        lensModel: "XF150-600mmF5.6-8 R LM OIS WR",
-        focalLength: 350,
-        aperture: 8,
-        exposureTime: 1.0 / 1600,
-        iso: 640
-    )
-    private static let b787Camera = CameraSettings(
-        cameraMake: "Canon",
-        cameraModel: "Canon EOS R7",
-        lensModel: "RF100-400mm F5.6-8 IS USM",
-        focalLength: 300,
-        aperture: 8,
-        exposureTime: 1.0 / 800,
-        iso: 100
-    )
-    private static let a220Camera = CameraSettings(
-        cameraMake: "SONY",
-        cameraModel: "ILCE-7M4",
-        lensModel: "FE 100-400mm F4.5-5.6 GM OSS",
-        focalLength: 400,
-        aperture: 5.6,
-        exposureTime: 1.0 / 1000,
-        iso: 250
-    )
+    /// The settings a sample photo was taken with. Every sample photo came
+    /// from the same camera and lens.
+    private static func camera(
+        focalLength: Double,
+        aperture: Double,
+        exposureTime: Double,
+        iso: Int
+    ) -> CameraSettings {
+        CameraSettings(
+            cameraMake: "Canon",
+            cameraModel: "Canon EOS R5",
+            lensModel: "RF100-500mm F4.5-7.1 L IS USM",
+            focalLength: focalLength,
+            aperture: aperture,
+            exposureTime: exposureTime,
+            iso: iso
+        )
+    }
+
+    private static let vc25Camera = camera(focalLength: 500, aperture: 7.1, exposureTime: 1.0 / 2000, iso: 12800)
+    private static let b737Camera = camera(focalLength: 223, aperture: 5, exposureTime: 1.0 / 30, iso: 2500)
+    private static let e175Camera = camera(focalLength: 223, aperture: 5, exposureTime: 1.0 / 40, iso: 2500)
+    private static let f22Camera = camera(focalLength: 400, aperture: 8, exposureTime: 1.0 / 4000, iso: 640)
+    private static let fa18Camera = camera(focalLength: 500, aperture: 8, exposureTime: 1.0 / 3200, iso: 1000)
+    private static let b2Camera = camera(focalLength: 500, aperture: 7.1, exposureTime: 1.0 / 4000, iso: 1000)
 
     static let photos: [SpottedPhoto] = [
         SpottedPhoto(
-            id: "b748-n605up",
-            imageName: "SampleB748",
-            aircraftType: "Boeing 747-8F",
-            registration: "N605UP",
-            airline: "UPS",
-            activity: "landing at dusk",
-            camera: b748Camera,
-            capturedAt: PhotoMetadataReader.captureDate(fromExif: "2026:11:02 17:58:41"),
+            id: "vc25a-29000",
+            imageName: "SampleVC25A",
+            aircraftType: "Boeing VC-25A",
+            registration: "29000",
+            airline: "US Air Force",
+            activity: "in a flyover",
+            camera: vc25Camera,
+            capturedAt: PhotoMetadataReader.captureDate(fromExif: "2026:07:04 19:18:20"),
             spotID: "atl-cargo-ramp",
             status: .graded(voteAverage: 4.55, voteCount: 18),
-            findings: b748Findings,
-            fixes: stockFixes(for: b748Findings)
+            findings: vc25Findings,
+            fixes: stockFixes(for: vc25Findings)
         ),
         SpottedPhoto(
-            id: "a350-n502dn",
-            imageName: "SampleA350",
-            aircraftType: "Airbus A350-900",
-            registration: "N502DN",
-            airline: "Delta Air Lines",
-            activity: "landing at Atlanta",
-            camera: a350Camera,
-            capturedAt: PhotoMetadataReader.captureDate(fromExif: "2026:11:14 17:42:05"),
+            id: "b737-n823ak",
+            imageName: "SampleB737",
+            aircraftType: "Boeing 737 MAX 8",
+            registration: "N823AK",
+            airline: "Alaska Airlines",
+            activity: "on the runway at dusk",
+            camera: b737Camera,
+            capturedAt: PhotoMetadataReader.captureDate(fromExif: "2026:05:17 20:33:01"),
             spotID: "atl-south-approach",
             status: .graded(voteAverage: 4.4, voteCount: 12),
             findings: [
                 finding(.horizon, 60, "It tilts 1.8° to the left. Rotate the crop to fix it."),
-                finding(.sharpness, 70, "The nose is a little soft. Try 1/1000 s or faster."),
+                finding(.sharpness, 70, "The nose is a little soft. Try 1/60 s or faster."),
                 finding(.exposure, 90, "Highlights and shadows both hold detail."),
-                finding(.noise, 86, "Clean at ISO 200."),
+                finding(.noise, 86, "Clean for ISO 2500."),
                 finding(.heatHaze, 82, "No shimmer along the fuselage."),
                 finding(.framing, 80, "The whole aircraft is in frame with room ahead."),
             ],
@@ -172,66 +144,67 @@ enum SampleData {
                 SuggestedFix(
                     kind: .sharpness,
                     title: "Use a faster shutter",
-                    detail: "The nose is a little soft at 1/640 s.",
+                    detail: "The nose is a little soft at 1/30 s.",
                     points: 3
                 ),
             ]
         ),
         SpottedPhoto(
-            id: "b737-n8642e",
-            imageName: "SampleB737",
-            aircraftType: "Boeing 737-800",
-            registration: "N8642E",
-            airline: "Southwest Airlines",
-            activity: "climbing out of Atlanta",
-            camera: b737Camera,
-            capturedAt: PhotoMetadataReader.captureDate(fromExif: "2026:10:26 10:15:22"),
-            spotID: "atl-north-deck",
-            status: .graded(voteAverage: 3.8, voteCount: 9),
-            findings: b737Findings,
-            fixes: stockFixes(for: b737Findings)
-        ),
-        SpottedPhoto(
-            id: "e175-n620qx",
+            id: "e175-delta",
             imageName: "SampleE175",
             aircraftType: "Embraer E175",
-            registration: "N620QX",
-            airline: "Horizon Air",
-            activity: "taking off",
+            // The registration is partly hidden by the wing in the photo.
+            registration: "",
+            airline: "Delta Connection",
+            activity: "touching down at dusk",
             camera: e175Camera,
-            capturedAt: PhotoMetadataReader.captureDate(fromExif: "2026:10:19 08:47:09"),
-            isLocationUndisclosed: true,
-            status: .graded(voteAverage: 3.55, voteCount: 7),
+            capturedAt: PhotoMetadataReader.captureDate(fromExif: "2026:05:17 20:31:21"),
+            spotID: "atl-north-deck",
+            status: .graded(voteAverage: 3.8, voteCount: 9),
             findings: e175Findings,
             fixes: stockFixes(for: e175Findings)
         ),
         SpottedPhoto(
-            id: "b787-n27965",
-            imageName: "SampleB787",
-            aircraftType: "Boeing 787-9",
-            registration: "N27965",
-            airline: "United Airlines",
-            activity: "on approach at sunset",
-            camera: b787Camera,
-            capturedAt: PhotoMetadataReader.captureDate(fromExif: "2026:11:08 17:31:50"),
-            spotID: "atl-south-approach",
-            status: .graded(voteAverage: 3.2, voteCount: 6),
-            findings: b787Findings,
-            fixes: stockFixes(for: b787Findings)
+            id: "f22-raptor",
+            imageName: "SampleF22",
+            aircraftType: "Lockheed Martin F-22 Raptor",
+            registration: "",
+            airline: "US Air Force",
+            activity: "turning on afterburner",
+            camera: f22Camera,
+            capturedAt: PhotoMetadataReader.captureDate(fromExif: "2026:08:16 16:59:25"),
+            isLocationUndisclosed: true,
+            status: .graded(voteAverage: 3.55, voteCount: 7),
+            findings: f22Findings,
+            fixes: stockFixes(for: f22Findings)
         ),
         SpottedPhoto(
-            id: "a220-n3008j",
-            imageName: "SampleA220",
-            aircraftType: "Airbus A220-300",
-            registration: "N3008J",
-            airline: "JetBlue",
-            activity: "on final approach",
-            camera: a220Camera,
-            capturedAt: PhotoMetadataReader.captureDate(fromExif: "2026:11:21 14:06:33"),
+            id: "fa18-blue-angels-5",
+            imageName: "SampleFA18",
+            aircraftType: "Boeing F/A-18E Super Hornet",
+            registration: "",
+            airline: "US Navy Blue Angels",
+            activity: "banking past",
+            camera: fa18Camera,
+            capturedAt: PhotoMetadataReader.captureDate(fromExif: "2026:06:20 14:59:48"),
+            spotID: "atl-south-approach",
+            status: .graded(voteAverage: 3.2, voteCount: 6),
+            findings: fa18Findings,
+            fixes: stockFixes(for: fa18Findings)
+        ),
+        SpottedPhoto(
+            id: "b2-spirit",
+            imageName: "SampleB2",
+            aircraftType: "Northrop Grumman B-2 Spirit",
+            registration: "",
+            airline: "US Air Force",
+            activity: "passing overhead",
+            camera: b2Camera,
+            capturedAt: PhotoMetadataReader.captureDate(fromExif: "2026:06:24 19:45:40"),
             spotID: "atl-west-road",
             status: .voting(votesIn: 3, hoursLeft: 31),
-            findings: a220Findings,
-            fixes: stockFixes(for: a220Findings)
+            findings: b2Findings,
+            fixes: stockFixes(for: b2Findings)
         ),
     ]
 
@@ -241,10 +214,10 @@ enum SampleData {
     static var importedPhoto: ImportedPhoto {
         ImportedPhoto(
             id: "preview-import",
-            image: UIImage(named: "SampleA350") ?? UIImage(),
+            image: UIImage(named: "SampleB737") ?? UIImage(),
             metadata: PhotoMetadata(
-                camera: a350Camera,
-                capturedAt: PhotoMetadataReader.captureDate(fromExif: "2026:11:14 17:42:05"),
+                camera: b737Camera,
+                capturedAt: PhotoMetadataReader.captureDate(fromExif: "2026:05:17 20:33:01"),
                 coordinate: Coordinate(latitude: 33.6215, longitude: -84.3990)
             )
         )
@@ -255,7 +228,7 @@ enum SampleData {
     static var importedPhotoWithoutMetadata: ImportedPhoto {
         ImportedPhoto(
             id: "preview-import-bare",
-            image: UIImage(named: "SampleB737") ?? UIImage(),
+            image: UIImage(named: "SampleE175") ?? UIImage(),
             metadata: .empty
         )
     }
@@ -275,15 +248,15 @@ enum SampleData {
     /// A logged photo that has been through the technical check and has no
     /// grade yet, which is how a photo looks right after it is imported.
     static func checkedPhoto(in model: CollectionModel) -> SpottedPhoto {
-        let check = model.technicalCheck(for: softBrightMeasurements, camera: b737Camera)
+        let check = model.technicalCheck(for: softBrightMeasurements, camera: vc25Camera)
         return SpottedPhoto(
             id: "preview-checked",
-            imageName: "SampleB737",
-            aircraftType: "Boeing 737-800",
-            registration: "N8642E",
-            airline: "Southwest Airlines",
+            imageName: "SampleVC25A",
+            aircraftType: "Boeing VC-25A",
+            registration: "29000",
+            airline: "US Air Force",
             activity: "",
-            camera: b737Camera,
+            camera: vc25Camera,
             status: .logged,
             findings: check.findings,
             fixes: check.fixes
@@ -294,12 +267,12 @@ enum SampleData {
     /// it has no score.
     static let unfoundPhoto = SpottedPhoto(
         id: "preview-unfound",
-        imageName: "SampleB737",
-        aircraftType: "Boeing 737-800",
-        registration: "N8642E",
-        airline: "Southwest Airlines",
+        imageName: "SampleB2",
+        aircraftType: "Northrop Grumman B-2 Spirit",
+        registration: "",
+        airline: "US Air Force",
         activity: "",
-        camera: b737Camera,
+        camera: b2Camera,
         status: .logged,
         isAircraftFound: false
     )
@@ -307,12 +280,12 @@ enum SampleData {
     // MARK: Voting
 
     static let voteQueue: [VoteCandidate] = [
-        VoteCandidate(id: "vote-b737", imageName: "SampleB737", aircraftType: "Boeing 737-800"),
-        VoteCandidate(id: "vote-b787", imageName: "SampleB787", aircraftType: "Boeing 787-9"),
         VoteCandidate(id: "vote-e175", imageName: "SampleE175", aircraftType: "Embraer E175"),
-        VoteCandidate(id: "vote-a220", imageName: "SampleA220", aircraftType: "Airbus A220-300"),
-        VoteCandidate(id: "vote-b748", imageName: "SampleB748", aircraftType: "Boeing 747-8F"),
-        VoteCandidate(id: "vote-a350", imageName: "SampleA350", aircraftType: "Airbus A350-900"),
+        VoteCandidate(id: "vote-fa18", imageName: "SampleFA18", aircraftType: "Boeing F/A-18E Super Hornet"),
+        VoteCandidate(id: "vote-b2", imageName: "SampleB2", aircraftType: "Northrop Grumman B-2 Spirit"),
+        VoteCandidate(id: "vote-f22", imageName: "SampleF22", aircraftType: "Lockheed Martin F-22 Raptor"),
+        VoteCandidate(id: "vote-vc25a", imageName: "SampleVC25A", aircraftType: "Boeing VC-25A"),
+        VoteCandidate(id: "vote-b737", imageName: "SampleB737", aircraftType: "Boeing 737 MAX 8"),
     ]
 
     // MARK: Spots
@@ -331,7 +304,7 @@ enum SampleData {
                     latitude: 33.6215,
                     longitude: -84.3990,
                     photoCount: 128,
-                    photoNames: ["SampleA350", "SampleB748", "SampleB787"]
+                    photoNames: ["SampleB737", "SampleVC25A", "SampleFA18"]
                 ),
                 Spot(
                     id: "atl-cargo-ramp",
@@ -340,7 +313,7 @@ enum SampleData {
                     latitude: 33.6492,
                     longitude: -84.4065,
                     photoCount: 64,
-                    photoNames: ["SampleB748", "SampleB737", "SampleE175"]
+                    photoNames: ["SampleVC25A", "SampleE175", "SampleF22"]
                 ),
                 Spot(
                     id: "atl-north-deck",
@@ -349,7 +322,7 @@ enum SampleData {
                     latitude: 33.6568,
                     longitude: -84.4310,
                     photoCount: 31,
-                    photoNames: ["SampleB737", "SampleA220", "SampleE175"]
+                    photoNames: ["SampleE175", "SampleB2", "SampleF22"]
                 ),
                 Spot(
                     id: "atl-west-road",
@@ -358,7 +331,7 @@ enum SampleData {
                     latitude: 33.6395,
                     longitude: -84.4575,
                     photoCount: 12,
-                    photoNames: ["SampleA220", "SampleB787", "SampleA350"]
+                    photoNames: ["SampleB2", "SampleFA18", "SampleB737"]
                 ),
             ]
         ),
@@ -375,7 +348,7 @@ enum SampleData {
                     latitude: 47.4285,
                     longitude: -122.3085,
                     photoCount: 47,
-                    photoNames: ["SampleE175", "SampleB737", "SampleA220"]
+                    photoNames: ["SampleF22", "SampleE175", "SampleB2"]
                 ),
                 Spot(
                     id: "sea-east-hill",
@@ -384,7 +357,7 @@ enum SampleData {
                     latitude: 47.4520,
                     longitude: -122.2920,
                     photoCount: 22,
-                    photoNames: ["SampleB787", "SampleA350", "SampleB748"]
+                    photoNames: ["SampleFA18", "SampleB737", "SampleVC25A"]
                 ),
             ]
         ),

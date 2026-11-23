@@ -142,7 +142,7 @@ private struct CheckRow: View {
 
 #Preview {
     NavigationStack {
-        TechnicalCheckView(photoID: "a350-n502dn")
+        TechnicalCheckView(photoID: "b737-n823ak")
     }
     .environment(SampleData.model())
 }
