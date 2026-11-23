@@ -57,6 +57,68 @@ public struct FrameRegion: Equatable, Codable, Sendable {
     }
 }
 
+/// How the aircraft was found in a photo.
+public enum SubjectSource: String, Codable, Sendable {
+    /// A mask that marks the aircraft's own pixels.
+    case mask
+    /// A box around the most prominent object, used when no mask was found.
+    /// It can miss wingtips, rotors, and the other aircraft in a formation.
+    case box
+}
+
+/// The pixels of a photo that belong to the aircraft. Rows run from the top
+/// of the photo to the bottom.
+///
+/// The mask can be smaller than the photo's brightness grid. A grid pixel
+/// belongs to the aircraft when the mask pixel at the same place does.
+public struct SubjectMask: Equatable, Sendable {
+    public let width: Int
+    public let height: Int
+    /// One value for each mask pixel. It is true where the aircraft is.
+    public let isSubject: [Bool]
+
+    /// Returns nil unless there is exactly one value for each pixel.
+    public init?(width: Int, height: Int, isSubject: [Bool]) {
+        guard width > 0, height > 0, isSubject.count == width * height else { return nil }
+        self.width = width
+        self.height = height
+        self.isSubject = isSubject
+    }
+
+    /// The smallest rectangle that holds the aircraft, or nil when the mask
+    /// marks nothing.
+    public var boundingRegion: FrameRegion? {
+        var left = width
+        var right = -1
+        var top = height
+        var bottom = -1
+        for row in 0..<height {
+            let rowStart = row * width
+            for column in 0..<width where isSubject[rowStart + column] {
+                left = min(left, column)
+                right = max(right, column)
+                top = min(top, row)
+                bottom = max(bottom, row)
+            }
+        }
+        guard right >= left, bottom >= top else { return nil }
+        return FrameRegion(
+            x: Double(left) / Double(width),
+            y: Double(top) / Double(height),
+            width: Double(right - left + 1) / Double(width),
+            height: Double(bottom - top + 1) / Double(height)
+        )
+    }
+
+    /// For each column or row of a grid, the mask column or row at the same
+    /// place.
+    static func positions(from gridCount: Int, to maskCount: Int) -> [Int] {
+        (0..<gridCount).map { index in
+            min(maskCount - 1, (2 * index + 1) * maskCount / (2 * gridCount))
+        }
+    }
+}
+
 /// The brightness of every pixel in a photo, from 0 for black to 255 for
 /// white. Rows run from the top of the photo to the bottom.
 ///
@@ -87,71 +149,108 @@ public struct LuminanceGrid: Equatable, Sendable {
     /// How much fine detail a region holds, as the variance of the Laplacian.
     /// A sharp subject gives a high value and a soft one a low value.
     ///
-    /// Returns nil when the region is smaller than three pixels on a side.
-    public func laplacianVariance(in region: FrameRegion = .whole) -> Double? {
+    /// With a mask, only the pixels that belong to the aircraft are counted.
+    /// Returns nil when the region is smaller than three pixels on a side or
+    /// the mask marks nothing inside it.
+    public func laplacianVariance(in region: FrameRegion = .whole, mask: SubjectMask? = nil) -> Double? {
         let (columns, rows) = bounds(of: region)
         guard columns.count >= 3, rows.count >= 3 else { return nil }
+        let maskColumns = mask.map { SubjectMask.positions(from: width, to: $0.width) }
+        let maskRows = mask.map { SubjectMask.positions(from: height, to: $0.height) }
         var sum = 0.0
         var sumOfSquares = 0.0
+        var count = 0
         pixels.withUnsafeBufferPointer { buffer in
             for row in (rows.lowerBound + 1)..<(rows.upperBound - 1) {
                 let rowStart = row * width
                 for column in (columns.lowerBound + 1)..<(columns.upperBound - 1) {
+                    if let mask, let maskColumns, let maskRows,
+                       !mask.isSubject[maskRows[row] * mask.width + maskColumns[column]] {
+                        continue
+                    }
                     let index = rowStart + column
                     let neighbors = Int(buffer[index - width]) + Int(buffer[index + width])
                         + Int(buffer[index - 1]) + Int(buffer[index + 1])
                     let response = Double(neighbors - 4 * Int(buffer[index]))
                     sum += response
                     sumOfSquares += response * response
+                    count += 1
                 }
             }
         }
-        let count = Double((columns.count - 2) * (rows.count - 2))
-        let mean = sum / count
-        return max(sumOfSquares / count - mean * mean, 0)
+        guard count > 0 else { return nil }
+        let mean = sum / Double(count)
+        return max(sumOfSquares / Double(count) - mean * mean, 0)
     }
 
     /// The share of a region that is at least as bright as `level`, from 0
-    /// to 1.
-    public func share(atOrAbove level: UInt8, in region: FrameRegion = .whole) -> Double {
-        share(in: region) { $0 >= level }
+    /// to 1. With a mask, only the aircraft's pixels are counted. Returns
+    /// nil when the mask marks nothing inside the region.
+    public func share(
+        atOrAbove level: UInt8,
+        in region: FrameRegion = .whole,
+        mask: SubjectMask? = nil
+    ) -> Double? {
+        share(in: region, mask: mask) { $0 >= level }
     }
 
     /// The share of a region that is at least as dark as `level`, from 0
-    /// to 1.
-    public func share(atOrBelow level: UInt8, in region: FrameRegion = .whole) -> Double {
-        share(in: region) { $0 <= level }
+    /// to 1. With a mask, only the aircraft's pixels are counted. Returns
+    /// nil when the mask marks nothing inside the region.
+    public func share(
+        atOrBelow level: UInt8,
+        in region: FrameRegion = .whole,
+        mask: SubjectMask? = nil
+    ) -> Double? {
+        share(in: region, mask: mask) { $0 <= level }
     }
 
-    private func share(in region: FrameRegion, where matches: (UInt8) -> Bool) -> Double {
+    private func share(
+        in region: FrameRegion,
+        mask: SubjectMask?,
+        where matches: (UInt8) -> Bool
+    ) -> Double? {
         let (columns, rows) = bounds(of: region)
+        let maskColumns = mask.map { SubjectMask.positions(from: width, to: $0.width) }
+        let maskRows = mask.map { SubjectMask.positions(from: height, to: $0.height) }
         var matching = 0
+        var count = 0
         pixels.withUnsafeBufferPointer { buffer in
             for row in rows {
                 let rowStart = row * width
-                for column in columns where matches(buffer[rowStart + column]) {
-                    matching += 1
+                for column in columns {
+                    if let mask, let maskColumns, let maskRows,
+                       !mask.isSubject[maskRows[row] * mask.width + maskColumns[column]] {
+                        continue
+                    }
+                    count += 1
+                    if matches(buffer[rowStart + column]) {
+                        matching += 1
+                    }
                 }
             }
         }
-        return Double(matching) / Double(columns.count * rows.count)
+        guard count > 0 else { return nil }
+        return Double(matching) / Double(count)
     }
 }
 
 /// What the device measured in a photo, before any score is given.
 ///
-/// Every value is optional because a measurement can fail. A photo of an
-/// aircraft against open sky has no horizon to measure, for example.
+/// Every value is optional because a measurement can fail. A photo in which
+/// no aircraft is found has no sharpness to measure, for example.
 public struct PhotoMeasurements: Equatable, Codable, Sendable {
     /// Where the aircraft is in the photo.
     public let subject: FrameRegion?
+    /// How the aircraft was found. It is nil when it was not found.
+    public let subjectSource: SubjectSource?
     /// The variance of the Laplacian over the aircraft.
     public let sharpness: Double?
-    /// The share of the aircraft's area that is blown out to white, from 0
-    /// to 1.
+    /// The share of the aircraft that is blown out to white, from 0 to 1.
+    /// It covers the whole photo when the aircraft was not found.
     public let blownHighlights: Double?
-    /// The share of the aircraft's area that is crushed to black, from 0
-    /// to 1.
+    /// The share of the aircraft that is crushed to black, from 0 to 1. It
+    /// covers the whole photo when the aircraft was not found.
     public let crushedShadows: Double?
     /// How far the horizon is from level, in degrees. The sign gives the
     /// direction.
@@ -159,12 +258,15 @@ public struct PhotoMeasurements: Equatable, Codable, Sendable {
 
     public init(
         subject: FrameRegion? = nil,
+        subjectSource: SubjectSource? = nil,
         sharpness: Double? = nil,
         blownHighlights: Double? = nil,
         crushedShadows: Double? = nil,
         tiltDegrees: Double? = nil
     ) {
         self.subject = subject
+        // A source means nothing without a place, so the two stay together.
+        self.subjectSource = subject == nil ? nil : subjectSource
         self.sharpness = sharpness
         self.blownHighlights = blownHighlights
         self.crushedShadows = crushedShadows
@@ -174,17 +276,44 @@ public struct PhotoMeasurements: Equatable, Codable, Sendable {
     /// A photo in which nothing could be measured.
     public static let none = PhotoMeasurements()
 
-    /// Measures sharpness and exposure from the photo's brightness. They are
-    /// measured over the aircraft, or over the whole photo when the aircraft
-    /// was not found.
-    public init(grid: LuminanceGrid, subject: FrameRegion?, tiltDegrees: Double?, rules: CheckRules) {
-        let region = subject ?? .whole
-        self.init(
-            subject: subject,
-            sharpness: grid.laplacianVariance(in: region),
-            blownHighlights: grid.share(atOrAbove: rules.highlightLevel, in: region),
-            crushedShadows: grid.share(atOrBelow: rules.shadowLevel, in: region),
-            tiltDegrees: tiltDegrees
-        )
+    /// Measures sharpness and exposure from the photo's brightness.
+    ///
+    /// With a mask, only the aircraft's own pixels are measured. With only a
+    /// box, everything inside the box is measured, which includes some sky.
+    /// With neither, exposure covers the whole photo and sharpness is left
+    /// out, because detail over a whole photo does not tell a sharp aircraft
+    /// from a soft one.
+    public init(
+        grid: LuminanceGrid,
+        mask: SubjectMask?,
+        fallbackBox: FrameRegion?,
+        tiltDegrees: Double?,
+        rules: CheckRules
+    ) {
+        if let mask, let region = mask.boundingRegion {
+            self.init(
+                subject: region,
+                subjectSource: .mask,
+                sharpness: grid.laplacianVariance(mask: mask),
+                blownHighlights: grid.share(atOrAbove: rules.highlightLevel, mask: mask),
+                crushedShadows: grid.share(atOrBelow: rules.shadowLevel, mask: mask),
+                tiltDegrees: tiltDegrees
+            )
+        } else if let fallbackBox {
+            self.init(
+                subject: fallbackBox,
+                subjectSource: .box,
+                sharpness: grid.laplacianVariance(in: fallbackBox),
+                blownHighlights: grid.share(atOrAbove: rules.highlightLevel, in: fallbackBox),
+                crushedShadows: grid.share(atOrBelow: rules.shadowLevel, in: fallbackBox),
+                tiltDegrees: tiltDegrees
+            )
+        } else {
+            self.init(
+                blownHighlights: grid.share(atOrAbove: rules.highlightLevel),
+                crushedShadows: grid.share(atOrBelow: rules.shadowLevel),
+                tiltDegrees: tiltDegrees
+            )
+        }
     }
 }

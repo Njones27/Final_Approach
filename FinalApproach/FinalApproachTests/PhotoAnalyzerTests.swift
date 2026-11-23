@@ -49,11 +49,12 @@ struct PhotoAnalyzerTests {
     @Test func measuringAnImageReadsItsDetailAndExposure() throws {
         let image = try #require(splitImage(width: 400, height: 200))
         let measurements = PhotoAnalyzer.measure(image, rules: SampleData.checkRules)
-        // Where Vision puts the subject is not fixed, so only the readings
-        // that always exist are checked.
-        #expect(measurements.sharpness != nil)
+        // Whether Vision finds a subject in a drawn image is not fixed, so
+        // only the readings that always exist are checked.
         #expect(measurements.blownHighlights != nil)
         #expect(measurements.crushedShadows != nil)
+        // The horizon check is off in the rules, so no tilt is read.
+        #expect(measurements.tiltDegrees == nil)
     }
 
     @Test func anImageWithNoPixelsGivesNoMeasurements() async {

@@ -66,30 +66,42 @@ their features.
 ## Technical check
 
 - A picked photo is measured on the device before the Add screen opens.
-  `Services/PhotoAnalyzer.swift` does it away from the main thread. Vision
-  finds the most prominent object, which is taken to be the aircraft, and the
-  horizon. The brightness of the pixels gives the sharpness, as the variance
-  of the Laplacian over the aircraft, and the exposure, as the share of that
-  area that is blown out or crushed.
+  `Services/PhotoAnalyzer.swift` does it away from the main thread. Vision's
+  foreground mask marks the aircraft's own pixels, and a formation comes back
+  as one mask. When there is no mask, a box around the most prominent object
+  stands in for it.
+- Sharpness is the variance of the Laplacian over the aircraft's pixels.
+  Exposure is the share of those pixels that is blown out or crushed.
+  Framing uses the rectangle around the mask.
 - The scoring and the wording live in the core package, in `CheckRules` and
   `TechnicalCheckEngine`, so they are tested on Linux. Each measurement is
   scored by a curve of points, and the curves are data.
-- Four checks run now, which are level horizon, sharpness, exposure, and
-  framing. Noise and heat haze are not built yet. A check with nothing to
-  measure is left out, and the technical check screen names it as not
-  checked. A photo of an aircraft against open sky has no horizon, for
-  example.
+- Three checks run now, which are sharpness, exposure, and framing. A check
+  that did not run is named as not checked on the technical check screen.
+  - **Level horizon is built but turned off in the rules.** On 40 real
+    photos Vision reported a tilt three times, each on an aircraft against
+    open sky where it followed the wings, and never on the four photos with
+    a real ground line. It needs another method before it is turned on.
+  - Noise and heat haze are not built yet.
+  - Sharpness needs the aircraft to be found. Detail over a whole photo did
+    not tell sharp photos from soft ones.
+  - Framing needs the mask. A box alone misses wingtips, rotors, and the
+    rest of a formation.
+  - An aircraft that fills most of the photo is treated as a deliberate
+    close-up, so reaching a side is not held against it.
 - A photo passes when no check that ran needs work. Passing is the gate
   before voting.
 - A fix is worth the points the grade would gain if that check reached the
   fix target score. That is the gain in the technical score times the
   technical check's share of the grade.
-- The rules in `SampleData` are placeholders. None has been tuned against
-  real photos, so the scores are not yet meaningful. Three limits are known.
-  The aircraft is the most prominent object Vision finds, which can be
-  something else. Sharpness and exposure are measured over the box around
-  the aircraft, which includes some sky. A level fuselage can be read as a
-  horizon.
+- The rules in `SampleData` are provisional. They come from 40 finished
+  photos measured on a Mac on 2026-11-23. That set holds no rejects, so the
+  low end of each curve is a guess, and the photos were edited web exports
+  and not camera originals. Tuning needs soft, blurred, hazy, and badly
+  exposed photos next.
+- The iOS simulator cannot run the Vision requests on its default device, so
+  the analyzer asks for the processor there. Results on a real iPhone have
+  not been checked yet.
 
 ## Identification
 

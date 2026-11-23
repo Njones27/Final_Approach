@@ -86,11 +86,11 @@ import Testing
 }
 
 @Suite struct TechnicalCheckEngineTests {
-    let rules = TestRules.rules
     let centered = FrameRegion(x: 0.25, y: 0.25, width: 0.5, height: 0.5)!
 
     func check(
         _ measurements: PhotoMeasurements,
+        rules: CheckRules = TestRules.rules,
         camera: CameraSettings? = nil
     ) -> [CheckOutcome] {
         TechnicalCheckEngine.outcomes(for: measurements, rules: rules, passingScore: 75, camera: camera)
@@ -99,6 +99,7 @@ import Testing
     @Test func aTiltedSoftShotFailsWithFeedbackNamingBothProblems() throws {
         let measurements = PhotoMeasurements(
             subject: centered,
+            subjectSource: .mask,
             sharpness: 40,
             blownHighlights: 0,
             crushedShadows: 0,
@@ -124,6 +125,7 @@ import Testing
     @Test func aCleanShotPassesEveryCheckWithNoFixes() {
         let measurements = PhotoMeasurements(
             subject: centered,
+            subjectSource: .mask,
             sharpness: 400,
             blownHighlights: 0,
             crushedShadows: 0,
@@ -141,11 +143,41 @@ import Testing
         ])
     }
 
+    @Test func aCheckThatIsTurnedOffNeverRuns() {
+        let measurements = PhotoMeasurements(
+            subject: centered,
+            subjectSource: .mask,
+            sharpness: 40,
+            blownHighlights: 0,
+            crushedShadows: 0,
+            tiltDegrees: 2
+        )
+        let withoutHorizon = TestRules.rules(enabling: [.sharpness, .exposure, .framing])
+        #expect(check(measurements, rules: withoutHorizon).map(\.result.kind) == [.sharpness, .exposure, .framing])
+        #expect(check(measurements, rules: TestRules.rules(enabling: [])).isEmpty)
+    }
+
     @Test func softnessFeedbackNamesTheShutterSpeedWhenItIsKnown() throws {
         let camera = CameraSettings(exposureTime: 1.0 / 250)
-        let outcome = try #require(check(PhotoMeasurements(sharpness: 40), camera: camera).first)
+        let measurements = PhotoMeasurements(subject: centered, subjectSource: .mask, sharpness: 40)
+        let outcome = try #require(check(measurements, camera: camera).first { $0.result.kind == .sharpness })
         #expect(outcome.detail == "The aircraft is soft at 1/250 s. Try a faster shutter speed.")
         #expect(outcome.advice?.detail == "The aircraft is soft at 1/250 s.")
+    }
+
+    @Test func sharpnessInABoxIsScoredOnItsOwnCurve() throws {
+        // 60 is soft on the aircraft's own pixels and sharp inside a box,
+        // because a box holds sky that pulls the number down.
+        let onMask = PhotoMeasurements(subject: centered, subjectSource: .mask, sharpness: 60)
+        let inBox = PhotoMeasurements(subject: centered, subjectSource: .box, sharpness: 60)
+        let maskScore = try #require(check(onMask).first { $0.result.kind == .sharpness }).result.score
+        let boxScore = try #require(check(inBox).first { $0.result.kind == .sharpness }).result.score
+        #expect(maskScore == 45)
+        #expect(boxScore == 81.25)
+    }
+
+    @Test func sharpnessDoesNotRunWhenNoAircraftWasFound() {
+        #expect(check(PhotoMeasurements(sharpness: 400)).isEmpty)
     }
 
     @Test func tiltFeedbackGivesTheAngleWithoutItsSign() throws {
@@ -154,42 +186,71 @@ import Testing
         #expect(outcome.detail == "The horizon tilts about 1.8°. Rotate the crop to level it.")
     }
 
-    @Test func theHorizonCheckDoesNotRunWithoutAHorizon() {
-        #expect(check(PhotoMeasurements(sharpness: 400)).map(\.result.kind) == [.sharpness])
-        // An angle past the limit is something else, such as a climbing aircraft.
+    @Test func anAnglePastTheLimitIsNotAHorizon() {
         #expect(check(PhotoMeasurements(tiltDegrees: 25)).isEmpty)
     }
 
     @Test func blownHighlightsAndCrushedShadowsGetDifferentAdvice() throws {
-        let bright = try #require(check(PhotoMeasurements(blownHighlights: 0.1, crushedShadows: 0)).first)
-        #expect(bright.result.kind == .exposure)
+        let bright = try #require(
+            check(PhotoMeasurements(subject: centered, subjectSource: .mask, blownHighlights: 0.1, crushedShadows: 0))
+                .first { $0.result.kind == .exposure }
+        )
         #expect(bright.advice?.title == "Lower the exposure")
         #expect(bright.detail == "Bright parts of the aircraft are blown out. Lower the exposure.")
 
-        let dark = try #require(check(PhotoMeasurements(blownHighlights: 0, crushedShadows: 0.1)).first)
+        let dark = try #require(
+            check(PhotoMeasurements(subject: centered, subjectSource: .mask, blownHighlights: 0, crushedShadows: 0.5))
+                .first { $0.result.kind == .exposure }
+        )
+        #expect(dark.result.score == 37.5)
         #expect(dark.advice?.title == "Raise the exposure")
         #expect(dark.detail == "Dark parts of the aircraft are crushed to black. Raise the exposure.")
     }
 
+    @Test func shadowsAreScoredMoreLooselyThanHighlights() throws {
+        // A tenth of the aircraft blown out fails. A tenth crushed passes.
+        let crushed = try #require(check(PhotoMeasurements(blownHighlights: 0, crushedShadows: 0.1)).first)
+        #expect(crushed.result.score == 90)
+        #expect(crushed.advice == nil)
+    }
+
+    @Test func exposureFeedbackNamesThePhotoWhenNoAircraftWasFound() throws {
+        let outcome = try #require(check(PhotoMeasurements(blownHighlights: 0.1, crushedShadows: 0)).first)
+        #expect(outcome.result.kind == .exposure)
+        #expect(outcome.detail == "Bright parts of the photo are blown out. Lower the exposure.")
+    }
+
     @Test func anAircraftAtTheEdgeIsCutOff() throws {
         let atLeftEdge = try #require(FrameRegion(x: 0, y: 0.25, width: 0.5, height: 0.5))
-        let outcome = try #require(check(PhotoMeasurements(subject: atLeftEdge)).first)
+        let outcome = try #require(check(PhotoMeasurements(subject: atLeftEdge, subjectSource: .mask)).first)
         #expect(outcome.result.kind == .framing)
         #expect(outcome.result.score == 40)
         #expect(outcome.detail == "The aircraft is cut off at the left edge. Zoom out a little.")
         #expect(outcome.advice?.title == "Keep the whole aircraft in frame")
     }
 
-    @Test func anAircraftThatFillsTheFrameDoesNotFit() throws {
-        let outcome = try #require(check(PhotoMeasurements(subject: .whole)).first)
+    @Test func aCloseUpThatFillsTheFrameIsNotCutOff() throws {
+        let outcome = try #require(check(PhotoMeasurements(subject: .whole, subjectSource: .mask)).first)
+        #expect(outcome.result.score == 100)
+        #expect(outcome.advice == nil)
+    }
+
+    @Test func aWideAircraftAcrossTheFrameDoesNotFit() throws {
+        let acrossTheBottom = try #require(FrameRegion(x: 0, y: 0.5, width: 1, height: 0.5))
+        let outcome = try #require(check(PhotoMeasurements(subject: acrossTheBottom, subjectSource: .mask)).first)
         #expect(outcome.detail == "The aircraft does not fit in the frame. Zoom out a little.")
     }
 
     @Test func aSmallAircraftShouldFillMoreOfTheFrame() throws {
         let small = try #require(FrameRegion(x: 0.375, y: 0.375, width: 0.25, height: 0.125))
-        let outcome = try #require(check(PhotoMeasurements(subject: small)).first)
+        let outcome = try #require(check(PhotoMeasurements(subject: small, subjectSource: .mask)).first)
         #expect(outcome.detail == "The aircraft fills only 3% of the frame. Get closer or crop tighter.")
         #expect(outcome.advice?.title == "Fill more of the frame")
+    }
+
+    @Test func framingDoesNotRunOnABoxAlone() {
+        let small = FrameRegion(x: 0.375, y: 0.375, width: 0.25, height: 0.125)
+        #expect(check(PhotoMeasurements(subject: small, subjectSource: .box)).isEmpty)
     }
 
     @Test func nothingMeasuredGivesNoOutcomes() {

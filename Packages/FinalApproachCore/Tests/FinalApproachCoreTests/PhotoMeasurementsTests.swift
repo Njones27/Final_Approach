@@ -83,29 +83,127 @@ import Testing
     }
 }
 
-@Suite struct PhotoMeasurementsTests {
-    @Test func measuresSharpnessAndExposureOverTheAircraft() throws {
+@Suite struct SubjectMaskTests {
+    /// A 4 by 4 mask that marks the middle four pixels.
+    static let middle = SubjectMask(
+        width: 4,
+        height: 4,
+        isSubject: [
+            false, false, false, false,
+            false, true, true, false,
+            false, true, true, false,
+            false, false, false, false,
+        ]
+    )!
+
+    @Test func rejectsTheWrongNumberOfPixels() {
+        #expect(SubjectMask(width: 2, height: 2, isSubject: [true]) == nil)
+        #expect(SubjectMask(width: 0, height: 0, isSubject: []) == nil)
+    }
+
+    @Test func boundsTheMarkedPixels() throws {
+        let region = try #require(Self.middle.boundingRegion)
+        #expect(region == FrameRegion(x: 0.25, y: 0.25, width: 0.5, height: 0.5))
+    }
+
+    @Test func anEmptyMaskHasNoBounds() throws {
+        let empty = try #require(SubjectMask(width: 2, height: 2, isSubject: [false, false, false, false]))
+        #expect(empty.boundingRegion == nil)
+    }
+
+    @Test func aSmallMaskIsStretchedOverALargerGrid() {
+        #expect(SubjectMask.positions(from: 8, to: 4) == [0, 0, 1, 1, 2, 2, 3, 3])
+        #expect(SubjectMask.positions(from: 4, to: 4) == [0, 1, 2, 3])
+        #expect(SubjectMask.positions(from: 2, to: 4) == [1, 3])
+    }
+
+    @Test func onlyTheMarkedPixelsAreMeasured() throws {
+        // The left half is black and the right half is white. The mask marks
+        // the middle, which is half black and half white.
         let grid = LuminanceGridTests.grid(columns: [0, 0, 0, 0, 255, 255, 255, 255], height: 8)
-        let rightHalf = try #require(FrameRegion(x: 0.5, y: 0, width: 0.5, height: 1))
+        #expect(grid.share(atOrAbove: 250, mask: Self.middle) == 0.5)
+        #expect(grid.share(atOrBelow: 5, mask: Self.middle) == 0.5)
+        #expect(try #require(grid.laplacianVariance(mask: Self.middle)) > 0)
+    }
+
+    @Test func detailOutsideTheMaskIsIgnored() throws {
+        // The only edge is in the last two columns, outside the mask.
+        let grid = LuminanceGridTests.grid(columns: [0, 0, 0, 0, 0, 0, 0, 255], height: 8)
+        #expect(grid.laplacianVariance(mask: Self.middle) == 0)
+        #expect(try #require(grid.laplacianVariance()) > 0)
+    }
+
+    @Test func anEmptyMaskGivesNoReading() throws {
+        let grid = LuminanceGridTests.grid(columns: [0, 0, 0, 0, 255, 255, 255, 255], height: 8)
+        let empty = try #require(SubjectMask(width: 2, height: 2, isSubject: [false, false, false, false]))
+        #expect(grid.laplacianVariance(mask: empty) == nil)
+        #expect(grid.share(atOrAbove: 250, mask: empty) == nil)
+    }
+}
+
+@Suite struct PhotoMeasurementsTests {
+    let grid = LuminanceGridTests.grid(columns: [0, 0, 0, 0, 255, 255, 255, 255], height: 8)
+
+    @Test func measuresTheAircraftsOwnPixelsWhenThereIsAMask() throws {
         let measurements = PhotoMeasurements(
             grid: grid,
-            subject: rightHalf,
+            mask: SubjectMaskTests.middle,
+            fallbackBox: .whole,
             tiltDegrees: 1.5,
             rules: TestRules.rules
         )
-        #expect(measurements.subject == rightHalf)
-        #expect(measurements.sharpness == 0)
-        #expect(measurements.blownHighlights == 1)
-        #expect(measurements.crushedShadows == 0)
-        #expect(measurements.tiltDegrees == 1.5)
-    }
-
-    @Test func measuresTheWholePhotoWhenNoAircraftWasFound() throws {
-        let grid = LuminanceGridTests.grid(columns: [0, 0, 0, 0, 255, 255, 255, 255], height: 8)
-        let measurements = PhotoMeasurements(grid: grid, subject: nil, tiltDegrees: nil, rules: TestRules.rules)
-        #expect(measurements.subject == nil)
+        #expect(measurements.subject == FrameRegion(x: 0.25, y: 0.25, width: 0.5, height: 0.5))
+        #expect(measurements.subjectSource == .mask)
         #expect(try #require(measurements.sharpness) > 0)
         #expect(measurements.blownHighlights == 0.5)
         #expect(measurements.crushedShadows == 0.5)
+        #expect(measurements.tiltDegrees == 1.5)
+    }
+
+    @Test func measuresInsideTheBoxWhenThereIsNoMask() throws {
+        let rightHalf = try #require(FrameRegion(x: 0.5, y: 0, width: 0.5, height: 1))
+        let measurements = PhotoMeasurements(
+            grid: grid,
+            mask: nil,
+            fallbackBox: rightHalf,
+            tiltDegrees: nil,
+            rules: TestRules.rules
+        )
+        #expect(measurements.subject == rightHalf)
+        #expect(measurements.subjectSource == .box)
+        #expect(measurements.sharpness == 0)
+        #expect(measurements.blownHighlights == 1)
+        #expect(measurements.crushedShadows == 0)
+    }
+
+    @Test func anEmptyMaskFallsBackToTheBox() throws {
+        let empty = try #require(SubjectMask(width: 2, height: 2, isSubject: [false, false, false, false]))
+        let measurements = PhotoMeasurements(
+            grid: grid,
+            mask: empty,
+            fallbackBox: .whole,
+            tiltDegrees: nil,
+            rules: TestRules.rules
+        )
+        #expect(measurements.subjectSource == .box)
+    }
+
+    @Test func aPhotoWithNoAircraftHasExposureButNoSharpness() {
+        let measurements = PhotoMeasurements(
+            grid: grid,
+            mask: nil,
+            fallbackBox: nil,
+            tiltDegrees: nil,
+            rules: TestRules.rules
+        )
+        #expect(measurements.subject == nil)
+        #expect(measurements.subjectSource == nil)
+        #expect(measurements.sharpness == nil)
+        #expect(measurements.blownHighlights == 0.5)
+        #expect(measurements.crushedShadows == 0.5)
+    }
+
+    @Test func aSourceWithoutAPlaceIsDropped() {
+        #expect(PhotoMeasurements(subjectSource: .mask).subjectSource == nil)
     }
 }

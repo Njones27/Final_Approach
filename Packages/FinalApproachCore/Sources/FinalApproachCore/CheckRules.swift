@@ -56,54 +56,73 @@ public struct ScoreCurve: Equatable, Codable, Sendable {
 /// Every value is data so it can come from the backend and be tuned without
 /// a release.
 public struct CheckRules: Equatable, Codable, Sendable {
+    /// The checks that run. A check that is not listed is never scored, so
+    /// one that is not yet trustworthy can stay off.
+    public let enabledChecks: Set<CheckKind>
     /// The longest side, in pixels, of the copy of the photo that is
-    /// measured. The sharpness curve only holds at this size.
+    /// measured. The sharpness curves only hold at this size.
     public let analysisPixelSize: Int
-    /// Scores the variance of the Laplacian over the aircraft.
-    public let sharpness: ScoreCurve
+    /// Scores the variance of the Laplacian over the aircraft's own pixels.
+    public let sharpnessOnMask: ScoreCurve
+    /// Scores the variance of the Laplacian over a box around the aircraft.
+    /// The box holds some sky, so the numbers run lower than on a mask.
+    public let sharpnessInBox: ScoreCurve
     /// Scores how many degrees the horizon is from level.
     public let tilt: ScoreCurve
     /// The largest angle, in degrees, that is still read as a horizon. A
-    /// larger one is taken to be something else, such as a climbing
-    /// aircraft, and the check does not run.
+    /// larger one is taken to be something else, and the check does not run.
     public let maximumTilt: Double
     /// A pixel at least this bright counts as blown out.
     public let highlightLevel: UInt8
     /// A pixel at least this dark counts as crushed.
     public let shadowLevel: UInt8
-    /// Scores the share of the aircraft's area that is blown out or
-    /// crushed, from 0 to 1.
-    public let clipping: ScoreCurve
+    /// Scores the share of the aircraft that is blown out, from 0 to 1.
+    public let highlights: ScoreCurve
+    /// Scores the share of the aircraft that is crushed, from 0 to 1. It is
+    /// looser than the highlight curve, because a dark aircraft in shade has
+    /// large black areas that are correct.
+    public let shadows: ScoreCurve
     /// Scores the share of the photo the aircraft fills, from 0 to 1. The
     /// score is expected to rise with the share.
     public let subjectSize: ScoreCurve
     /// An aircraft closer to a side of the photo than this share of its
-    /// width or height counts as cut off.
+    /// width or height counts as reaching that side.
     public let edgeMargin: Double
+    /// An aircraft that fills at least this share of the photo is taken to
+    /// be a deliberate close-up, so reaching a side is not held against it.
+    public let closeUpArea: Double
     /// The highest framing score an aircraft that is cut off can get.
     public let cutOffScore: Double
 
     public init(
+        enabledChecks: Set<CheckKind>,
         analysisPixelSize: Int,
-        sharpness: ScoreCurve,
+        sharpnessOnMask: ScoreCurve,
+        sharpnessInBox: ScoreCurve,
         tilt: ScoreCurve,
         maximumTilt: Double,
         highlightLevel: UInt8,
         shadowLevel: UInt8,
-        clipping: ScoreCurve,
+        highlights: ScoreCurve,
+        shadows: ScoreCurve,
         subjectSize: ScoreCurve,
         edgeMargin: Double,
+        closeUpArea: Double,
         cutOffScore: Double
     ) {
+        self.enabledChecks = enabledChecks
         self.analysisPixelSize = analysisPixelSize
-        self.sharpness = sharpness
+        self.sharpnessOnMask = sharpnessOnMask
+        self.sharpnessInBox = sharpnessInBox
         self.tilt = tilt
         self.maximumTilt = maximumTilt
         self.highlightLevel = highlightLevel
         self.shadowLevel = shadowLevel
-        self.clipping = clipping
+        self.highlights = highlights
+        self.shadows = shadows
         self.subjectSize = subjectSize
         self.edgeMargin = edgeMargin
+        self.closeUpArea = closeUpArea
         self.cutOffScore = cutOffScore
     }
 }

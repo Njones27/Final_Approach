@@ -158,11 +158,11 @@ struct CollectionModelTests {
     }
 
     @Test func theTechnicalCheckNamesWhatToFixWeakestFirst() {
-        let check = model.technicalCheck(for: SampleData.softTiltedMeasurements, camera: nil)
-        #expect(check.findings.count == 4)
-        #expect(check.fixes.map(\.title) == ["Use a faster shutter", "Straighten the horizon"])
-        #expect(check.fixes.map(\.detail) == ["The aircraft is soft.", "It tilts about 1.8°."])
-        #expect(check.fixes.map(\.points) == [3, 2])
+        let check = model.technicalCheck(for: SampleData.softBrightMeasurements, camera: nil)
+        #expect(check.findings.count == 3)
+        #expect(check.fixes.map(\.title) == ["Use a faster shutter", "Lower the exposure"])
+        #expect(check.fixes.map(\.detail) == ["The aircraft is soft.", "Bright parts of the aircraft lose detail."])
+        #expect(check.fixes.map(\.points) == [5, 4])
     }
 
     @Test func aPhotoWithNothingMeasuredHasNoCheck() {
@@ -174,7 +174,7 @@ struct CollectionModelTests {
     @Test func aCheckedPhotoHasATechnicalScoreAndNoGrade() {
         let photo = SampleData.checkedPhoto(in: model)
         model.add(photo)
-        #expect(model.technicalScore(for: photo)?.rounded() == 72)
+        #expect(model.technicalScore(for: photo)?.rounded() == 59)
         #expect(model.finalScore(for: photo) == nil)
         #expect(photo.fixes.first?.detail == "The aircraft is soft at 1/2000 s.")
     }

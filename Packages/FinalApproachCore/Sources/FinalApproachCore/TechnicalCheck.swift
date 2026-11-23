@@ -125,7 +125,8 @@ public struct CheckOutcome: Equatable, Sendable {
 /// Scores a photo's measurements and writes the feedback for each check.
 public enum TechnicalCheckEngine {
     /// One outcome for each check that could run, in the order of
-    /// `CheckKind`. A check with no measurement is left out.
+    /// `CheckKind`. A check that is turned off in the rules or has no
+    /// measurement is left out.
     ///
     /// - Parameters:
     ///   - measurements: What the device measured in the photo.
@@ -154,9 +155,9 @@ public enum TechnicalCheckEngine {
         rules: CheckRules,
         passingScore: Double
     ) -> CheckOutcome? {
-        guard let tilt = measurements.tiltDegrees, tilt.isFinite, abs(tilt) <= rules.maximumTilt else {
-            return nil
-        }
+        guard rules.enabledChecks.contains(.horizon),
+              let tilt = measurements.tiltDegrees, tilt.isFinite, abs(tilt) <= rules.maximumTilt
+        else { return nil }
         let score = rules.tilt.score(for: abs(tilt))
         if score >= passingScore {
             return outcome(.horizon, score, "The horizon is level.")
@@ -176,8 +177,15 @@ public enum TechnicalCheckEngine {
         passingScore: Double,
         camera: CameraSettings?
     ) -> CheckOutcome? {
-        guard let sharpness = measurements.sharpness else { return nil }
-        let score = rules.sharpness.score(for: sharpness)
+        guard rules.enabledChecks.contains(.sharpness),
+              let sharpness = measurements.sharpness,
+              let source = measurements.subjectSource
+        else { return nil }
+        let curve = switch source {
+        case .mask: rules.sharpnessOnMask
+        case .box: rules.sharpnessInBox
+        }
+        let score = curve.score(for: sharpness)
         if score >= passingScore {
             return outcome(.sharpness, score, "The aircraft is sharp.")
         }
@@ -199,9 +207,12 @@ public enum TechnicalCheckEngine {
         rules: CheckRules,
         passingScore: Double
     ) -> CheckOutcome? {
-        let highlights = measurements.blownHighlights.map { rules.clipping.score(for: $0) }
-        let shadows = measurements.crushedShadows.map { rules.clipping.score(for: $0) }
+        guard rules.enabledChecks.contains(.exposure) else { return nil }
+        let highlights = measurements.blownHighlights.map { rules.highlights.score(for: $0) }
+        let shadows = measurements.crushedShadows.map { rules.shadows.score(for: $0) }
         guard let score = [highlights, shadows].compactMap({ $0 }).min() else { return nil }
+        // Exposure covers the whole photo when the aircraft was not found.
+        let place = measurements.subject == nil ? "the photo" : "the aircraft"
         if score >= passingScore {
             return outcome(.exposure, score, "Highlights and shadows both hold detail.")
         }
@@ -211,15 +222,15 @@ public enum TechnicalCheckEngine {
             return outcome(
                 .exposure,
                 score,
-                "Bright parts of the aircraft are blown out. Lower the exposure.",
-                FixAdvice(title: "Lower the exposure", detail: "Bright parts of the aircraft lose detail.")
+                "Bright parts of \(place) are blown out. Lower the exposure.",
+                FixAdvice(title: "Lower the exposure", detail: "Bright parts of \(place) lose detail.")
             )
         }
         return outcome(
             .exposure,
             score,
-            "Dark parts of the aircraft are crushed to black. Raise the exposure.",
-            FixAdvice(title: "Raise the exposure", detail: "Dark parts of the aircraft lose detail.")
+            "Dark parts of \(place) are crushed to black. Raise the exposure.",
+            FixAdvice(title: "Raise the exposure", detail: "Dark parts of \(place) lose detail.")
         )
     }
 
@@ -228,8 +239,18 @@ public enum TechnicalCheckEngine {
         rules: CheckRules,
         passingScore: Double
     ) -> CheckOutcome? {
-        guard let subject = measurements.subject else { return nil }
-        let edges = subject.edgesTouched(margin: rules.edgeMargin)
+        // Framing needs the aircraft's outline. A box alone can miss the
+        // wingtips or the rest of a formation, which would read as cut off
+        // or too small.
+        guard rules.enabledChecks.contains(.framing),
+              let subject = measurements.subject,
+              measurements.subjectSource == .mask
+        else { return nil }
+        // An aircraft that fills the photo is a close-up, so reaching a side
+        // is not held against it.
+        let edges: [FrameEdge] = subject.area >= rules.closeUpArea
+            ? []
+            : subject.edgesTouched(margin: rules.edgeMargin)
         let sizeScore = rules.subjectSize.score(for: subject.area)
         let score = edges.isEmpty ? sizeScore : min(sizeScore, rules.cutOffScore)
         if score >= passingScore {

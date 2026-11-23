@@ -4,18 +4,26 @@ import Testing
 
 /// Rules with round numbers, so the expected scores are easy to read.
 enum TestRules {
-    static let rules = CheckRules(
-        analysisPixelSize: 1600,
-        sharpness: ScoreCurve(pairs: [(0, 0), (100, 75), (300, 100)])!,
-        tilt: ScoreCurve(pairs: [(0, 100), (1, 75), (5, 0)])!,
-        maximumTilt: 10,
-        highlightLevel: 250,
-        shadowLevel: 5,
-        clipping: ScoreCurve(pairs: [(0, 100), (0.02, 75), (0.2, 0)])!,
-        subjectSize: ScoreCurve(pairs: [(0, 0), (0.1, 75), (0.3, 100)])!,
-        edgeMargin: 0.01,
-        cutOffScore: 40
-    )
+    static let rules = rules(enabling: [.horizon, .sharpness, .exposure, .framing])
+
+    static func rules(enabling checks: Set<CheckKind>) -> CheckRules {
+        CheckRules(
+            enabledChecks: checks,
+            analysisPixelSize: 1600,
+            sharpnessOnMask: ScoreCurve(pairs: [(0, 0), (100, 75), (300, 100)])!,
+            sharpnessInBox: ScoreCurve(pairs: [(0, 0), (40, 75), (120, 100)])!,
+            tilt: ScoreCurve(pairs: [(0, 100), (1, 75), (5, 0)])!,
+            maximumTilt: 10,
+            highlightLevel: 250,
+            shadowLevel: 5,
+            highlights: ScoreCurve(pairs: [(0, 100), (0.02, 75), (0.2, 0)])!,
+            shadows: ScoreCurve(pairs: [(0, 100), (0.25, 75), (0.75, 0)])!,
+            subjectSize: ScoreCurve(pairs: [(0, 0), (0.1, 75), (0.3, 100)])!,
+            edgeMargin: 0.01,
+            closeUpArea: 0.6,
+            cutOffScore: 40
+        )
+    }
 }
 
 @Suite struct ScoreCurveTests {

@@ -14,18 +14,29 @@ enum SampleData {
     static let passingCheckScore = 75.0
     /// Placeholder score a check is expected to reach once it is fixed.
     static let fixTargetScore = 90.0
-    /// Placeholder rules for the technical check. None of these numbers has
-    /// been tuned against real photos yet.
+    /// Provisional rules for the technical check.
+    ///
+    /// The curves come from 40 finished aircraft photos measured on a Mac.
+    /// That set holds no rejects, so the low end of each curve is a guess,
+    /// and the photos were edited web exports and not camera originals.
+    ///
+    /// The horizon check is off. On those photos Vision reported a tilt only
+    /// on aircraft against open sky, where it followed the wings, and never
+    /// on a photo with a real ground line.
     static let checkRules = CheckRules(
+        enabledChecks: [.sharpness, .exposure, .framing],
         analysisPixelSize: 1600,
-        sharpness: ScoreCurve(pairs: [(10, 10), (50, 50), (100, 75), (300, 90), (800, 100)])!,
+        sharpnessOnMask: ScoreCurve(pairs: [(30, 10), (90, 45), (170, 75), (400, 90), (900, 100)])!,
+        sharpnessInBox: ScoreCurve(pairs: [(15, 10), (35, 40), (55, 75), (150, 90), (400, 100)])!,
         tilt: ScoreCurve(pairs: [(0, 100), (0.5, 90), (1, 75), (2, 55), (5, 20), (10, 0)])!,
         maximumTilt: 10,
         highlightLevel: 252,
         shadowLevel: 3,
-        clipping: ScoreCurve(pairs: [(0, 100), (0.005, 90), (0.02, 75), (0.05, 55), (0.2, 10), (0.5, 0)])!,
-        subjectSize: ScoreCurve(pairs: [(0.01, 10), (0.05, 50), (0.12, 75), (0.25, 90), (0.4, 100)])!,
+        highlights: ScoreCurve(pairs: [(0, 100), (0.01, 90), (0.04, 75), (0.1, 50), (0.3, 10), (0.6, 0)])!,
+        shadows: ScoreCurve(pairs: [(0, 100), (0.05, 90), (0.25, 75), (0.5, 50), (0.8, 10)])!,
+        subjectSize: ScoreCurve(pairs: [(0.01, 10), (0.03, 50), (0.07, 75), (0.2, 90), (0.4, 100)])!,
         edgeMargin: 0.01,
+        closeUpArea: 0.6,
         cutOffScore: 40
     )
 
@@ -249,20 +260,20 @@ enum SampleData {
 
     // MARK: Technical check
 
-    /// What the device might measure in a soft photo with a tilted horizon.
-    /// The exposure and the framing are fine.
-    static let softTiltedMeasurements = PhotoMeasurements(
+    /// What the device might measure in a soft photo with blown highlights.
+    /// The framing is fine.
+    static let softBrightMeasurements = PhotoMeasurements(
         subject: FrameRegion(x: 0.2, y: 0.3, width: 0.6, height: 0.35),
-        sharpness: 45,
-        blownHighlights: 0.001,
-        crushedShadows: 0,
-        tiltDegrees: 1.8
+        subjectSource: .mask,
+        sharpness: 80,
+        blownHighlights: 0.12,
+        crushedShadows: 0
     )
 
     /// A logged photo that has been through the technical check and has no
     /// grade yet, which is how a photo looks right after it is imported.
     static func checkedPhoto(in model: CollectionModel) -> SpottedPhoto {
-        let check = model.technicalCheck(for: softTiltedMeasurements, camera: b737Camera)
+        let check = model.technicalCheck(for: softBrightMeasurements, camera: b737Camera)
         return SpottedPhoto(
             id: "preview-checked",
             imageName: "SampleB737",
