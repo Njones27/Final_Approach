@@ -44,6 +44,20 @@ to do. "Pick a different aircraft" on the Add screen arrives with
 identification, and the Notifications and Help rows in Profile arrive with
 their features.
 
+## Import
+
+- The Add button opens the system photo picker, which needs no library
+  permission. The app asks for the file as it is, so its metadata survives.
+- `Services/PhotoMetadataReader.swift` reads the file with ImageIO on the
+  device. It takes the camera settings, the capture time, and the location,
+  and makes a copy of the image sized for the screen.
+- Until identification exists, the user types the aircraft type, the
+  registration, and the airline on the Add screen. Only the type is required.
+- An imported image lives in memory for now. The local collection milestone
+  stores it on the device.
+- The wording for camera settings, such as "1/640 s" and "f/7.1", lives in the
+  core package so it is tested on Linux.
+
 ## Identification
 
 Identification runs in four steps, and the user only confirms the result.

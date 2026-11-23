@@ -6,9 +6,10 @@ individual airframes, and better photos are worth more. Each graded shot gets
 an on-device technical check and community votes, with specific feedback on
 what to fix.
 
-The project is at the UI stage. Every screen is built in SwiftUI and runs on
-sample data. Importing real photos, the technical check, and the backend come
-next, one milestone at a time.
+Every screen is built in SwiftUI. A photo can be imported from the library,
+and its camera settings, capture time, and location are read on the device.
+The rest still runs on sample data. The technical check, the local
+collection, and the backend come next, one milestone at a time.
 
 ## What's inside
 

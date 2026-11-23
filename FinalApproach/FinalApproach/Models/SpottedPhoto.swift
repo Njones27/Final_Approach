@@ -34,13 +34,19 @@ struct SuggestedFix: Identifiable {
 /// One photo of one aircraft in the user's collection.
 struct SpottedPhoto: Identifiable {
     let id: String
-    /// The name of the image in the asset catalog. Imported photos replace
-    /// this with a file reference in the import milestone.
-    let imageName: String
+    /// The name of a sample image in the asset catalog. It is nil for a photo
+    /// imported from the library, whose image the collection model holds.
+    let imageName: String?
     let aircraftType: String
+    /// The airline or operator, or an empty string when the user left it out.
     let airline: String
     /// A short phrase that follows the airline, such as "landing at Atlanta".
+    /// It is empty when nothing is known.
     let activity: String
+    /// The camera settings saved in the photo, when it carried any.
+    let camera: CameraSettings?
+    /// When the photo was taken, by the camera's clock.
+    let capturedAt: Date?
     /// The id of the spot the photo was taken from, when one is known.
     let spotID: String?
     /// True when the owner chose to keep the location private. No other user
@@ -52,15 +58,19 @@ struct SpottedPhoto: Identifiable {
 
     private let registration: String
     private let isRegistrationBlocked: Bool
+    private let captureCoordinate: Coordinate?
 
     init(
         id: String,
-        imageName: String,
+        imageName: String?,
         aircraftType: String,
         registration: String,
         isRegistrationBlocked: Bool = false,
         airline: String,
         activity: String,
+        camera: CameraSettings? = nil,
+        capturedAt: Date? = nil,
+        captureCoordinate: Coordinate? = nil,
         spotID: String? = nil,
         isLocationUndisclosed: Bool = false,
         status: GradeStatus,
@@ -74,6 +84,9 @@ struct SpottedPhoto: Identifiable {
         self.isRegistrationBlocked = isRegistrationBlocked
         self.airline = airline
         self.activity = activity
+        self.camera = camera
+        self.capturedAt = capturedAt
+        self.captureCoordinate = captureCoordinate
         self.spotID = spotID
         self.isLocationUndisclosed = isLocationUndisclosed
         self.status = status
@@ -81,11 +94,11 @@ struct SpottedPhoto: Identifiable {
         self.fixes = fixes
     }
 
-    /// The registration to show, or nil when the aircraft is on a block list
-    /// such as FAA LADD. The stored value is private so no screen can show a
-    /// blocked registration by accident.
+    /// The registration to show, or nil when there is none or the aircraft
+    /// is on a block list such as FAA LADD. The stored value is private so no
+    /// screen can show a blocked registration by accident.
     var visibleRegistration: String? {
-        isRegistrationBlocked ? nil : registration
+        isRegistrationBlocked || registration.isEmpty ? nil : registration
     }
 
     /// The spot other people may see for this photo. It is nil for an
@@ -94,9 +107,41 @@ struct SpottedPhoto: Identifiable {
         isLocationUndisclosed ? nil : spotID
     }
 
+    /// Where the photo was taken, as other people may see it. It is nil for
+    /// an undisclosed photo and for a photo with no saved location.
+    var publicCaptureCoordinate: Coordinate? {
+        isLocationUndisclosed ? nil : captureCoordinate
+    }
+
+    /// True when the photo carries a location, whether or not it is shared.
+    var hasCaptureLocation: Bool {
+        captureCoordinate != nil
+    }
+
+    /// The airline and the activity as one line, such as "Delta Air Lines,
+    /// landing at Atlanta". It is nil when both are empty.
+    var operatorLine: String? {
+        let parts = [airline, activity].filter { !$0.isEmpty }
+        return parts.isEmpty ? nil : parts.joined(separator: ", ")
+    }
+
     /// A description of the image for VoiceOver.
     var imageDescription: String {
-        "\(airline) \(aircraftType), \(activity)"
+        let subject = airline.isEmpty ? aircraftType : "\(airline) \(aircraftType)"
+        return activity.isEmpty ? subject : "\(subject), \(activity)"
+    }
+}
+
+/// A point on the map.
+struct Coordinate: Equatable {
+    let latitude: Double
+    let longitude: Double
+
+    /// Returns nil when either value is outside the range of a real place.
+    init?(latitude: Double, longitude: Double) {
+        guard (-90...90).contains(latitude), (-180...180).contains(longitude) else { return nil }
+        self.latitude = latitude
+        self.longitude = longitude
     }
 }
 

@@ -1,4 +1,5 @@
 import Testing
+import UIKit
 
 @testable import FinalApproach
 
@@ -63,6 +64,84 @@ struct CollectionModelTests {
         #expect(photo.publicSpotID == "atl-south-approach")
         photo.isLocationUndisclosed = true
         #expect(photo.publicSpotID == nil)
+    }
+
+    @Test func aPhotoWithNoRegistrationShowsNone() {
+        let photo = SpottedPhoto(
+            id: "no-registration",
+            imageName: nil,
+            aircraftType: "Cessna 172",
+            registration: "",
+            airline: "",
+            activity: "",
+            status: .logged
+        )
+        #expect(photo.visibleRegistration == nil)
+        #expect(photo.operatorLine == nil)
+        #expect(photo.imageDescription == "Cessna 172")
+    }
+
+    @Test func theOperatorLineJoinsWhatIsKnown() throws {
+        let sample = try #require(model.photo(id: "a350-n502dn"))
+        #expect(sample.operatorLine == "Delta Air Lines, landing at Atlanta")
+        #expect(sample.imageDescription == "Delta Air Lines Airbus A350-900, landing at Atlanta")
+    }
+
+    @Test func anUndisclosedPhotoSharesNoCoordinate() throws {
+        let coordinate = try #require(Coordinate(latitude: 33.6215, longitude: -84.399))
+        var photo = SpottedPhoto(
+            id: "private-coordinate",
+            imageName: nil,
+            aircraftType: "Airbus A350-900",
+            registration: "N502DN",
+            airline: "Delta Air Lines",
+            activity: "",
+            captureCoordinate: coordinate,
+            status: .logged
+        )
+        #expect(photo.hasCaptureLocation)
+        #expect(photo.publicCaptureCoordinate?.latitude == 33.6215)
+        photo.isLocationUndisclosed = true
+        #expect(photo.hasCaptureLocation)
+        #expect(photo.publicCaptureCoordinate?.latitude == nil)
+    }
+
+    @Test func aCoordinateOutsideTheGlobeIsRejected() {
+        #expect(Coordinate(latitude: 91, longitude: 0) == nil)
+        #expect(Coordinate(latitude: 0, longitude: -181) == nil)
+        #expect(Coordinate(latitude: -90, longitude: 180) != nil)
+    }
+
+    @Test func deletingAnImportedPhotoRemovesItsStoredImage() {
+        let photo = SpottedPhoto(
+            id: "imported",
+            imageName: nil,
+            aircraftType: "Boeing 737-800",
+            registration: "N8642E",
+            airline: "Southwest Airlines",
+            activity: "",
+            status: .logged
+        )
+        model.add(photo, image: UIImage())
+        #expect(model.photos.first?.id == "imported")
+        #expect(model.hasStoredImage(forPhotoID: "imported"))
+        model.deletePhoto(id: "imported")
+        #expect(!model.hasStoredImage(forPhotoID: "imported"))
+    }
+
+    @Test func deletingTheAccountRemovesStoredImages() {
+        let photo = SpottedPhoto(
+            id: "imported",
+            imageName: nil,
+            aircraftType: "Boeing 737-800",
+            registration: "",
+            airline: "",
+            activity: "",
+            status: .logged
+        )
+        model.add(photo, image: UIImage())
+        model.deleteAccountAndPhotos()
+        #expect(!model.hasStoredImage(forPhotoID: "imported"))
     }
 
     @Test func deletingAPhotoRemovesItFromTheCollection() {

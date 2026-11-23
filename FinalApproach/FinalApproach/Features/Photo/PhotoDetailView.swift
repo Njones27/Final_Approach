@@ -30,13 +30,14 @@ struct PhotoDetailView: View {
     private func content(for photo: SpottedPhoto) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                PhotoFill(imageName: photo.imageName, description: photo.imageDescription)
+                PhotoFill(image: model.image(for: photo), description: photo.imageDescription)
                     .aspectRatio(3 / 2, contentMode: .fit)
 
                 VStack(alignment: .leading, spacing: 18) {
                     header(for: photo)
                     gradeBlock(for: photo)
                     feedback(for: photo)
+                    cameraSection(for: photo)
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 18)
@@ -46,8 +47,8 @@ struct PhotoDetailView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 ShareLink(
-                    item: Image(photo.imageName),
-                    preview: SharePreview(photo.aircraftType, image: Image(photo.imageName))
+                    item: model.image(for: photo),
+                    preview: SharePreview(photo.aircraftType, image: model.image(for: photo))
                 )
             }
             ToolbarItem(placement: .topBarTrailing) {
@@ -86,9 +87,11 @@ struct PhotoDetailView: View {
                         .tracking(1)
                         .foregroundStyle(Theme.ink)
                 }
-                Text("\(photo.airline), \(photo.activity)")
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.secondaryText)
+                if let operatorLine = photo.operatorLine {
+                    Text(operatorLine)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondaryText)
+                }
             }
         }
     }
@@ -192,6 +195,81 @@ struct PhotoDetailView: View {
         }
     }
 
+    // MARK: Camera
+
+    @ViewBuilder
+    private func cameraSection(for photo: SpottedPhoto) -> some View {
+        if photo.camera != nil || photo.capturedAt != nil {
+            VStack(alignment: .leading, spacing: 14) {
+                Rectangle()
+                    .fill(Theme.hairline)
+                    .frame(height: 1)
+                    .padding(.bottom, 4)
+                SectionHeading("Camera")
+
+                if let camera = photo.camera {
+                    let columns = settingColumns(for: camera)
+                    if !columns.isEmpty {
+                        HStack(alignment: .top, spacing: 8) {
+                            ForEach(columns) { column in
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(column.value)
+                                        .font(.condensed(24, relativeTo: .title3))
+                                        .foregroundStyle(Theme.ink)
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.7)
+                                    Text(column.label)
+                                        .font(.footnote)
+                                        .foregroundStyle(Theme.secondaryText)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .accessibilityElement(children: .combine)
+                            }
+                        }
+                    }
+                    if let gear = gearLine(for: camera) {
+                        Label(gear, systemImage: "camera")
+                            .font(.subheadline)
+                            .foregroundStyle(Theme.secondaryText)
+                    }
+                }
+
+                if let capturedAt = photo.capturedAt {
+                    Label(
+                        "Taken \(capturedAt.formatted(date: .abbreviated, time: .shortened))",
+                        systemImage: "clock"
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.secondaryText)
+                }
+            }
+        }
+    }
+
+    /// The settings a photo carries, each as a value over a label.
+    private func settingColumns(for camera: CameraSettings) -> [SettingColumn] {
+        var columns: [SettingColumn] = []
+        if let focalLength = camera.focalLengthText {
+            columns.append(SettingColumn(label: "Focal length", value: focalLength))
+        }
+        if let aperture = camera.apertureText {
+            columns.append(SettingColumn(label: "Aperture", value: aperture))
+        }
+        if let shutter = camera.shutterText {
+            columns.append(SettingColumn(label: "Shutter", value: shutter))
+        }
+        if let iso = camera.iso {
+            columns.append(SettingColumn(label: "ISO", value: "\(iso)"))
+        }
+        return columns
+    }
+
+    /// The camera and lens on one line, or nil when the photo names neither.
+    private func gearLine(for camera: CameraSettings) -> String? {
+        let parts = [camera.cameraName, camera.lensModel].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: ", ")
+    }
+
     /// A sentence that names the checks that passed, or nil when none did.
     private func passedSummary(for photo: SpottedPhoto) -> String? {
         let names = model.checkReport(for: photo).passed.map { $0.kind.displayName.lowercased() }
@@ -204,6 +282,14 @@ struct PhotoDetailView: View {
         default: return "\(sentence) all passed."
         }
     }
+}
+
+/// One camera setting, such as "f/5.6" over "Aperture".
+private struct SettingColumn: Identifiable {
+    let label: String
+    let value: String
+
+    var id: String { label }
 }
 
 /// One suggested fix with the points it is worth.

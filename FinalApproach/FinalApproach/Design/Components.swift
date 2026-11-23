@@ -3,14 +3,24 @@ import SwiftUI
 
 /// A photo that fills whatever frame it is given and crops the overflow.
 struct PhotoFill: View {
-    let imageName: String
+    let image: Image
     /// What the photo shows, read by VoiceOver.
     let description: String
+
+    init(image: Image, description: String) {
+        self.image = image
+        self.description = description
+    }
+
+    /// A sample image from the asset catalog.
+    init(imageName: String, description: String) {
+        self.init(image: Image(imageName), description: description)
+    }
 
     var body: some View {
         Theme.surface
             .overlay {
-                Image(imageName)
+                image
                     .resizable()
                     .scaledToFill()
                     // The overflow is clipped from view but would still take

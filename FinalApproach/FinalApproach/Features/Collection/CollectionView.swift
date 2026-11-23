@@ -1,4 +1,5 @@
 import FinalApproachCore
+import PhotosUI
 import SwiftUI
 
 /// Where a tap on a photo leads.
@@ -29,7 +30,11 @@ enum CollectionOrder: String, CaseIterable, Identifiable {
 struct CollectionView: View {
     @Environment(CollectionModel.self) private var model
     @State private var order = CollectionOrder.aircraftType
-    @State private var isAddingPhoto = false
+    @State private var isPickingPhoto = false
+    @State private var pickedItem: PhotosPickerItem?
+    @State private var importedPhoto: ImportedPhoto?
+    @State private var isImporting = false
+    @State private var importFailed = false
 
     private let columns = [
         GridItem(.flexible(), spacing: 2),
@@ -59,7 +64,7 @@ struct CollectionView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Add a photo", systemImage: "plus") {
-                        isAddingPhoto = true
+                        isPickingPhoto = true
                     }
                 }
             }
@@ -71,8 +76,34 @@ struct CollectionView: View {
                     TechnicalCheckView(photoID: id)
                 }
             }
-            .sheet(isPresented: $isAddingPhoto) {
-                AddPhotoView()
+            .photosPicker(
+                isPresented: $isPickingPhoto,
+                selection: $pickedItem,
+                matching: .images,
+                // Ask for the file as it is, so its saved metadata survives.
+                preferredItemEncoding: .current
+            )
+            .onChange(of: pickedItem) { _, item in
+                guard let item else { return }
+                pickedItem = nil
+                Task {
+                    await importPhoto(from: item)
+                }
+            }
+            .sheet(item: $importedPhoto) { photo in
+                AddPhotoView(photo: photo)
+            }
+            .alert("This photo could not be read", isPresented: $importFailed) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Pick another photo or try again.")
+            }
+            .overlay {
+                if isImporting {
+                    ProgressView("Reading your photo")
+                        .padding(20)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
             }
         }
     }
@@ -104,10 +135,24 @@ struct CollectionView: View {
             Text("Add your first photo to start your collection.")
         } actions: {
             Button("Add a photo") {
-                isAddingPhoto = true
+                isPickingPhoto = true
             }
         }
         .padding(.top, 80)
+    }
+
+    /// Loads the picked file and reads its image and metadata. The photo is
+    /// not added to the collection until the user logs it.
+    private func importPhoto(from item: PhotosPickerItem) async {
+        isImporting = true
+        defer { isImporting = false }
+        guard let data = try? await item.loadTransferable(type: Data.self),
+              let photo = PhotoMetadataReader.importPhoto(from: data)
+        else {
+            importFailed = true
+            return
+        }
+        importedPhoto = photo
     }
 
     /// Every photo except the one that leads, in the chosen order.
