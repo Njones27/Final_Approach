@@ -38,8 +38,8 @@ struct TechnicalCheckView: View {
                 if !needsWork.isEmpty {
                     VStack(alignment: .leading, spacing: 16) {
                         SectionHeading("Fix these first")
-                        ForEach(needsWork) { finding in
-                            CheckRow(finding: finding, tint: Theme.fill(for: .bronze))
+                        ForEach(Array(needsWork.enumerated()), id: \.element.id) { index, finding in
+                            CheckRow(finding: finding, tint: Theme.fill(for: .bronze), order: index)
                         }
                     }
                 }
@@ -47,8 +47,8 @@ struct TechnicalCheckView: View {
                 if !passed.isEmpty {
                     VStack(alignment: .leading, spacing: 16) {
                         SectionHeading("Passed")
-                        ForEach(passed) { finding in
-                            CheckRow(finding: finding, tint: Theme.ink)
+                        ForEach(Array(passed.enumerated()), id: \.element.id) { index, finding in
+                            CheckRow(finding: finding, tint: Theme.ink, order: needsWork.count + index)
                         }
                     }
                 }
@@ -116,6 +116,8 @@ struct TechnicalCheckView: View {
 private struct CheckRow: View {
     let finding: CheckFinding
     let tint: Color
+    /// The row's place on the screen, so the meters fill from the top down.
+    let order: Int
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -134,7 +136,7 @@ private struct CheckRow: View {
                     .foregroundStyle(Theme.ink)
                     .accessibilityLabel("\(finding.result.score.scoreText) out of 100")
             }
-            ScoreMeter(score: finding.result.score, tint: tint)
+            ScoreMeter(score: finding.result.score, tint: tint, order: order)
         }
         .accessibilityElement(children: .combine)
     }

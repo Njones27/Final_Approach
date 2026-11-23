@@ -34,10 +34,16 @@ struct PhotoDetailView: View {
                     .aspectRatio(3 / 2, contentMode: .fit)
 
                 VStack(alignment: .leading, spacing: 18) {
+                    // The photo arrives with the screen. What sits under
+                    // it follows, one part after another.
                     header(for: photo)
+                        .revealed(order: 0)
                     gradeBlock(for: photo)
+                        .revealed(order: 1)
                     feedback(for: photo)
+                        .revealed(order: 2)
                     cameraSection(for: photo)
+                        .revealed(order: 3)
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 18)

@@ -2,10 +2,14 @@ import FinalApproachCore
 import SwiftUI
 
 /// A grade placed on a 0 to 100 scale that is split at the tier thresholds,
-/// so the photographer can see how far the next tier is.
+/// so the photographer can see how far the next tier is. The marker travels
+/// up the scale to the grade the first time it appears.
 struct TierScaleView: View {
     let score: Double
     let thresholds: TierThresholds
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isPlaced = false
 
     private let gap: CGFloat = 2
     private let markerSize: CGFloat = 14
@@ -30,7 +34,7 @@ struct TierScaleView: View {
                         .padding(3)
                         .background(Theme.ground, in: Circle())
                         .frame(width: markerSize, height: markerSize)
-                        .offset(x: markerOffset(in: width))
+                        .offset(x: isPlaced ? markerOffset(in: width) : 0)
                 }
                 .frame(height: markerSize)
 
@@ -48,6 +52,17 @@ struct TierScaleView: View {
         .frame(height: 40)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
+        .animation(reduceMotion ? nil : Motion.settle, value: score)
+        .onAppear {
+            guard !isPlaced else { return }
+            if reduceMotion {
+                isPlaced = true
+            } else {
+                withAnimation(Motion.settle.delay(Motion.arrival)) {
+                    isPlaced = true
+                }
+            }
+        }
     }
 
     /// The highest score in a tier's part of the scale.

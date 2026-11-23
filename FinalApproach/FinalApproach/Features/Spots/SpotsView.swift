@@ -39,7 +39,7 @@ struct SpotsView: View {
                         anchor: .center
                     ) {
                         SpotPin(spot: spot, isSelected: spot.id == selectedSpot?.id) {
-                            withAnimation(.snappy) {
+                            withAnimation(Motion.swap) {
                                 selectedSpotID = spot.id
                             }
                         }
@@ -49,14 +49,22 @@ struct SpotsView: View {
             }
             .mapStyle(.standard(pointsOfInterest: .excludingAll))
             .safeAreaInset(edge: .bottom) {
-                if let spot = selectedSpot {
-                    SpotCard(spot: spot) {
-                        openDirections(to: spot)
+                ZStack(alignment: .bottom) {
+                    if let spot = selectedSpot {
+                        SpotCard(spot: spot) {
+                            openDirections(to: spot)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 8)
+                        // One card fades into the next when the spot or the
+                        // airport changes.
+                        .id(spot.id)
+                        .transition(.opacity)
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 8)
                 }
+                .animation(Motion.swap, value: selectedSpot?.id)
             }
+            .sensoryFeedback(.selection, trigger: selectedSpotID)
             .navigationTitle("Spots")
             .toolbarTitleDisplayMode(.inlineLarge)
             .toolbar {
@@ -91,7 +99,7 @@ struct SpotsView: View {
             set: { newID in
                 airportID = newID
                 selectedSpotID = nil
-                withAnimation(.snappy) {
+                withAnimation(Motion.swap) {
                     position = .automatic
                 }
             }
