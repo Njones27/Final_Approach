@@ -181,24 +181,54 @@ public enum TechnicalCheckEngine {
               let sharpness = measurements.sharpness,
               let source = measurements.subjectSource
         else { return nil }
-        let curve = switch source {
-        case .mask: rules.sharpnessOnMask
-        case .box: rules.sharpnessInBox
+        var score: Double
+        switch source {
+        case .mask:
+            score = rules.sharpnessOnMask.score(for: sharpness)
+            // A matte or dark aircraft has little detail to measure, so its
+            // sharpness is also read against its own contrast.
+            if let contrast = measurements.contrast, contrast > 0 {
+                score = max(score, rules.sharpnessToContrast.score(for: sharpness / contrast))
+            }
+        case .box:
+            score = rules.sharpnessInBox.score(for: sharpness)
         }
-        let score = curve.score(for: sharpness)
         if score >= passingScore {
             return outcome(.sharpness, score, "The aircraft is sharp.")
         }
-        let seen = if let shutter = camera?.shutterText {
-            "The aircraft is soft at \(shutter)."
-        } else {
-            "The aircraft is soft."
-        }
+        let words = softnessWords(camera: camera, rules: rules)
         return outcome(
             .sharpness,
             score,
-            "\(seen) Try a faster shutter speed.",
-            FixAdvice(title: "Use a faster shutter", detail: seen)
+            "\(words.seen) \(words.hint)",
+            FixAdvice(title: words.title, detail: words.seen)
+        )
+    }
+
+    /// What to say about a soft aircraft. A slow shutter is the likely
+    /// cause only when the photo was not taken at a fast one.
+    private static func softnessWords(
+        camera: CameraSettings?,
+        rules: CheckRules
+    ) -> (seen: String, hint: String, title: String) {
+        guard let time = camera?.exposureTime, let shutter = camera?.shutterText else {
+            return (
+                "The aircraft is soft.",
+                "Check the focus and try a faster shutter speed.",
+                "Check focus and shutter speed"
+            )
+        }
+        if time <= rules.fastShutterTime {
+            return (
+                "The aircraft is soft at \(shutter).",
+                "That is fast enough to freeze it, so check the focus, heat haze, or a heavy crop.",
+                "Check focus and haze"
+            )
+        }
+        return (
+            "The aircraft is soft at \(shutter).",
+            "Try a faster shutter speed.",
+            "Use a faster shutter"
         )
     }
 
@@ -207,12 +237,11 @@ public enum TechnicalCheckEngine {
         rules: CheckRules,
         passingScore: Double
     ) -> CheckOutcome? {
-        guard rules.enabledChecks.contains(.exposure) else { return nil }
+        // Exposure is judged on the aircraft, so it needs one to be found.
+        guard rules.enabledChecks.contains(.exposure), measurements.subject != nil else { return nil }
         let highlights = measurements.blownHighlights.map { rules.highlights.score(for: $0) }
         let shadows = measurements.crushedShadows.map { rules.shadows.score(for: $0) }
         guard let score = [highlights, shadows].compactMap({ $0 }).min() else { return nil }
-        // Exposure covers the whole photo when the aircraft was not found.
-        let place = measurements.subject == nil ? "the photo" : "the aircraft"
         if score >= passingScore {
             return outcome(.exposure, score, "Highlights and shadows both hold detail.")
         }
@@ -222,15 +251,15 @@ public enum TechnicalCheckEngine {
             return outcome(
                 .exposure,
                 score,
-                "Bright parts of \(place) are blown out. Lower the exposure.",
-                FixAdvice(title: "Lower the exposure", detail: "Bright parts of \(place) lose detail.")
+                "Bright parts of the aircraft are blown out. Lower the exposure.",
+                FixAdvice(title: "Lower the exposure", detail: "Bright parts of the aircraft lose detail.")
             )
         }
         return outcome(
             .exposure,
             score,
-            "Dark parts of \(place) are crushed to black. Raise the exposure.",
-            FixAdvice(title: "Raise the exposure", detail: "Dark parts of \(place) lose detail.")
+            "Dark parts of the aircraft are crushed to black. Raise the exposure.",
+            FixAdvice(title: "Raise the exposure", detail: "Dark parts of the aircraft lose detail.")
         )
     }
 

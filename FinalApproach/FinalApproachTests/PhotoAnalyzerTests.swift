@@ -46,13 +46,15 @@ struct PhotoAnalyzerTests {
         #expect(grid.pixels.count == 800)
     }
 
-    @Test func measuringAnImageReadsItsDetailAndExposure() throws {
+    @Test func measuringAnImageReadsExposureOnlyWhereItFoundASubject() throws {
         let image = try #require(splitImage(width: 400, height: 200))
         let measurements = PhotoAnalyzer.measure(image, rules: SampleData.checkRules)
-        // Whether Vision finds a subject in a drawn image is not fixed, so
-        // only the readings that always exist are checked.
-        #expect(measurements.blownHighlights != nil)
-        #expect(measurements.crushedShadows != nil)
+        // Whether Vision finds a subject in a drawn image is not fixed. The
+        // exposure readings exist exactly when it found one.
+        let found = measurements.subject != nil
+        #expect((measurements.blownHighlights != nil) == found)
+        #expect((measurements.crushedShadows != nil) == found)
+        #expect((measurements.subjectSource != nil) == found)
         // The horizon check is off in the rules, so no tilt is read.
         #expect(measurements.tiltDegrees == nil)
     }

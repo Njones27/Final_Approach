@@ -81,6 +81,16 @@ import Testing
         #expect(grid.share(atOrAbove: 250, in: topHalf) == 1)
         #expect(grid.share(atOrBelow: 5, in: topHalf) == 0)
     }
+
+    @Test func contrastIsTheVarianceOfTheBrightness() throws {
+        let flat = Self.grid(columns: [90, 90, 90, 90], height: 4)
+        #expect(flat.luminanceVariance() == 0)
+        // Half black and half white is as far from its mean as it can be.
+        let split = Self.grid(columns: [0, 0, 255, 255], height: 4)
+        #expect(split.luminanceVariance() == 16256.25)
+        let leftHalf = try #require(FrameRegion(x: 0, y: 0, width: 0.5, height: 1))
+        #expect(split.luminanceVariance(in: leftHalf) == 0)
+    }
 }
 
 @Suite struct SubjectMaskTests {
@@ -124,6 +134,7 @@ import Testing
         #expect(grid.share(atOrAbove: 250, mask: Self.middle) == 0.5)
         #expect(grid.share(atOrBelow: 5, mask: Self.middle) == 0.5)
         #expect(try #require(grid.laplacianVariance(mask: Self.middle)) > 0)
+        #expect(grid.luminanceVariance(mask: Self.middle) == 16256.25)
     }
 
     @Test func detailOutsideTheMaskIsIgnored() throws {
@@ -137,6 +148,7 @@ import Testing
         let grid = LuminanceGridTests.grid(columns: [0, 0, 0, 0, 255, 255, 255, 255], height: 8)
         let empty = try #require(SubjectMask(width: 2, height: 2, isSubject: [false, false, false, false]))
         #expect(grid.laplacianVariance(mask: empty) == nil)
+        #expect(grid.luminanceVariance(mask: empty) == nil)
         #expect(grid.share(atOrAbove: 250, mask: empty) == nil)
     }
 }
@@ -155,6 +167,7 @@ import Testing
         #expect(measurements.subject == FrameRegion(x: 0.25, y: 0.25, width: 0.5, height: 0.5))
         #expect(measurements.subjectSource == .mask)
         #expect(try #require(measurements.sharpness) > 0)
+        #expect(measurements.contrast == 16256.25)
         #expect(measurements.blownHighlights == 0.5)
         #expect(measurements.crushedShadows == 0.5)
         #expect(measurements.tiltDegrees == 1.5)
@@ -172,6 +185,7 @@ import Testing
         #expect(measurements.subject == rightHalf)
         #expect(measurements.subjectSource == .box)
         #expect(measurements.sharpness == 0)
+        #expect(measurements.contrast == 0)
         #expect(measurements.blownHighlights == 1)
         #expect(measurements.crushedShadows == 0)
     }
@@ -188,19 +202,17 @@ import Testing
         #expect(measurements.subjectSource == .box)
     }
 
-    @Test func aPhotoWithNoAircraftHasExposureButNoSharpness() {
+    @Test func aPhotoWithNoAircraftKeepsOnlyItsTilt() {
+        // Readings over a whole photo say little about the aircraft, so
+        // none are taken when it was not found.
         let measurements = PhotoMeasurements(
             grid: grid,
             mask: nil,
             fallbackBox: nil,
-            tiltDegrees: nil,
+            tiltDegrees: 1.5,
             rules: TestRules.rules
         )
-        #expect(measurements.subject == nil)
-        #expect(measurements.subjectSource == nil)
-        #expect(measurements.sharpness == nil)
-        #expect(measurements.blownHighlights == 0.5)
-        #expect(measurements.crushedShadows == 0.5)
+        #expect(measurements == PhotoMeasurements(tiltDegrees: 1.5))
     }
 
     @Test func aSourceWithoutAPlaceIsDropped() {

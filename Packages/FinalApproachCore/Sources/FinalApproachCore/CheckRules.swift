@@ -67,6 +67,15 @@ public struct CheckRules: Equatable, Codable, Sendable {
     /// Scores the variance of the Laplacian over a box around the aircraft.
     /// The box holds some sky, so the numbers run lower than on a mask.
     public let sharpnessInBox: ScoreCurve
+    /// Scores the variance of the Laplacian divided by the variance of the
+    /// brightness, both over the aircraft's own pixels. A matte or dark
+    /// aircraft has little contrast, so its raw number is low even in focus.
+    /// The sharpness score is the better of this curve and the raw one.
+    public let sharpnessToContrast: ScoreCurve
+    /// A shutter time, in seconds, that is short enough to freeze an
+    /// aircraft. Softness at this speed or faster is put down to focus,
+    /// haze, or a heavy crop, and not to the shutter.
+    public let fastShutterTime: Double
     /// Scores how many degrees the horizon is from level.
     public let tilt: ScoreCurve
     /// The largest angle, in degrees, that is still read as a horizon. A
@@ -99,6 +108,8 @@ public struct CheckRules: Equatable, Codable, Sendable {
         analysisPixelSize: Int,
         sharpnessOnMask: ScoreCurve,
         sharpnessInBox: ScoreCurve,
+        sharpnessToContrast: ScoreCurve,
+        fastShutterTime: Double,
         tilt: ScoreCurve,
         maximumTilt: Double,
         highlightLevel: UInt8,
@@ -114,6 +125,8 @@ public struct CheckRules: Equatable, Codable, Sendable {
         self.analysisPixelSize = analysisPixelSize
         self.sharpnessOnMask = sharpnessOnMask
         self.sharpnessInBox = sharpnessInBox
+        self.sharpnessToContrast = sharpnessToContrast
+        self.fastShutterTime = fastShutterTime
         self.tilt = tilt
         self.maximumTilt = maximumTilt
         self.highlightLevel = highlightLevel

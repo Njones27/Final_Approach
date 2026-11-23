@@ -169,7 +169,8 @@ struct AddPhotoView: View {
             isLocationUndisclosed: photo.metadata.coordinate != nil && !showsSpot,
             status: .logged,
             findings: check.findings,
-            fixes: check.fixes
+            fixes: check.fixes,
+            isAircraftFound: photo.measurements.subject != nil
         )
         model.add(spotted, image: photo.image)
         dismiss()

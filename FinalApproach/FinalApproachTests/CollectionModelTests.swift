@@ -160,7 +160,7 @@ struct CollectionModelTests {
     @Test func theTechnicalCheckNamesWhatToFixWeakestFirst() {
         let check = model.technicalCheck(for: SampleData.softBrightMeasurements, camera: nil)
         #expect(check.findings.count == 3)
-        #expect(check.fixes.map(\.title) == ["Use a faster shutter", "Lower the exposure"])
+        #expect(check.fixes.map(\.title) == ["Check focus and shutter speed", "Lower the exposure"])
         #expect(check.fixes.map(\.detail) == ["The aircraft is soft.", "Bright parts of the aircraft lose detail."])
         #expect(check.fixes.map(\.points) == [5, 4])
     }
@@ -176,7 +176,17 @@ struct CollectionModelTests {
         model.add(photo)
         #expect(model.technicalScore(for: photo)?.rounded() == 59)
         #expect(model.finalScore(for: photo) == nil)
+        // 1/2000 s freezes an aircraft, so the shutter is not blamed.
+        #expect(photo.fixes.first?.title == "Check focus and haze")
         #expect(photo.fixes.first?.detail == "The aircraft is soft at 1/2000 s.")
+    }
+
+    @Test func aPhotoWithNoAircraftFoundIsNotScored() {
+        let photo = SampleData.unfoundPhoto
+        model.add(photo)
+        #expect(!photo.isAircraftFound)
+        #expect(model.technicalScore(for: photo) == nil)
+        #expect(!model.checkReport(for: photo).isPassed)
     }
 
     @Test func aVoteMovesToTheNextPhotoAndCounts() {

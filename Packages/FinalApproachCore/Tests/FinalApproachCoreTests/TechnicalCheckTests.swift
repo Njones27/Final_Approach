@@ -118,8 +118,8 @@ import Testing
         #expect(horizon.advice == FixAdvice(title: "Straighten the horizon", detail: "It tilts about 2°."))
 
         let sharpness = try #require(outcomes.first { $0.result.kind == .sharpness })
-        #expect(sharpness.detail == "The aircraft is soft. Try a faster shutter speed.")
-        #expect(sharpness.advice?.title == "Use a faster shutter")
+        #expect(sharpness.detail == "The aircraft is soft. Check the focus and try a faster shutter speed.")
+        #expect(sharpness.advice == FixAdvice(title: "Check focus and shutter speed", detail: "The aircraft is soft."))
     }
 
     @Test func aCleanShotPassesEveryCheckWithNoFixes() {
@@ -157,12 +157,64 @@ import Testing
         #expect(check(measurements, rules: TestRules.rules(enabling: [])).isEmpty)
     }
 
-    @Test func softnessFeedbackNamesTheShutterSpeedWhenItIsKnown() throws {
+    @Test func softnessAtASlowShutterSuggestsAFasterOne() throws {
         let camera = CameraSettings(exposureTime: 1.0 / 250)
         let measurements = PhotoMeasurements(subject: centered, subjectSource: .mask, sharpness: 40)
         let outcome = try #require(check(measurements, camera: camera).first { $0.result.kind == .sharpness })
         #expect(outcome.detail == "The aircraft is soft at 1/250 s. Try a faster shutter speed.")
-        #expect(outcome.advice?.detail == "The aircraft is soft at 1/250 s.")
+        #expect(outcome.advice == FixAdvice(title: "Use a faster shutter", detail: "The aircraft is soft at 1/250 s."))
+    }
+
+    @Test func softnessAtAFastShutterIsNotPutDownToTheShutter() throws {
+        let measurements = PhotoMeasurements(subject: centered, subjectSource: .mask, sharpness: 40)
+        for time in [1.0 / 1000, 1.0 / 2000] {
+            let camera = CameraSettings(exposureTime: time)
+            let outcome = try #require(check(measurements, camera: camera).first { $0.result.kind == .sharpness })
+            #expect(outcome.detail.hasSuffix(
+                "That is fast enough to freeze it, so check the focus, heat haze, or a heavy crop."
+            ))
+            #expect(outcome.advice?.title == "Check focus and haze")
+        }
+        let fast = try #require(
+            check(measurements, camera: CameraSettings(exposureTime: 1.0 / 2000))
+                .first { $0.result.kind == .sharpness }
+        )
+        #expect(fast.advice?.detail == "The aircraft is soft at 1/2000 s.")
+    }
+
+    @Test func aLowContrastAircraftCanPassOnDetailForItsContrast() throws {
+        // 60 is soft on the raw curve. Against a contrast of 300 it is a
+        // fifth, which is sharp for an aircraft with so little to measure.
+        let matte = PhotoMeasurements(subject: centered, subjectSource: .mask, sharpness: 60, contrast: 300)
+        let outcome = try #require(check(matte).first { $0.result.kind == .sharpness })
+        #expect(abs(outcome.result.score - 80) < 0.001)
+        #expect(outcome.advice == nil)
+        #expect(outcome.detail == "The aircraft is sharp.")
+    }
+
+    @Test func aHighContrastAircraftWithLittleDetailIsStillSoft() throws {
+        let soft = PhotoMeasurements(subject: centered, subjectSource: .mask, sharpness: 60, contrast: 3000)
+        let outcome = try #require(check(soft).first { $0.result.kind == .sharpness })
+        #expect(outcome.result.score == 45)
+        #expect(outcome.advice != nil)
+    }
+
+    @Test func contrastNeverLowersASharpScore() throws {
+        let sharp = PhotoMeasurements(subject: centered, subjectSource: .mask, sharpness: 300, contrast: 30000)
+        let outcome = try #require(check(sharp).first { $0.result.kind == .sharpness })
+        #expect(outcome.result.score == 100)
+    }
+
+    @Test func aFlatAircraftIsScoredOnTheRawCurveAlone() throws {
+        let flat = PhotoMeasurements(subject: centered, subjectSource: .mask, sharpness: 60, contrast: 0)
+        let outcome = try #require(check(flat).first { $0.result.kind == .sharpness })
+        #expect(outcome.result.score == 45)
+    }
+
+    @Test func contrastIsNotUsedInsideABox() throws {
+        let inBox = PhotoMeasurements(subject: centered, subjectSource: .box, sharpness: 20, contrast: 20)
+        let outcome = try #require(check(inBox).first { $0.result.kind == .sharpness })
+        #expect(outcome.result.score == 37.5)
     }
 
     @Test func sharpnessInABoxIsScoredOnItsOwnCurve() throws {
@@ -209,15 +261,22 @@ import Testing
 
     @Test func shadowsAreScoredMoreLooselyThanHighlights() throws {
         // A tenth of the aircraft blown out fails. A tenth crushed passes.
-        let crushed = try #require(check(PhotoMeasurements(blownHighlights: 0, crushedShadows: 0.1)).first)
+        let measurements = PhotoMeasurements(
+            subject: centered,
+            subjectSource: .box,
+            blownHighlights: 0,
+            crushedShadows: 0.1
+        )
+        let crushed = try #require(check(measurements).first)
+        #expect(crushed.result.kind == .exposure)
         #expect(crushed.result.score == 90)
         #expect(crushed.advice == nil)
     }
 
-    @Test func exposureFeedbackNamesThePhotoWhenNoAircraftWasFound() throws {
-        let outcome = try #require(check(PhotoMeasurements(blownHighlights: 0.1, crushedShadows: 0)).first)
-        #expect(outcome.result.kind == .exposure)
-        #expect(outcome.detail == "Bright parts of the photo are blown out. Lower the exposure.")
+    @Test func exposureDoesNotRunWhenNoAircraftWasFound() {
+        // Blown pixels in a photo with no aircraft are as likely to be
+        // clouds, so they are not held against it.
+        #expect(check(PhotoMeasurements(blownHighlights: 0.1, crushedShadows: 0)).isEmpty)
     }
 
     @Test func anAircraftAtTheEdgeIsCutOff() throws {

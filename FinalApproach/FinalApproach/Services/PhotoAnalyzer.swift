@@ -1,5 +1,4 @@
 import CoreGraphics
-import CoreML
 import CoreVideo
 import FinalApproachCore
 import UIKit
@@ -66,9 +65,12 @@ enum PhotoAnalyzer {
     /// The pixels that belong to the foreground, which are taken to be the
     /// aircraft. A formation comes back as one mask that holds every
     /// aircraft. Returns nil when Vision finds no foreground.
+    ///
+    /// This request and the one for the box both fail in the iOS simulator,
+    /// which cannot build their models, so a photo imported there is never
+    /// scored. They run on a Mac and are expected to run on an iPhone.
     nonisolated private static func subjectMask(using handler: VNImageRequestHandler) -> SubjectMask? {
         let request = VNGenerateForegroundInstanceMaskRequest()
-        useCPUInSimulator(request)
         do {
             try handler.perform([request])
         } catch {
@@ -110,7 +112,6 @@ enum PhotoAnalyzer {
     /// other aircraft in a formation.
     nonisolated private static func subjectBox(using handler: VNImageRequestHandler) -> FrameRegion? {
         let request = VNGenerateObjectnessBasedSaliencyImageRequest()
-        useCPUInSimulator(request)
         do {
             try handler.perform([request])
         } catch {
@@ -145,23 +146,6 @@ enum PhotoAnalyzer {
         }
         guard let angle = request.results?.first?.angle else { return nil }
         return Double(angle) * 180 / .pi
-    }
-
-    /// The iOS simulator cannot run these requests on its default device,
-    /// so there they are asked to run on the processor.
-    nonisolated private static func useCPUInSimulator(_ request: VNRequest) {
-        #if targetEnvironment(simulator)
-        guard let stages = try? request.supportedComputeStageDevices else { return }
-        for (stage, devices) in stages {
-            let processor = devices.first { device in
-                if case .cpu = device { return true }
-                return false
-            }
-            if let processor {
-                request.setComputeDevice(processor, for: stage)
-            }
-        }
-        #endif
     }
 
     /// A Vision request that fails gives no reading, which looks the same as

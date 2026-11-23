@@ -154,12 +154,30 @@ struct PhotoDetailView: View {
                 .font(.footnote)
                 .monospacedDigit()
                 .foregroundStyle(Theme.secondaryText)
+            } else if !photo.isAircraftFound {
+                Text("Aircraft not found")
+                    .font(.headline)
+                    .foregroundStyle(Theme.ink)
+                Text(aircraftNotFoundDetail)
+                    .font(.footnote)
+                    .foregroundStyle(Theme.secondaryText)
             } else {
                 Text("Not graded yet")
                     .font(.headline)
                     .foregroundStyle(Theme.ink)
             }
         }
+    }
+
+    /// Why a photo has no technical check. The simulator cannot run the
+    /// request that finds the aircraft, so there it says where to try.
+    private var aircraftNotFoundDetail: String {
+        #if targetEnvironment(simulator)
+        return "The check could not find an aircraft, so this photo was not scored. "
+            + "The simulator cannot find aircraft, so try it on an iPhone."
+        #else
+        return "The check could not find an aircraft, so this photo was not scored."
+        #endif
     }
 
     @ViewBuilder
@@ -354,6 +372,15 @@ private struct FixRow: View {
     model.add(SampleData.checkedPhoto(in: model))
     return NavigationStack {
         PhotoDetailView(photoID: "preview-checked")
+    }
+    .environment(model)
+}
+
+#Preview("Aircraft not found") {
+    let model = SampleData.model()
+    model.add(SampleData.unfoundPhoto)
+    return NavigationStack {
+        PhotoDetailView(photoID: "preview-unfound")
     }
     .environment(model)
 }

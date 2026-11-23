@@ -12,6 +12,8 @@ enum TestRules {
             analysisPixelSize: 1600,
             sharpnessOnMask: ScoreCurve(pairs: [(0, 0), (100, 75), (300, 100)])!,
             sharpnessInBox: ScoreCurve(pairs: [(0, 0), (40, 75), (120, 100)])!,
+            sharpnessToContrast: ScoreCurve(pairs: [(0, 0), (0.15, 75), (0.4, 100)])!,
+            fastShutterTime: 1.0 / 1000,
             tilt: ScoreCurve(pairs: [(0, 100), (1, 75), (5, 0)])!,
             maximumTilt: 10,
             highlightLevel: 250,

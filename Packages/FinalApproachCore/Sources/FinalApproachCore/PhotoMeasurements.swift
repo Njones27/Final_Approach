@@ -183,6 +183,37 @@ public struct LuminanceGrid: Equatable, Sendable {
         return max(sumOfSquares / Double(count) - mean * mean, 0)
     }
 
+    /// How much the brightness varies over a region, as its variance. A
+    /// white aircraft with dark lettering gives a high value and a matte
+    /// grey one a low value. With a mask, only the aircraft's pixels are
+    /// counted. Returns nil when the mask marks nothing inside the region.
+    public func luminanceVariance(in region: FrameRegion = .whole, mask: SubjectMask? = nil) -> Double? {
+        let (columns, rows) = bounds(of: region)
+        let maskColumns = mask.map { SubjectMask.positions(from: width, to: $0.width) }
+        let maskRows = mask.map { SubjectMask.positions(from: height, to: $0.height) }
+        var sum = 0.0
+        var sumOfSquares = 0.0
+        var count = 0
+        pixels.withUnsafeBufferPointer { buffer in
+            for row in rows {
+                let rowStart = row * width
+                for column in columns {
+                    if let mask, let maskColumns, let maskRows,
+                       !mask.isSubject[maskRows[row] * mask.width + maskColumns[column]] {
+                        continue
+                    }
+                    let value = Double(buffer[rowStart + column])
+                    sum += value
+                    sumOfSquares += value * value
+                    count += 1
+                }
+            }
+        }
+        guard count > 0 else { return nil }
+        let mean = sum / Double(count)
+        return max(sumOfSquares / Double(count) - mean * mean, 0)
+    }
+
     /// The share of a region that is at least as bright as `level`, from 0
     /// to 1. With a mask, only the aircraft's pixels are counted. Returns
     /// nil when the mask marks nothing inside the region.
@@ -246,11 +277,13 @@ public struct PhotoMeasurements: Equatable, Codable, Sendable {
     public let subjectSource: SubjectSource?
     /// The variance of the Laplacian over the aircraft.
     public let sharpness: Double?
+    /// The variance of the brightness over the aircraft. Sharpness is read
+    /// against it, because a matte aircraft has little detail to measure
+    /// even when it is in focus.
+    public let contrast: Double?
     /// The share of the aircraft that is blown out to white, from 0 to 1.
-    /// It covers the whole photo when the aircraft was not found.
     public let blownHighlights: Double?
-    /// The share of the aircraft that is crushed to black, from 0 to 1. It
-    /// covers the whole photo when the aircraft was not found.
+    /// The share of the aircraft that is crushed to black, from 0 to 1.
     public let crushedShadows: Double?
     /// How far the horizon is from level, in degrees. The sign gives the
     /// direction.
@@ -260,6 +293,7 @@ public struct PhotoMeasurements: Equatable, Codable, Sendable {
         subject: FrameRegion? = nil,
         subjectSource: SubjectSource? = nil,
         sharpness: Double? = nil,
+        contrast: Double? = nil,
         blownHighlights: Double? = nil,
         crushedShadows: Double? = nil,
         tiltDegrees: Double? = nil
@@ -268,6 +302,7 @@ public struct PhotoMeasurements: Equatable, Codable, Sendable {
         // A source means nothing without a place, so the two stay together.
         self.subjectSource = subject == nil ? nil : subjectSource
         self.sharpness = sharpness
+        self.contrast = contrast
         self.blownHighlights = blownHighlights
         self.crushedShadows = crushedShadows
         self.tiltDegrees = tiltDegrees
@@ -280,9 +315,10 @@ public struct PhotoMeasurements: Equatable, Codable, Sendable {
     ///
     /// With a mask, only the aircraft's own pixels are measured. With only a
     /// box, everything inside the box is measured, which includes some sky.
-    /// With neither, exposure covers the whole photo and sharpness is left
-    /// out, because detail over a whole photo does not tell a sharp aircraft
-    /// from a soft one.
+    /// With neither, nothing is measured, because readings over a whole
+    /// photo say little about the aircraft. Detail over a whole photo does
+    /// not tell a sharp aircraft from a soft one, and blown pixels are as
+    /// likely to be clouds.
     public init(
         grid: LuminanceGrid,
         mask: SubjectMask?,
@@ -295,6 +331,7 @@ public struct PhotoMeasurements: Equatable, Codable, Sendable {
                 subject: region,
                 subjectSource: .mask,
                 sharpness: grid.laplacianVariance(mask: mask),
+                contrast: grid.luminanceVariance(mask: mask),
                 blownHighlights: grid.share(atOrAbove: rules.highlightLevel, mask: mask),
                 crushedShadows: grid.share(atOrBelow: rules.shadowLevel, mask: mask),
                 tiltDegrees: tiltDegrees
@@ -304,16 +341,13 @@ public struct PhotoMeasurements: Equatable, Codable, Sendable {
                 subject: fallbackBox,
                 subjectSource: .box,
                 sharpness: grid.laplacianVariance(in: fallbackBox),
+                contrast: grid.luminanceVariance(in: fallbackBox),
                 blownHighlights: grid.share(atOrAbove: rules.highlightLevel, in: fallbackBox),
                 crushedShadows: grid.share(atOrBelow: rules.shadowLevel, in: fallbackBox),
                 tiltDegrees: tiltDegrees
             )
         } else {
-            self.init(
-                blownHighlights: grid.share(atOrAbove: rules.highlightLevel),
-                crushedShadows: grid.share(atOrBelow: rules.shadowLevel),
-                tiltDegrees: tiltDegrees
-            )
+            self.init(tiltDegrees: tiltDegrees)
         }
     }
 }

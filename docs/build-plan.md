@@ -73,6 +73,10 @@ their features.
 - Sharpness is the variance of the Laplacian over the aircraft's pixels.
   Exposure is the share of those pixels that is blown out or crushed.
   Framing uses the rectangle around the mask.
+- A matte or dark aircraft has little detail to measure, so its sharpness
+  reads low even in focus. Sharpness is therefore also divided by the
+  variance of the aircraft's brightness, and the score is the better of the
+  two readings.
 - The scoring and the wording live in the core package, in `CheckRules` and
   `TechnicalCheckEngine`, so they are tested on Linux. Each measurement is
   scored by a curve of points, and the curves are data.
@@ -83,8 +87,13 @@ their features.
     open sky where it followed the wings, and never on the four photos with
     a real ground line. It needs another method before it is turned on.
   - Noise and heat haze are not built yet.
-  - Sharpness needs the aircraft to be found. Detail over a whole photo did
-    not tell sharp photos from soft ones.
+  - Every check needs the aircraft to be found. Detail over a whole photo
+    did not tell sharp photos from soft ones, and blown pixels there are as
+    likely to be clouds. A photo with no aircraft found is not scored, and
+    its page says so.
+  - Soft feedback reads the shutter speed. At the fast shutter time in the
+    rules or faster it points to focus, haze, or a heavy crop, and not to
+    the shutter.
   - Framing needs the mask. A box alone misses wingtips, rotors, and the
     rest of a formation.
   - An aircraft that fills most of the photo is treated as a deliberate
@@ -99,9 +108,10 @@ their features.
   low end of each curve is a guess, and the photos were edited web exports
   and not camera originals. Tuning needs soft, blurred, hazy, and badly
   exposed photos next.
-- The iOS simulator cannot run the Vision requests on its default device, so
-  the analyzer asks for the processor there. Results on a real iPhone have
-  not been checked yet.
+- The iOS simulator cannot run the Vision requests that find the aircraft,
+  and asking for the processor does not help. A photo imported there is not
+  scored. The requests run on a Mac. Results on a real iPhone have not been
+  checked yet.
 
 ## Identification
 

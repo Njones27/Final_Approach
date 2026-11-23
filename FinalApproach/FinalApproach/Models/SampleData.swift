@@ -28,12 +28,14 @@ enum SampleData {
         analysisPixelSize: 1600,
         sharpnessOnMask: ScoreCurve(pairs: [(30, 10), (90, 45), (170, 75), (400, 90), (900, 100)])!,
         sharpnessInBox: ScoreCurve(pairs: [(15, 10), (35, 40), (55, 75), (150, 90), (400, 100)])!,
+        sharpnessToContrast: ScoreCurve(pairs: [(0.03, 10), (0.15, 75), (0.4, 100)])!,
+        fastShutterTime: 1.0 / 1000,
         tilt: ScoreCurve(pairs: [(0, 100), (0.5, 90), (1, 75), (2, 55), (5, 20), (10, 0)])!,
         maximumTilt: 10,
         highlightLevel: 252,
         shadowLevel: 3,
         highlights: ScoreCurve(pairs: [(0, 100), (0.01, 90), (0.04, 75), (0.1, 50), (0.3, 10), (0.6, 0)])!,
-        shadows: ScoreCurve(pairs: [(0, 100), (0.05, 90), (0.25, 75), (0.5, 50), (0.8, 10)])!,
+        shadows: ScoreCurve(pairs: [(0, 100), (0.05, 90), (0.35, 75), (0.5, 50), (0.8, 10)])!,
         subjectSize: ScoreCurve(pairs: [(0.01, 10), (0.03, 50), (0.07, 75), (0.2, 90), (0.4, 100)])!,
         edgeMargin: 0.01,
         closeUpArea: 0.6,
@@ -287,6 +289,20 @@ enum SampleData {
             fixes: check.fixes
         )
     }
+
+    /// A logged photo in which the technical check found no aircraft, so
+    /// it has no score.
+    static let unfoundPhoto = SpottedPhoto(
+        id: "preview-unfound",
+        imageName: "SampleB737",
+        aircraftType: "Boeing 737-800",
+        registration: "N8642E",
+        airline: "Southwest Airlines",
+        activity: "",
+        camera: b737Camera,
+        status: .logged,
+        isAircraftFound: false
+    )
 
     // MARK: Voting
 
