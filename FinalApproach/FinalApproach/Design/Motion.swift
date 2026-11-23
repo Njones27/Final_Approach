@@ -29,6 +29,13 @@ enum Motion {
     /// The replacement fading in once the old content has gone.
     static let arrive = Animation.easeOut(duration: 0.22).delay(0.1)
 
+    /// A tab's content arriving after a tab change. Tabs change often, so it
+    /// is quick.
+    static let page = Animation.snappy(duration: 0.3)
+
+    /// How far a tab's content slides in from the side its tab sits on.
+    static let pageDistance: CGFloat = 24
+
     /// How long content waits after its screen starts to open, so it moves
     /// once the screen has arrived and not while it is still travelling. A
     /// screen takes about a third of a second to open.
@@ -67,6 +74,52 @@ private struct RevealOnAppear: ViewModifier {
     }
 }
 
+/// How a tab's screen arrives when the user changes tabs.
+struct TabArrival: Equatable {
+    /// Counts tab changes. A tab keeps the count from the last time it was
+    /// picked, so a new count means the tab was just picked again.
+    var visit = 0
+
+    /// The side the content comes in from. It is 1 when the tab sits to the
+    /// right of the one the user left, -1 when it sits to the left, and 0
+    /// when the app has just opened.
+    var side: CGFloat = 0
+}
+
+extension EnvironmentValues {
+    /// The arrival of the tab this view sits in.
+    @Entry var tabArrival = TabArrival()
+}
+
+/// Fades a tab's content in and slides it from the side its tab sits on,
+/// each time the user changes to that tab. The system tab view swaps tabs
+/// with no motion of its own.
+private struct ArriveWithTab: ViewModifier {
+    let travels: Bool
+
+    @Environment(\.tabArrival) private var arrival
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The visit this content has arrived for. A new visit hides the
+    /// content at once, and the change below brings it back in.
+    @State private var shownVisit: Int?
+
+    private var isShown: Bool {
+        shownVisit == arrival.visit
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(isShown ? 1 : 0)
+            // With Reduce Motion on the content only fades.
+            .offset(x: isShown || !travels || reduceMotion ? 0 : arrival.side * Motion.pageDistance)
+            .onChange(of: arrival.visit, initial: true) { _, visit in
+                withAnimation(Motion.page) {
+                    shownVisit = visit
+                }
+            }
+    }
+}
+
 extension AnyTransition {
     /// Old content fades out before its replacement fades in, so two pieces
     /// of text never sit on top of each other.
@@ -84,5 +137,13 @@ extension View {
     /// after another.
     func revealed(order: Int = 0) -> some View {
         modifier(RevealOnAppear(order: order))
+    }
+
+    /// Brings a tab's content in each time the user changes to its tab. The
+    /// content fades in and slides from the side its tab sits on. Content
+    /// that fills the screen edge to edge, such as a map, passes false for
+    /// `travels` and only fades, so no gap opens at its edge.
+    func arrivesWithTab(travels: Bool = true) -> some View {
+        modifier(ArriveWithTab(travels: travels))
     }
 }

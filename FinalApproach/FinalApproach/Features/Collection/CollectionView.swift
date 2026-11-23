@@ -73,6 +73,7 @@ struct CollectionView: View {
                     grid
                 }
             }
+            .arrivesWithTab()
             .background(Theme.ground)
             .navigationTitle("Collection")
             .toolbar {

@@ -44,6 +44,7 @@ struct ProfileView: View {
                 }
             }
             .scrollContentBackground(.hidden)
+            .arrivesWithTab()
             .background(Theme.ground)
             .navigationTitle("Profile")
             .confirmationDialog(

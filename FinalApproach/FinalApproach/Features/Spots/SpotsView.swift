@@ -126,6 +126,10 @@ struct SpotsView: View {
                 }
             }
             .mapStyle(.standard(pointsOfInterest: .excludingAll))
+            // The map fills the screen, so it fades in and stays put. The
+            // card over it slides in as the other tabs' content does.
+            .arrivesWithTab(travels: false)
+            .background(Theme.ground)
             .safeAreaInset(edge: .bottom) {
                 ZStack(alignment: .bottom) {
                     if let photo = selectedPhoto {
@@ -146,6 +150,7 @@ struct SpotsView: View {
                 .padding(.horizontal, 12)
                 .padding(.bottom, 8)
                 .animation(Motion.swap, value: cardID)
+                .arrivesWithTab()
             }
             .sensoryFeedback(.selection, trigger: selection)
             .navigationTitle("Spots")

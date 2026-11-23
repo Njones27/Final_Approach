@@ -39,8 +39,9 @@ The look is called Darkroom. The rules below apply to every screen.
   `Design/Motion.swift`. A photo grows out of its collection tile and shrinks
   back into it. The grade marker travels up the tier scale, meters fill from
   the top down, the next photo to vote on slides in, and the grid slides to a
-  new order. With Reduce Motion on, anything that travels fades or stays
-  still.
+  new order. The system tab view swaps tabs with no motion, so each tab's
+  content fades in and slides from the side its tab sits on. With Reduce
+  Motion on, anything that travels fades or stays still.
 - The tier thresholds of 50, 65, and 80, the passing score of 75 for one
   check, and the points for each fix on the sample photos are placeholders in
   `SampleData`. They are passed in as data and are not decided yet.

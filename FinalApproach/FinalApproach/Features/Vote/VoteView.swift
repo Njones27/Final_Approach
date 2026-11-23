@@ -20,6 +20,7 @@ struct VoteView: View {
                     )
                 }
             }
+            .arrivesWithTab()
             .background(Theme.ground)
             .navigationTitle("Vote")
             .toolbar {
