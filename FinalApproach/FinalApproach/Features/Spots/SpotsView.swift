@@ -152,6 +152,9 @@ private struct SpotCard: View {
                     Text(spot.summary)
                         .font(.subheadline)
                         .foregroundStyle(Theme.secondaryText)
+                        // Room for two lines is always kept, so the card
+                        // and the map under it hold still between spots.
+                        .lineLimit(2, reservesSpace: true)
                 }
                 HStack(spacing: 6) {
                     ForEach(spot.photoNames, id: \.self) { name in
