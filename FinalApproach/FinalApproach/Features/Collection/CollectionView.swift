@@ -251,6 +251,9 @@ struct CollectionView: View {
         // The technical check measures the photo now, so its feedback is
         // ready the moment the photo is logged.
         photo.measurements = await PhotoAnalyzer.measurements(for: photo.image, rules: model.checkRules)
+        // The text is read now too, so a registration on the aircraft is
+        // already filled in when the Add screen opens.
+        photo.recognizedText = await RegistrationTextReader.recognizedText(in: photo.image)
         importedPhoto = photo
     }
 

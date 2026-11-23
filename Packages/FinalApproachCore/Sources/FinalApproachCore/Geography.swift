@@ -26,6 +26,37 @@ public struct GeoPoint: Equatable, Hashable, Codable, Sendable {
         let haversine = latitudeTerm + cos(startLatitude) * cos(endLatitude) * longitudeTerm
         return earthRadius * 2 * asin(min(1, sqrt(haversine)))
     }
+
+    /// The compass direction to another point, in degrees from 0 up to 360,
+    /// where 0 is north and 90 is east. It is the direction to set out in,
+    /// which is exact enough for an aircraft a few kilometers away.
+    public func bearing(to other: GeoPoint) -> Double {
+        let startLatitude = latitude * .pi / 180
+        let endLatitude = other.latitude * .pi / 180
+        let longitudeChange = (other.longitude - longitude) * .pi / 180
+        let east = sin(longitudeChange) * cos(endLatitude)
+        let northNear = cos(startLatitude) * sin(endLatitude)
+        let northFar = sin(startLatitude) * cos(endLatitude) * cos(longitudeChange)
+        let degrees = atan2(east, northNear - northFar) * 180 / .pi
+        return Compass.normalized(degrees)
+    }
+}
+
+/// Helpers for compass directions in degrees.
+public enum Compass {
+    /// Brings a direction into the range from 0 up to 360.
+    public static func normalized(_ degrees: Double) -> Double {
+        let wrapped = degrees.truncatingRemainder(dividingBy: 360)
+        let turned = wrapped < 0 ? wrapped + 360 : wrapped
+        // A tiny negative number rounds up to a full turn, which is north.
+        return turned >= 360 ? 0 : turned
+    }
+
+    /// The smallest turn between two directions, from 0 to 180 degrees.
+    public static func difference(_ first: Double, _ second: Double) -> Double {
+        let turn = abs(normalized(first) - normalized(second))
+        return turn > 180 ? 360 - turn : turn
+    }
 }
 
 /// A place a photo can be linked to, such as a spotting location.

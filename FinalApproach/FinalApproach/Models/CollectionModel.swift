@@ -71,6 +71,17 @@ final class CollectionModel {
     let spotMatchRadius: Double
     /// How strongly a saved image is compressed, from 0 to 1.
     let storedImageQuality: Double
+    /// How each country writes its registrations, used to find one in the
+    /// text read off a photo.
+    let registrationFormats: [RegistrationFormat]
+    /// How the aircraft flying near a photo are ranked.
+    let flightRankingRules: FlightRankingRules
+    /// The registrations whose identity stays hidden.
+    let blockList: RegistrationBlockList
+    /// Says what was flying near a photo. It is nil until the backend can
+    /// ask the real provider, so a real photo is never matched against
+    /// sample aircraft.
+    @ObservationIgnored private let flightData: (any FlightDataProvider)?
 
     /// - Parameters:
     ///   - photos: The sample photos the app ships with.
@@ -89,10 +100,18 @@ final class CollectionModel {
         votingRules: VotingRules = .launch,
         spotMatchRadius: Double,
         storedImageQuality: Double,
+        registrationFormats: [RegistrationFormat],
+        flightRankingRules: FlightRankingRules,
+        blockList: RegistrationBlockList = .empty,
+        flightData: (any FlightDataProvider)? = nil,
         store: (any PhotoStore)? = nil
     ) {
         self.spotMatchRadius = spotMatchRadius
         self.storedImageQuality = storedImageQuality
+        self.registrationFormats = registrationFormats
+        self.flightRankingRules = flightRankingRules
+        self.blockList = blockList
+        self.flightData = flightData
         var saved = StoredLibrary()
         var usableStore = store
         if let store {
@@ -306,6 +325,37 @@ final class CollectionModel {
                 removedSampleIDs: removedSampleIDs
             )
         )
+    }
+
+    // MARK: Identification
+
+    /// Works out which aircraft is in a picked photo, from the text read
+    /// off it and from what was flying there. The user confirms or
+    /// corrects the result.
+    ///
+    /// - Parameter place: Where the photo was taken, from the file or from
+    ///   the spot the user tagged. Flight data needs a place and a capture
+    ///   time, so without both only the text is used.
+    func identification(for photo: ImportedPhoto, at place: Coordinate?) async -> Identification {
+        let readings = RegistrationReader.readings(in: photo.recognizedText, formats: registrationFormats)
+        var flights: [RankedFlight] = []
+        if let flightData, let place, let time = photo.metadata.capturedAt {
+            // A lookup that fails leaves the user to type the details.
+            let sightings = (try? await flightData.flights(near: place, at: time)) ?? []
+            flights = FlightRanker.rank(
+                sightings,
+                seenFrom: place,
+                facing: photo.metadata.heading,
+                rules: flightRankingRules
+            )
+        }
+        return AircraftIdentifier.identify(readings: readings, flights: flights, blockList: blockList)
+    }
+
+    /// True when a registration must stay hidden, such as one on the FAA
+    /// LADD list.
+    func isBlocked(registration: String) -> Bool {
+        blockList.contains(registration)
     }
 
     // MARK: Collection slots

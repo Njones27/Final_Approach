@@ -11,6 +11,9 @@ struct PhotoMetadata {
     let capturedAt: Date?
     /// Where the photo was taken, when the file carries a location.
     let coordinate: Coordinate?
+    /// The compass direction the camera pointed, in degrees, when the file
+    /// carries one. A phone saves it and most cameras do not.
+    var heading: Double? = nil
 
     static let empty = PhotoMetadata(camera: nil, capturedAt: nil, coordinate: nil)
 }
@@ -24,6 +27,9 @@ struct ImportedPhoto: Identifiable {
     /// What the technical check measured in the photo. It stays empty until
     /// the photo has been measured.
     var measurements = PhotoMeasurements.none
+    /// The text read off the photo, which may hold the registration. It
+    /// stays empty until the photo has been read.
+    var recognizedText: [RecognizedText] = []
 }
 
 /// Reads the image and its saved metadata from a photo file with ImageIO.
@@ -82,7 +88,8 @@ enum PhotoMetadataReader {
             camera: camera.isEmpty ? nil : camera,
             capturedAt: (exif[kCGImagePropertyExifDateTimeOriginal] as? String)
                 .flatMap { captureDate(fromExif: $0) },
-            coordinate: coordinate(from: gps)
+            coordinate: coordinate(from: gps),
+            heading: number(gps[kCGImagePropertyGPSImgDirection])
         )
     }
 

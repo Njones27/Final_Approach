@@ -27,6 +27,8 @@ struct PhotoMetadataReaderTests {
             kCGImagePropertyGPSLatitudeRef: "N",
             kCGImagePropertyGPSLongitude: 84.399,
             kCGImagePropertyGPSLongitudeRef: "W",
+            kCGImagePropertyGPSImgDirection: 135.5,
+            kCGImagePropertyGPSImgDirectionRef: "T",
         ]
         let data = try makeJPEG(properties: [
             kCGImagePropertyExifDictionary: exif,
@@ -54,6 +56,9 @@ struct PhotoMetadataReaderTests {
         let coordinate = try #require(photo.metadata.coordinate)
         #expect(abs(coordinate.latitude - 33.6215) < 0.001)
         #expect(abs(coordinate.longitude + 84.399) < 0.001)
+
+        let heading = try #require(photo.metadata.heading)
+        #expect(abs(heading - 135.5) < 0.01)
     }
 
     @Test func aPhotoWithNoMetadataStillImports() throws {

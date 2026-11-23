@@ -50,9 +50,88 @@ enum SampleData {
     /// How strongly a logged photo's saved copy is compressed.
     static let storedImageQuality = 0.9
 
+    /// How a few countries write their registrations. The list is a
+    /// starting set and grows from the backend later.
+    static let registrationFormats: [RegistrationFormat] = [
+        RegistrationFormat(country: "United States", prefix: "N", hasHyphen: false, suffix: .unitedStates),
+        RegistrationFormat(country: "Canada", prefix: "C", hasHyphen: true, suffix: .letters(4...4)),
+        RegistrationFormat(country: "Mexico", prefix: "XA", hasHyphen: true, suffix: .letters(3...3)),
+        RegistrationFormat(country: "United Kingdom", prefix: "G", hasHyphen: true, suffix: .letters(4...4)),
+        RegistrationFormat(country: "Ireland", prefix: "EI", hasHyphen: true, suffix: .letters(3...3)),
+        RegistrationFormat(country: "Germany", prefix: "D", hasHyphen: true, suffix: .letters(4...4)),
+        RegistrationFormat(country: "France", prefix: "F", hasHyphen: true, suffix: .letters(4...4)),
+        RegistrationFormat(country: "Netherlands", prefix: "PH", hasHyphen: true, suffix: .letters(3...3)),
+        RegistrationFormat(country: "Spain", prefix: "EC", hasHyphen: true, suffix: .letters(3...3)),
+        RegistrationFormat(country: "Italy", prefix: "I", hasHyphen: true, suffix: .letters(4...4)),
+        RegistrationFormat(country: "Switzerland", prefix: "HB", hasHyphen: true, suffix: .letters(3...3)),
+        RegistrationFormat(country: "Turkey", prefix: "TC", hasHyphen: true, suffix: .letters(3...3)),
+        RegistrationFormat(country: "United Arab Emirates", prefix: "A6", hasHyphen: true, suffix: .letters(3...3)),
+        RegistrationFormat(country: "Qatar", prefix: "A7", hasHyphen: true, suffix: .letters(3...3)),
+        RegistrationFormat(country: "Australia", prefix: "VH", hasHyphen: true, suffix: .letters(3...3)),
+        RegistrationFormat(country: "New Zealand", prefix: "ZK", hasHyphen: true, suffix: .letters(3...3)),
+        RegistrationFormat(country: "Japan", prefix: "JA", hasHyphen: false, suffix: .lettersAndNumbers(4...4)),
+        RegistrationFormat(country: "South Korea", prefix: "HL", hasHyphen: false, suffix: .lettersAndNumbers(4...4)),
+    ]
+
+    /// Placeholder values for ranking the aircraft near a photo. They are
+    /// tuned once real flight data arrives.
+    static let flightRankingRules = FlightRankingRules(
+        maximumDistance: 15_000,
+        maximumAltitude: 12_000,
+        distanceWeight: 0.5,
+        altitudeWeight: 0.3,
+        bearingWeight: 0.2,
+        limit: 3
+    )!
+
+    /// Aircraft for previews and tests of the Add screen. Only the first
+    /// carries full details, as the provider's light answer has a callsign
+    /// and a position and nothing else. The flight number and route are
+    /// invented.
+    static let flights: [FlightSighting] = [
+        FlightSighting(
+            id: "sample-asa",
+            callsign: "ASA331",
+            position: Coordinate(latitude: 33.6262, longitude: -84.3921)!,
+            altitude: 600,
+            registration: "N823AK",
+            aircraftType: "Boeing 737 MAX 8",
+            airline: "Alaska Airlines",
+            flightNumber: "AS331",
+            origin: "SEA",
+            destination: "ATL"
+        ),
+        FlightSighting(
+            id: "sample-dal",
+            callsign: "DAL1482",
+            position: Coordinate(latitude: 33.6318, longitude: -84.3402)!,
+            altitude: 2_400
+        ),
+        FlightSighting(
+            id: "sample-skw",
+            callsign: "SKW3765",
+            position: Coordinate(latitude: 33.6871, longitude: -84.4410)!,
+            altitude: 5_200
+        ),
+        // Too high to be in a photo taken from the ground nearby.
+        FlightSighting(
+            id: "sample-cruise",
+            callsign: "UAL88",
+            position: Coordinate(latitude: 33.6300, longitude: -84.4100)!,
+            altitude: 36_000
+        ),
+    ]
+
     /// The app's state on sample data. Pass a store to keep logged photos
     /// on the device. Previews and tests leave it out and stay in memory.
-    static func model(store: (any PhotoStore)? = nil) -> CollectionModel {
+    ///
+    /// Pass flight data only for a preview or a test. The app itself has
+    /// none until the backend exists.
+    static func model(
+        store: (any PhotoStore)? = nil,
+        flightData: (any FlightDataProvider)? = nil,
+        blockList: RegistrationBlockList = .empty
+    ) -> CollectionModel {
         CollectionModel(
             photos: photos,
             profile: profile,
@@ -64,6 +143,10 @@ enum SampleData {
             fixTargetScore: fixTargetScore,
             spotMatchRadius: spotMatchRadius,
             storedImageQuality: storedImageQuality,
+            registrationFormats: registrationFormats,
+            flightRankingRules: flightRankingRules,
+            blockList: blockList,
+            flightData: flightData,
             store: store
         )
     }
@@ -234,7 +317,12 @@ enum SampleData {
                 camera: b737Camera,
                 capturedAt: PhotoMetadataReader.captureDate(fromExif: "2026:05:17 20:33:01"),
                 coordinate: Coordinate(latitude: 33.6215, longitude: -84.3990)
-            )
+            ),
+            // What the text reader might find on the fuselage and tail.
+            recognizedText: [
+                RecognizedText(text: "Alaska", confidence: 0.98),
+                RecognizedText(text: "N823AK", confidence: 0.86),
+            ]
         )
     }
 
