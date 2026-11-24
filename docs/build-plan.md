@@ -207,6 +207,15 @@ Still to come in this milestone: the backend lookup, the public registry
 lookup for a reading with no flight data, the per-camera clock correction,
 tagging a batch at once, and suggesting nearby airports for a tag.
 
+## Backend
+
+The backend is a CDK app in `backend/`. It has a table of records, a bucket
+of images, a user pool that signs users in with Apple, and an HTTP API to
+save, list, and delete the signed in user's own photos and to delete the
+account. It has not been deployed, and the app does not call it yet. The
+design, the rules for deleting, and what the first deploy needs are in
+`docs/backend.md`.
+
 ## Milestones
 
 1. **Foundation.** Xcode project, core package, CI workflows, setup pages.
