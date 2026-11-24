@@ -38,6 +38,18 @@ function memoryStore() {
     async imageBytes(userID, photoID) {
       return images.get(key(userID, photoID));
     },
+    async showAtSpot(userID, photoID, showing) {
+      const existing = posts.get(key(userID, photoID));
+      if (!existing) return 'notPosted';
+      posts.set(key(userID, photoID), { ...existing, shownAt: showing });
+      return 'shown';
+    },
+    async hideFromSpots(userID, photoID) {
+      const existing = posts.get(key(userID, photoID));
+      if (!existing) return;
+      const { shownAt: _, ...rest } = existing;
+      posts.set(key(userID, photoID), rest);
+    },
   };
   return {
     store,
@@ -62,6 +74,8 @@ function setUp() {
     rules: { scaleMax: 5, minVotes: 5 },
     now: () => clock,
     newPostID: () => `post-${(made += 1)}`,
+    isListedSpot: (spotID) => spotID === 'xyz-east-fence',
+    shownTextMaxLength: 20,
   });
   return { ...memory, handler, setClock: (time: string) => (clock = new Date(time)) };
 }
@@ -260,5 +274,134 @@ describe('listing posts', () => {
   test('any other route is not found', async () => {
     const { handler } = setUp();
     assert.equal((await handler(apiEvent({ routeKey: 'DELETE /posts/{photoID}', photoID: 'p1' }))).statusCode, 404);
+  });
+});
+
+describe('showing a posted photo at a spot', () => {
+  const show = (photoID: string, body: unknown, claims?: Record<string, string> | null) =>
+    apiEvent({
+      routeKey: 'PUT /posts/{photoID}/spot',
+      photoID,
+      body: typeof body === 'string' ? body : JSON.stringify(body),
+      ...(claims === undefined ? {} : { claims }),
+    });
+  const hide = (photoID: string) => apiEvent({ routeKey: 'DELETE /posts/{photoID}/spot', photoID });
+  const showing = { spotID: 'xyz-east-fence', aircraftType: 'Boeing 737-800', airline: 'Southwest' };
+
+  async function posted() {
+    const rig = setUp();
+    rig.savePhoto('user-1', 'p1');
+    await rig.handler(post('p1'));
+    return rig;
+  }
+
+  test('a posted photo is shown with its spot, type, and airline', async () => {
+    const { handler, posts } = await posted();
+    const result = await handler(show('p1', showing));
+    assert.equal(result.statusCode, 200);
+    assert.deepEqual(bodyOf(result), { photoID: 'p1', shownAt: showing });
+    assert.deepEqual(posts.get('user-1/p1')?.shownAt, showing);
+  });
+
+  test('nothing but the three named things is kept', async () => {
+    const { handler, posts } = await posted();
+    const extra = { ...showing, registration: 'N8642E', latitude: 33.6, photographer: 'Nathan' };
+    await handler(show('p1', extra));
+    assert.deepEqual(posts.get('user-1/p1')?.shownAt, showing);
+  });
+
+  test('the type and the airline may be left out, and blank text counts as left out', async () => {
+    const { handler, posts } = await posted();
+    await handler(show('p1', { spotID: 'xyz-east-fence', aircraftType: '  ', airline: null }));
+    assert.deepEqual(posts.get('user-1/p1')?.shownAt, { spotID: 'xyz-east-fence' });
+  });
+
+  test('text is trimmed before it is kept', async () => {
+    const { handler, posts } = await posted();
+    await handler(show('p1', { spotID: 'xyz-east-fence', airline: '  Delta ' }));
+    assert.deepEqual(posts.get('user-1/p1')?.shownAt, { spotID: 'xyz-east-fence', airline: 'Delta' });
+  });
+
+  test('showing again replaces what was shown before', async () => {
+    const { handler, posts } = await posted();
+    await handler(show('p1', showing));
+    await handler(show('p1', { spotID: 'xyz-east-fence', aircraftType: 'Airbus A220' }));
+    assert.deepEqual(posts.get('user-1/p1')?.shownAt, { spotID: 'xyz-east-fence', aircraftType: 'Airbus A220' });
+  });
+
+  test('a spot that is not listed is refused with its own code', async () => {
+    const { handler, posts } = await posted();
+    const result = await handler(show('p1', { spotID: 'made-up-spot' }));
+    assert.equal(result.statusCode, 404);
+    assert.equal(bodyOf(result).code, 'unknownSpot');
+    assert.equal(posts.get('user-1/p1')?.shownAt, undefined);
+  });
+
+  test('a body with no spot is refused', async () => {
+    const { handler } = await posted();
+    for (const body of ['', 'not json', '[]', '{}', { spotID: 7 }, { aircraftType: 'Boeing 737' }]) {
+      assert.equal((await handler(show('p1', body))).statusCode, 400, JSON.stringify(body));
+    }
+  });
+
+  test('text that is too long, not text, or holds a control character is refused', async () => {
+    const { handler, posts } = await posted();
+    for (const aircraftType of ['x'.repeat(21), 7, ['Boeing'], 'Boeing\n737', 'Boeing\u0000']) {
+      const result = await handler(show('p1', { spotID: 'xyz-east-fence', aircraftType }));
+      assert.equal(result.statusCode, 400, JSON.stringify(aircraftType));
+    }
+    assert.equal((await handler(show('p1', { spotID: 'xyz-east-fence', airline: 'x'.repeat(21) }))).statusCode, 400);
+    assert.equal(posts.get('user-1/p1')?.shownAt, undefined);
+  });
+
+  test('a photo that is not posted cannot be shown', async () => {
+    const { handler, savePhoto } = setUp();
+    savePhoto('user-1', 'p1');
+    const result = await handler(show('p1', showing));
+    assert.equal(result.statusCode, 409);
+    assert.equal(bodyOf(result).code, 'notPosted');
+  });
+
+  test('a user cannot show another user’s photo', async () => {
+    const { handler, posts } = await posted();
+    const result = await handler(show('p1', showing, { sub: 'user-2', username: 'apple-user-2' }));
+    assert.equal(bodyOf(result).code, 'notPosted');
+    assert.equal(posts.get('user-1/p1')?.shownAt, undefined);
+  });
+
+  test('the owner’s list of posts says where each photo is shown', async () => {
+    const { handler, savePhoto } = await posted();
+    savePhoto('user-1', 'p2');
+    await handler(post('p2'));
+    await handler(show('p1', showing));
+    const listed = bodyOf(await handler(apiEvent({ routeKey: 'GET /posts' }))).posts;
+    assert.deepEqual(listed.map((entry: { shownAt?: unknown }) => entry.shownAt), [showing, undefined]);
+  });
+
+  test('taking a photo off its spot removes everything that was shown', async () => {
+    const { handler, posts } = await posted();
+    await handler(show('p1', showing));
+    const result = await handler(hide('p1'));
+    assert.equal(result.statusCode, 204);
+    assert.equal(posts.get('user-1/p1')?.shownAt, undefined);
+    // The post itself stays, with its votes.
+    assert.equal(posts.get('user-1/p1')?.postID, 'post-1');
+  });
+
+  test('taking off a photo that is shown nowhere, or not posted, is not a fault', async () => {
+    const { handler } = await posted();
+    assert.equal((await handler(hide('p1'))).statusCode, 204);
+    assert.equal((await handler(hide('never-posted'))).statusCode, 204);
+  });
+
+  test('a caller who is not signed in is turned away', async () => {
+    const { handler } = await posted();
+    assert.equal((await handler(show('p1', showing, null))).statusCode, 401);
+  });
+
+  test('a photo id that is not usable is refused', async () => {
+    const { handler } = await posted();
+    assert.equal((await handler(show('a/b', showing))).statusCode, 400);
+    assert.equal((await handler(hide('a/b'))).statusCode, 400);
   });
 });

@@ -190,3 +190,94 @@ describe('reading an image to check it', () => {
     await assert.rejects(store.imageBytes('u1', 'p1'), /AccessDenied/);
   });
 });
+
+describe('showing a post at a spot', () => {
+  const showing = { spotID: 'xyz-east-fence', aircraftType: 'Boeing 737-800', airline: 'Southwest' };
+
+  test('the post is updated in its owner’s partition, and only if it is there', async () => {
+    const { dynamo, store } = setUp();
+    assert.equal(await store.showAtSpot('u1', 'p1', showing), 'shown');
+    assert.deepEqual(dynamo.sent, [
+      {
+        name: 'UpdateCommand',
+        input: {
+          TableName: 'records',
+          Key: { pk: 'USER#u1', sk: 'POST#p1' },
+          UpdateExpression:
+            'SET #spotKey = :spotKey, #spotID = :spotID, #aircraftType = :aircraftType, #airline = :airline',
+          ExpressionAttributeNames: {
+            '#spotKey': 'spotKey',
+            '#spotID': 'spotID',
+            '#aircraftType': 'aircraftType',
+            '#airline': 'airline',
+          },
+          ExpressionAttributeValues: {
+            ':spotKey': 'SPOT#xyz-east-fence',
+            ':spotID': 'xyz-east-fence',
+            ':aircraftType': 'Boeing 737-800',
+            ':airline': 'Southwest',
+          },
+          ConditionExpression: 'attribute_exists(pk)',
+        },
+      },
+    ]);
+  });
+
+  test('a field that is left out is taken off the post', async () => {
+    const { dynamo, store } = setUp();
+    await store.showAtSpot('u1', 'p1', { spotID: 'xyz-east-fence', airline: 'Delta' });
+    const input = dynamo.sent[0]?.input;
+    assert.equal(
+      input.UpdateExpression,
+      'SET #spotKey = :spotKey, #spotID = :spotID, #airline = :airline REMOVE #aircraftType',
+    );
+    assert.deepEqual(input.ExpressionAttributeValues, {
+      ':spotKey': 'SPOT#xyz-east-fence',
+      ':spotID': 'xyz-east-fence',
+      ':airline': 'Delta',
+    });
+  });
+
+  test('a photo with no post is not shown, and no record is made for it', async () => {
+    const { store } = setUp({ UpdateCommand: [awsError('ConditionalCheckFailedException')] });
+    assert.equal(await store.showAtSpot('u1', 'p1', showing), 'notPosted');
+  });
+
+  test('any other failure is passed on', async () => {
+    const { store } = setUp({ UpdateCommand: [awsError('ProvisionedThroughputExceededException')] });
+    await assert.rejects(store.showAtSpot('u1', 'p1', showing), /ProvisionedThroughputExceeded/);
+  });
+
+  test('taking a post off its spot removes the index key and everything shown', async () => {
+    const { dynamo, store } = setUp();
+    await store.hideFromSpots('u1', 'p1');
+    assert.deepEqual(dynamo.sent[0]?.input, {
+      TableName: 'records',
+      Key: { pk: 'USER#u1', sk: 'POST#p1' },
+      UpdateExpression: 'REMOVE #spotKey, #spotID, #aircraftType, #airline',
+      ExpressionAttributeNames: {
+        '#spotKey': 'spotKey',
+        '#spotID': 'spotID',
+        '#aircraftType': 'aircraftType',
+        '#airline': 'airline',
+      },
+      ConditionExpression: 'attribute_exists(pk)',
+    });
+  });
+
+  test('taking off a photo with no post is not a fault, and any other failure is passed on', async () => {
+    const gone = setUp({ UpdateCommand: [awsError('ConditionalCheckFailedException')] });
+    await gone.store.hideFromSpots('u1', 'p1');
+    const broken = setUp({ UpdateCommand: [awsError('InternalServerError')] });
+    await assert.rejects(broken.store.hideFromSpots('u1', 'p1'), /InternalServerError/);
+  });
+
+  test('a post is read with where it is shown', async () => {
+    const item = { pk: 'USER#u1', sk: 'POST#p1', ...post, spotKey: 'SPOT#xyz-east-fence', ...showing };
+    const plain = { pk: 'USER#u1', sk: 'POST#p2', ...post, photoID: 'p2' };
+    const { store } = setUp({ QueryCommand: [{ Items: [item, plain] }] });
+    const page = await store.list('u1');
+    assert.deepEqual(page.posts[0]?.shownAt, showing);
+    assert.equal(page.posts[1]?.shownAt, undefined);
+  });
+});

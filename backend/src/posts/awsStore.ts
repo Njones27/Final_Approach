@@ -3,6 +3,7 @@ import {
   GetCommand,
   QueryCommand,
   TransactWriteCommand,
+  UpdateCommand,
   type DynamoDBDocumentClient,
 } from '@aws-sdk/lib-dynamodb';
 import {
@@ -12,10 +13,12 @@ import {
   photoSortKey,
   postSortKey,
   postSortKeyPrefix,
+  spotIndex,
+  spotKey,
   votingIndex,
 } from '../shared/keys.ts';
 import { emptyTally } from '../votes/standing.ts';
-import type { PostOutcome, PostPage, PostStore, StoredPost } from './store.ts';
+import type { PostOutcome, PostPage, PostStore, SpotShowing, StoredPost } from './store.ts';
 
 export interface AwsPostStoreSettings {
   readonly dynamo: Pick<DynamoDBDocumentClient, 'send'>;
@@ -46,8 +49,24 @@ function isNamed(error: unknown, ...names: string[]): boolean {
 
 const count = (value: unknown): number => (typeof value === 'number' ? value : 0);
 
+/** The things a post can show at a spot beside the spot itself. */
+const shownFields = ['aircraftType', 'airline'] as const;
+
+function showingOf(item: Record<string, unknown>): SpotShowing | undefined {
+  const spotID = item['spotID'];
+  if (typeof spotID !== 'string') return undefined;
+  const aircraftType = item['aircraftType'];
+  const airline = item['airline'];
+  return {
+    spotID,
+    ...(typeof aircraftType === 'string' ? { aircraftType } : {}),
+    ...(typeof airline === 'string' ? { airline } : {}),
+  };
+}
+
 function postOf(item: Record<string, unknown>): StoredPost {
   const finalScore = item['finalScore'];
+  const shownAt = showingOf(item);
   return {
     photoID: String(item['photoID']),
     postID: String(item['postID']),
@@ -58,6 +77,7 @@ function postOf(item: Record<string, unknown>): StoredPost {
     weightSum: count(item['weightSum']),
     weightedValueSum: count(item['weightedValueSum']),
     ...(typeof finalScore === 'number' ? { finalScore } : {}),
+    ...(shownAt ? { shownAt } : {}),
   };
 }
 
@@ -157,6 +177,66 @@ export function makeAwsPostStore(settings: AwsPostStoreSettings): PostStore {
       const nextAfter =
         typeof lastKey === 'string' ? lastKey.slice(postSortKeyPrefix.length) : undefined;
       return { posts: (result.Items ?? []).map(postOf), ...(nextAfter ? { nextAfter } : {}) };
+    },
+
+    async showAtSpot(userID, photoID, showing) {
+      const names: Record<string, string> = { '#spotKey': spotIndex.partitionKey, '#spotID': 'spotID' };
+      const values: Record<string, string> = {
+        ':spotKey': spotKey(showing.spotID),
+        ':spotID': showing.spotID,
+      };
+      const sets = ['#spotKey = :spotKey', '#spotID = :spotID'];
+      const removes: string[] = [];
+      // What is shown replaces what was shown before, so a field that is
+      // left out now is taken off the post.
+      for (const field of shownFields) {
+        names[`#${field}`] = field;
+        const value = showing[field];
+        if (value === undefined) {
+          removes.push(`#${field}`);
+        } else {
+          sets.push(`#${field} = :${field}`);
+          values[`:${field}`] = value;
+        }
+      }
+      try {
+        await dynamo.send(
+          new UpdateCommand({
+            TableName: tableName,
+            Key: { pk: partitionKey(userID), sk: postSortKey(photoID) },
+            UpdateExpression:
+              `SET ${sets.join(', ')}` + (removes.length > 0 ? ` REMOVE ${removes.join(', ')}` : ''),
+            ExpressionAttributeNames: names,
+            ExpressionAttributeValues: values,
+            // An update makes a record when there is none. Only a post that
+            // is there may be shown, so a deleted one is never brought back.
+            ConditionExpression: 'attribute_exists(pk)',
+          }),
+        );
+        return 'shown';
+      } catch (error) {
+        if (isNamed(error, 'ConditionalCheckFailedException')) return 'notPosted';
+        throw error;
+      }
+    },
+
+    async hideFromSpots(userID, photoID) {
+      const names: Record<string, string> = { '#spotKey': spotIndex.partitionKey, '#spotID': 'spotID' };
+      for (const field of shownFields) names[`#${field}`] = field;
+      try {
+        await dynamo.send(
+          new UpdateCommand({
+            TableName: tableName,
+            Key: { pk: partitionKey(userID), sk: postSortKey(photoID) },
+            UpdateExpression: `REMOVE ${Object.keys(names).join(', ')}`,
+            ExpressionAttributeNames: names,
+            ConditionExpression: 'attribute_exists(pk)',
+          }),
+        );
+      } catch (error) {
+        // With no post there is nothing shown anywhere.
+        if (!isNamed(error, 'ConditionalCheckFailedException')) throw error;
+      }
     },
 
     async imageBytes(userID, photoID) {

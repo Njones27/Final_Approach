@@ -91,7 +91,7 @@ describe('the table', () => {
     });
   });
 
-  test('has one index, of the posts still open for votes', () => {
+  test('has two indexes, of the posts open for votes and of the photos shown at spots', () => {
     for (const stage of [beta, prod]) {
       stage.storage.hasResourceProperties('AWS::DynamoDB::Table', {
         GlobalSecondaryIndexes: [
@@ -100,6 +100,14 @@ describe('the table', () => {
             KeySchema: [
               { AttributeName: 'votingKey', KeyType: 'HASH' },
               { AttributeName: 'postID', KeyType: 'RANGE' },
+            ],
+            Projection: { ProjectionType: 'ALL' },
+          },
+          {
+            IndexName: 'Spot',
+            KeySchema: [
+              { AttributeName: 'spotKey', KeyType: 'HASH' },
+              { AttributeName: 'finalScore', KeyType: 'RANGE' },
             ],
             Projection: { ProjectionType: 'ALL' },
           },
@@ -160,19 +168,22 @@ describe('sign in', () => {
 });
 
 describe('the API', () => {
-  test('has exactly the nine routes, and each needs a signed in user', () => {
+  test('has exactly the twelve routes, and each needs a signed in user', () => {
     const routes = Object.values(beta.api.findResources('AWS::ApiGatewayV2::Route')).map(
       (route) => route['Properties'],
     );
     assert.deepEqual(routes.map((route) => route.RouteKey).sort(), [
       'DELETE /account',
       'DELETE /photos/{photoID}',
+      'DELETE /posts/{photoID}/spot',
       'GET /photos',
       'GET /posts',
       'GET /spots',
+      'GET /spots/{spotID}/photos',
       'GET /votes/queue',
       'PUT /photos/{photoID}',
       'PUT /posts/{photoID}',
+      'PUT /posts/{photoID}/spot',
       'PUT /votes/{postID}',
     ]);
     for (const route of routes) assert.equal(route.AuthorizationType, 'JWT', route.RouteKey);
@@ -281,10 +292,13 @@ describe('what the functions may do', () => {
       'dynamodb:Query',
       'dynamodb:Query',
       'dynamodb:Query',
+      'dynamodb:Query',
+      'dynamodb:UpdateItem',
       'dynamodb:UpdateItem',
       'dynamodb:UpdateItem',
       's3:DeleteObject',
       's3:DeleteObject',
+      's3:GetObject',
       's3:GetObject',
       's3:GetObject',
       's3:GetObject',
@@ -326,15 +340,12 @@ describe('what the functions may do', () => {
     assert.match(JSON.stringify(query?.Resource), /\/index\/Voting/);
   });
 
-  test('the spots function reaches no table and no image', () => {
-    // The list of spots is in its code, so it needs nothing from the account.
-    const policies = Object.keys(beta.api.findResources('AWS::IAM::Policy'));
-    assert.ok(!policies.some((id) => id.startsWith('SpotsServiceRole')), policies.join(', '));
-    const spots = Object.entries(beta.api.findResources('AWS::Lambda::Function')).find(([id]) =>
-      /^Spots[0-9A-F]{8}$/.test(id),
-    );
-    assert.ok(spots, 'the Spots function');
-    assert.equal(spots[1]['Properties'].Environment, undefined);
+  test('the spots function reads the index of photos shown at spots and signs links, and writes nothing', () => {
+    const statements = policyOf('Spots');
+    assert.deepEqual(statements.flatMap((statement) => statement.Action).sort(), ['dynamodb:Query', 's3:GetObject']);
+    const query = statements.find((statement) => [statement.Action].flat().includes('dynamodb:Query'));
+    // It may read the one index, and not the table of every user's records.
+    assert.match(JSON.stringify(query?.Resource), /\/index\/Spot"\]\]\}$/);
   });
 
   test('the posts function reads and writes records and reads images, and changes no image', () => {
@@ -350,6 +361,7 @@ describe('what the functions may do', () => {
       'dynamodb:GetItem',
       'dynamodb:PutItem',
       'dynamodb:Query',
+      'dynamodb:UpdateItem',
       's3:GetObject',
       's3:ListBucket',
     ]);
@@ -364,7 +376,7 @@ describe('what the functions may do', () => {
     const imageStatements = statements(beta.api).filter((statement) =>
       [statement.Action].flat().some((action) => action.startsWith('s3:') && action !== 's3:ListBucket'),
     );
-    assert.equal(imageStatements.length, 4);
+    assert.equal(imageStatements.length, 5);
     for (const statement of imageStatements) {
       assert.match(JSON.stringify(statement.Resource), /\/users\/\*/);
     }

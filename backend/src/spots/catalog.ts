@@ -38,6 +38,11 @@ export interface Airport {
  */
 export const catalog: readonly Airport[] = [];
 
+/** The id of every spot in a list. */
+export function listedSpotIDs(airports: readonly Airport[]): ReadonlySet<string> {
+  return new Set(airports.flatMap((airport) => airport.spots.map((spot) => spot.id)));
+}
+
 /** What a listing must keep to. */
 export interface CatalogLimits {
   /** A spot farther than this from its airport is a mistake in the pin. */

@@ -10,7 +10,7 @@ import type { IBucket } from 'aws-cdk-lib/aws-s3';
 import type { ITopic } from 'aws-cdk-lib/aws-sns';
 import type { Construct } from 'constructs';
 import { alarmPeriod, countAlarm } from './alarms.ts';
-import { votingIndex } from '../src/shared/keys.ts';
+import { spotIndex, votingIndex } from '../src/shared/keys.ts';
 import { allow, backendFunction, userImages } from './functions.ts';
 import { deletedAccountMarkerSeconds, type StageSettings } from './stages.ts';
 
@@ -71,6 +71,7 @@ export class ApiStack extends Stack {
         POSTS_PER_PAGE: String(stage.photosPerPage),
         MAX_IMAGE_BYTES: String(stage.maxImageBytes),
         VOTING_WINDOW_HOURS: String(stage.votingWindowHours),
+        SHOWN_TEXT_MAX_LENGTH: String(stage.shownTextMaxLength),
         ...votingRules,
       },
     });
@@ -78,7 +79,8 @@ export class ApiStack extends Stack {
     // of the same photo reads the first.
     allow(
       posts,
-      ['dynamodb:Query', 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:ConditionCheckItem'],
+      // Showing a post at a spot, or taking it off, is an update of the post.
+      ['dynamodb:Query', 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:ConditionCheckItem', 'dynamodb:UpdateItem'],
       table.tableArn,
     );
     // A post reads the photo's image to see that no place is written in it.
@@ -111,9 +113,22 @@ export class ApiStack extends Stack {
     // A voter reads a photo through a link this function signs.
     allow(votes, ['s3:GetObject'], images.arnForObjects(userImages));
 
-    // The list of spots is part of the function's own code. It reads no
-    // table and no image, so it is given no access to either.
-    const spots = backendFunction(this, 'Spots', { source: 'spots/index.ts', stage, alerts });
+    // The list of spots is part of the function's own code. For a spot's
+    // page it reads the index of photos shown at spots and nothing else in
+    // the table, and it writes nothing.
+    const spots = backendFunction(this, 'Spots', {
+      source: 'spots/index.ts',
+      stage,
+      alerts,
+      environment: {
+        ...storage,
+        PHOTOS_PER_SPOT: String(stage.photosPerSpot),
+        IMAGE_LINK_SECONDS: String(stage.imageLinkSeconds),
+      },
+    });
+    allow(spots, ['dynamodb:Query'], `${table.tableArn}/index/${spotIndex.name}`);
+    // A visitor reads a photo through a link this function signs.
+    allow(spots, ['s3:GetObject'], images.arnForObjects(userImages));
 
     const closer = backendFunction(this, 'Closer', {
       source: 'votes/closerIndex.ts',
@@ -179,6 +194,11 @@ export class ApiStack extends Stack {
       methods: [HttpMethod.PUT],
       integration: postRoutes,
     });
+    this.api.addRoutes({
+      path: '/posts/{photoID}/spot',
+      methods: [HttpMethod.PUT, HttpMethod.DELETE],
+      integration: postRoutes,
+    });
     const voteRoutes = new HttpLambdaIntegration('VoteRoutes', votes);
     this.api.addRoutes({ path: '/votes/queue', methods: [HttpMethod.GET], integration: voteRoutes });
     this.api.addRoutes({
@@ -186,10 +206,12 @@ export class ApiStack extends Stack {
       methods: [HttpMethod.PUT],
       integration: voteRoutes,
     });
+    const spotRoutes = new HttpLambdaIntegration('SpotRoutes', spots);
+    this.api.addRoutes({ path: '/spots', methods: [HttpMethod.GET], integration: spotRoutes });
     this.api.addRoutes({
-      path: '/spots',
+      path: '/spots/{spotID}/photos',
       methods: [HttpMethod.GET],
-      integration: new HttpLambdaIntegration('SpotRoutes', spots),
+      integration: spotRoutes,
     });
     this.api.addRoutes({
       path: '/account',
