@@ -1,0 +1,40 @@
+name: Backend checks
+
+# Shared gate for pull requests and pushes to main (ci.yml). Uses no secrets
+# and no AWS account. It type checks the backend, runs its tests, and builds
+# the CloudFormation templates, which bundles every function. Deploying is a
+# separate workflow that does not exist yet. See docs/backend.md.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend tests and templates
+    runs-on: ubuntu-latest
+    # Official Node.js image. Keep the version in step with the Lambda runtime
+    # in backend/lib/functions.ts and with "engines" in backend/package.json.
+    container: node:22
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Install
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build the beta templates
+        run: npx cdk synth --quiet -c stage=beta
+
+      - name: Build the prod templates
+        run: npx cdk synth --quiet -c stage=prod

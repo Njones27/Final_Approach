@@ -10,7 +10,8 @@ check that works on Linux. This is the same split the WalkWorthy repo uses.
 | App build and unit tests in the simulator | Xcode Cloud | Merge to `main` |
 | Archive and internal TestFlight | Xcode Cloud, Beta workflow | Merge to `main` |
 | Archive, external TestFlight, App Store | Xcode Cloud, Release workflow | Version tag such as `v1.0.0` |
-| Backend checks and deploys | GitHub Actions | Added with the backend |
+| Backend type check, tests, and template build (`backend/`) | GitHub Actions, Linux | Every pull request and push to `main` |
+| Backend deploys | GitHub Actions | Added after the first deploy by hand. See `docs/backend.md` |
 
 ## Environments
 
@@ -98,12 +99,16 @@ The Apple Developer Program includes 25 Xcode Cloud compute hours a month.
 ## GitHub Actions
 
 `.github/workflows/ci.yml` runs on every pull request and on pushes to `main`.
-It calls the reusable `.github/workflows/core-checks.yml`, which has two jobs.
+It calls two reusable workflows. `.github/workflows/core-checks.yml` has two
+jobs, and `.github/workflows/backend-checks.yml` has one.
 
 - **Core package tests** builds and tests `Packages/FinalApproachCore` in the
   official `swift` container image.
 - **Xcode Cloud script checks** lints `ci_scripts` with shellcheck and runs the
   post-clone script against a temporary directory.
+- **Backend tests and templates** type checks `backend/`, runs its tests, and
+  builds the templates for both stages in the official `node` container image.
+  It needs no AWS account.
 
 Conventions, carried over from WalkWorthy:
 
@@ -115,13 +120,12 @@ Conventions, carried over from WalkWorthy:
 
 ## AWS accounts
 
-The backend does not exist yet. The plan for it:
+There is one AWS account for each stage. On the owner's Mac they are the AWS
+CLI profiles `fa-beta` and `fa-prod`. Every workload goes to `fa-beta` first,
+and `fa-prod` stays empty until shortly before public launch.
 
-1. Create the AWS account and turn on AWS Organizations. That account handles
-   billing and sign-in only.
-2. Create a member account named `beta` and deploy every workload there.
-3. Create a `prod` member account shortly before public launch.
-
-The CDK app will take the stage and account from configuration, and GitHub
-Actions will deploy by assuming an IAM role through OIDC, so no AWS keys are
-stored in GitHub.
+The backend is written and has not been deployed. The CDK app takes the stage
+from `-c stage=<name>` and the account from the profile in use. The first
+deploy is by hand from the owner's Mac. After that, GitHub Actions will deploy
+by assuming an IAM role through OIDC, so no AWS keys are stored in GitHub. The
+steps are in `docs/backend.md`.

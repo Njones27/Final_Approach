@@ -27,12 +27,18 @@ for decisions and milestones before starting a feature.
 - `FinalApproach/ci_scripts/` holds Xcode Cloud scripts.
 - `Packages/FinalApproachCore/` is a local Swift package with pure domain
   logic such as tiers, grade blending, and voting rules.
+- `backend/` is the AWS backend, defined with the CDK in TypeScript. `lib/`
+  holds the stacks and the stage settings, `src/` holds the Lambda functions,
+  and `test/` holds their tests. Read `docs/backend.md` before changing it.
 
 ## Build and test
 
 ```sh
 # Core package, runs on macOS and Linux
 swift test --package-path Packages/FinalApproachCore
+
+# Backend, runs anywhere with Node 22
+(cd backend && npm ci && npm run typecheck && npm test && npx cdk synth --quiet -c stage=beta)
 
 # App build and tests, macOS only
 xcodebuild build -project FinalApproach/FinalApproach.xcodeproj -scheme FinalApproach \
@@ -101,7 +107,7 @@ on this Mac.
 
 ## CI/CD
 
-GitHub Actions runs the core package tests and the `ci_scripts` checks on every
-pull request. Xcode Cloud builds the app on merges to `main`. Details and the
-environment mechanism are in `docs/ci-cd.md`. Pin every GitHub Action by full
-commit SHA with the release in a trailing comment.
+GitHub Actions runs the core package tests, the `ci_scripts` checks, and the
+backend checks on every pull request. Xcode Cloud builds the app on merges to
+`main`. Details and the environment mechanism are in `docs/ci-cd.md`. Pin
+every GitHub Action by full commit SHA with the release in a trailing comment.

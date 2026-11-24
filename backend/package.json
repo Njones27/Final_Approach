@@ -1,0 +1,33 @@
+{
+  "name": "final-approach-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Final Approach backend, defined with the AWS CDK.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --test-reporter=spec \"test/**/*.test.ts\"",
+    "synth": "cdk synth --quiet",
+    "cdk": "cdk"
+  },
+  "dependencies": {
+    "@aws-sdk/client-cognito-identity-provider": "3.1176.0",
+    "@aws-sdk/client-dynamodb": "3.1176.0",
+    "@aws-sdk/client-s3": "3.1176.0",
+    "@aws-sdk/lib-dynamodb": "3.1176.0",
+    "@aws-sdk/s3-request-presigner": "3.1176.0",
+    "aws-cdk-lib": "2.278.0",
+    "constructs": "10.8.1",
+    "jose": "6.2.18"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "8.10.164",
+    "@types/node": "22.20.5",
+    "aws-cdk": "2.1149.0",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
+  },
+  "type": "module"
+}
