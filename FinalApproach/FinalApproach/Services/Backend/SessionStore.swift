@@ -6,6 +6,28 @@ struct StoredSession: Codable, Equatable {
     /// Apple's id for the user, which is also their name on the backend.
     var userID: String
     var tokens: SessionTokens
+    /// True from the moment the user asks to delete their account until the
+    /// backend confirms it. It is saved with the tokens the delete needs, so
+    /// a delete that could not be sent is still owed after the app closes.
+    var isAccountDeleteOwed = false
+
+    init(userID: String, tokens: SessionTokens, isAccountDeleteOwed: Bool = false) {
+        self.userID = userID
+        self.tokens = tokens
+        self.isAccountDeleteOwed = isAccountDeleteOwed
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case userID, tokens, isAccountDeleteOwed
+    }
+
+    /// A sign in saved before a delete could be owed still opens.
+    init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        userID = try values.decode(String.self, forKey: .userID)
+        tokens = try values.decode(SessionTokens.self, forKey: .tokens)
+        isAccountDeleteOwed = try values.decodeIfPresent(Bool.self, forKey: .isAccountDeleteOwed) ?? false
+    }
 }
 
 /// Why the saved sign in could not be read or written.
@@ -32,6 +54,11 @@ struct KeychainSessionStore: SessionStore {
     let service: String
 
     private static let account = "session"
+
+    /// The store the app uses. The name carries the build's environment.
+    static var forThisBuild: KeychainSessionStore {
+        KeychainSessionStore(service: "com.finalapproach.app.session.\(AppEnvironment.current.rawValue)")
+    }
 
     private var item: [String: Any] {
         [

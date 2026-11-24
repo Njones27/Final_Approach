@@ -235,6 +235,109 @@ import Testing
         #expect(try JSONDecoder().decode(SyncLedger.self, from: data) == ledger)
     }
 
+    // MARK: Whose ledger it is
+
+    private func sent(_ id: String, into ledger: inout SyncLedger) {
+        ledger.noteUploaded(id: id, fingerprint: "f1", version: "v1", imageSent: true)
+    }
+
+    @Test func aLedgerSavedBeforeItHadAnOwnerStillOpens() throws {
+        let saved = Data(#"{"records":{},"pendingDeletes":["a"]}"#.utf8)
+        let ledger = try JSONDecoder().decode(SyncLedger.self, from: saved)
+        #expect(ledger == SyncLedger(pendingDeletes: ["a"]))
+    }
+
+    @Test func theOwnerAndTheParkedDeletesSurviveBeingSavedAndRead() throws {
+        let ledger = SyncLedger(pendingDeletes: ["a"], owner: "user-1", parkedDeletes: ["user-2": ["b"]])
+        let data = try JSONEncoder().encode(ledger)
+        let read = try JSONDecoder().decode(SyncLedger.self, from: data)
+        #expect(read == ledger)
+    }
+
+    @Test func aLedgerWithNoOwnerBecomesTheFirstUsers() {
+        var ledger = SyncLedger()
+        ledger.claim(for: "user-1")
+        #expect(ledger == SyncLedger(owner: "user-1"))
+    }
+
+    @Test func claimingALedgerAgainChangesNothing() {
+        var ledger = SyncLedger(owner: "user-1")
+        sent("a", into: &ledger)
+        sent("b", into: &ledger)
+        ledger.noteDeletedHere(id: "b")
+        let before = ledger
+        ledger.claim(for: "user-1")
+        #expect(ledger == before)
+    }
+
+    @Test func anotherUserStartsTheLedgerAgain() {
+        var ledger = SyncLedger(owner: "user-1")
+        sent("a", into: &ledger)
+        ledger.claim(for: "user-2")
+        #expect(ledger == SyncLedger(owner: "user-2"))
+    }
+
+    @Test func aDeleteOwedToOneUserIsNeverSentForAnother() {
+        var ledger = SyncLedger(owner: "user-1")
+        sent("a", into: &ledger)
+        ledger.noteDeletedHere(id: "a")
+
+        ledger.claim(for: "user-2")
+
+        #expect(ledger.pendingDeletes.isEmpty)
+        #expect(ledger.parkedDeletes == ["user-1": ["a"]])
+        let plan = SyncPlan.actions(local: [], remote: [], remoteDeleted: [], ledger: ledger)
+        #expect(plan.isEmpty)
+    }
+
+    @Test func aParkedDeleteComesBackWhenItsUserSignsInAgain() {
+        var ledger = SyncLedger(owner: "user-1")
+        sent("a", into: &ledger)
+        ledger.noteDeletedHere(id: "a")
+        ledger.claim(for: "user-2")
+        sent("b", into: &ledger)
+        ledger.noteDeletedHere(id: "b")
+
+        ledger.claim(for: "user-1")
+
+        #expect(ledger.owner == "user-1")
+        #expect(ledger.pendingDeletes == ["a"])
+        #expect(ledger.parkedDeletes == ["user-2": ["b"]])
+        let plan = SyncPlan.actions(local: [], remote: [], remoteDeleted: [], ledger: ledger)
+        #expect(plan == [.deleteRemote(id: "a")])
+    }
+
+    @Test func clearingTheDeviceWithTheAccountOwesThatAccountNothing() {
+        var ledger = SyncLedger(owner: "user-1", parkedDeletes: ["user-1": ["old"], "user-2": ["b"]])
+        sent("a", into: &ledger)
+        sent("c", into: &ledger)
+        ledger.noteDeletedHere(id: "c")
+
+        ledger.noteDeviceCleared(accountDeleted: true)
+
+        #expect(ledger == SyncLedger(parkedDeletes: ["user-2": ["b"]]))
+    }
+
+    @Test func clearingOnlyTheDeviceKeepsTheDeletesTheAccountIsOwed() {
+        var ledger = SyncLedger(owner: "user-1")
+        sent("a", into: &ledger)
+        sent("c", into: &ledger)
+        ledger.noteDeletedHere(id: "c")
+
+        ledger.noteDeviceCleared(accountDeleted: false)
+
+        // The photo that was only removed from the device is not a delete.
+        #expect(ledger == SyncLedger(parkedDeletes: ["user-1": ["c"]]))
+        ledger.claim(for: "user-1")
+        #expect(ledger.pendingDeletes == ["c"])
+    }
+
+    @Test func clearingADeviceNoOneSignedInOnLeavesAnEmptyLedger() {
+        var ledger = SyncLedger()
+        ledger.noteDeviceCleared(accountDeleted: false)
+        #expect(ledger == SyncLedger())
+    }
+
     @Test func aFullRoundOfSyncsSettles() {
         // A new photo is sent, then nothing is left to do.
         var ledger = SyncLedger()

@@ -47,6 +47,12 @@ final class CollectionModel {
     /// saved with the library, so a delete the backend has not confirmed
     /// is still owed after the app closes.
     @ObservationIgnored private(set) var syncLedger = SyncLedger()
+    /// Called after the user adds, edits, or deletes one of their own
+    /// photos, so a sync can follow. A change a sync makes does not call it.
+    @ObservationIgnored var onLocalChange: (() -> Void)?
+    /// How many times every photo was removed from the device at once. A
+    /// sync that started before the last time must not put anything back.
+    @ObservationIgnored private(set) var timesCleared = 0
     /// The images of logged photos that have been shown, by photo id. With
     /// a store this is only a cache, and the saved file is the real copy.
     /// It is not observed, because an image never changes once it is logged.
@@ -262,6 +268,7 @@ final class CollectionModel {
     /// Adds a photo to the front of the collection and saves it on the
     /// device. Pass the image for a photo imported from the library.
     func add(_ photo: SpottedPhoto, image: UIImage? = nil) {
+        defer { noteLocalChange(to: photo) }
         if let image {
             loadedImages[photo.id] = image
         }
@@ -281,6 +288,7 @@ final class CollectionModel {
     /// the change. Passing nil for the registration leaves it as it is.
     func updateDetails(forPhotoID id: String, aircraftType: String, registration: String?, airline: String) {
         guard let index = photos.firstIndex(where: { $0.id == id }), !photos[index].isSample else { return }
+        defer { onLocalChange?() }
         let newRegistration = registration?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .uppercased()
@@ -304,6 +312,7 @@ final class CollectionModel {
     /// removes that copy too.
     func deletePhoto(id: String) {
         guard let photo = photo(id: id) else { return }
+        defer { noteLocalChange(to: photo) }
         photos.removeAll { $0.id == id }
         loadedImages[id] = nil
         if photo.isSample {
@@ -322,17 +331,21 @@ final class CollectionModel {
         }
     }
 
-    /// Removes the account's photos and every saved image from the device.
-    /// The backend's copies go with the account itself, which the caller
-    /// deletes through `PhotoBackend.deleteAccount`, so nothing is left for
-    /// a sync to remember.
-    func deleteAccountAndPhotos() {
+    /// Removes every photo and every saved image from the device.
+    ///
+    /// Pass true for `alsoOnBackend` when the account itself is being
+    /// deleted, which removes the backend's copies with it, so nothing is
+    /// left for a sync to remember. With false only this device is cleared,
+    /// and a delete the backend has not confirmed yet is still owed to the
+    /// account it was made in.
+    func deleteAccountAndPhotos(alsoOnBackend: Bool = false) {
         for photo in photos where photo.isSample && !removedSampleIDs.contains(photo.id) {
             removedSampleIDs.append(photo.id)
         }
         photos.removeAll()
         loadedImages.removeAll()
-        syncLedger = SyncLedger()
+        syncLedger.noteDeviceCleared(accountDeleted: alsoOnBackend)
+        timesCleared += 1
         guard let store else { return }
         do {
             try store.deleteEverything()
@@ -342,6 +355,13 @@ final class CollectionModel {
         } catch {
             storageProblem = .couldNotSave
         }
+    }
+
+    /// Tells whoever follows the collection that the user changed one of
+    /// their own photos. A sample photo is never sent, so it is left out.
+    private func noteLocalChange(to photo: SpottedPhoto) {
+        guard !photo.isSample else { return }
+        onLocalChange?()
     }
 
     /// True when a logged photo still has an image, in memory or saved on
@@ -444,6 +464,14 @@ final class CollectionModel {
         } catch {
             storageProblem = .couldNotSave
         }
+    }
+
+    /// Makes the sync ledger the signed in user's before a sync runs for
+    /// them. A ledger that belongs to another account is started again, and
+    /// the deletes that account is still owed are set aside for it.
+    func claimSyncLedger(for userID: String) {
+        guard syncLedger.owner != userID else { return }
+        updateSyncLedger { $0.claim(for: userID) }
     }
 
     /// Changes what the device remembers between syncs, and saves it.

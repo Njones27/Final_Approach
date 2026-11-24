@@ -368,7 +368,7 @@ final class SyncEngineTests {
         phone.add(loggedPhoto(), image: tinyImage())
         try await engine().run(on: phone)
 
-        phone.deleteAccountAndPhotos()
+        phone.deleteAccountAndPhotos(alsoOnBackend: true)
 
         #expect(phone.syncLedger == SyncLedger())
         #expect(device("phone").syncLedger == SyncLedger())
