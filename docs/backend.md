@@ -46,6 +46,7 @@ nothing else about it.
 | `GET /posts` | Lists the user's own posts, each with its voting window, how many votes are in, and its score once the grade is final |
 | `GET /votes/queue` | Hands the user some photos to vote on, each as a random id and a link to the image |
 | `PUT /votes/{postID}` | Counts the user's vote on one post, a whole number of stars from 1 to 5 |
+| `GET /spots` | Lists the spots the app shows, grouped by airport. The list is the same for every user |
 | `DELETE /account` | Deletes every image and record the user has, and their sign in |
 
 A refusal carries a `message`. It also carries a `code` when the app acts on
@@ -162,6 +163,31 @@ Known limits.
   all of it on each run. That is fine for thousands of open posts and needs
   another look before many more.
 - Nothing stops one person from voting with two accounts.
+
+## Spots
+
+A spot is a place to photograph aircraft from. The owner decided that spots
+are chosen by hand at launch, so there is no route that adds one.
+
+- The list is data in `backend/src/spots/catalog.ts`. A spot has an id, a
+  name, a summary, a pin, access notes, local rules, and runway notes. It
+  sits under its airport, which has a code, a city, and a pin.
+- A spot is added only once someone has checked it. It must be on ground
+  the public may use, and its local rules must say what the airport asks of
+  photographers. A listing never sends anyone into a restricted area.
+- The list is empty until the owner supplies the first real spots. The
+  spots in the app's sample data are made up and are not published.
+- A deploy changes the list, with no release of the app. The list is part
+  of the function's code, so the function reads no table and no image and
+  has no access to either.
+- `problemsIn` in the same file says everything wrong with a list, such as
+  a spot listed twice, a missing local rule, or a pin far from its airport.
+  The tests run it on the list that ships, so a bad listing stops a pull
+  request.
+- A spot's id never changes once it ships, because photos will name their
+  spot by it.
+- `GET /spots` answers with `airports`, each with its `spots`. The answer
+  is built from named fields and says nothing about any user or photo.
 
 ## Sign in
 
@@ -364,7 +390,7 @@ topic in the stage's `Alerts` stack, and the owner gets it as an email.
 
 | Alarm | Goes off when |
 | --- | --- |
-| Each function but the sign up check, nine in all | The function fails once in five minutes |
+| Each function but the sign up check, ten in all | The function fails once in five minutes |
 | The sign up check, `PreSignUp` | It fails 20 times in five minutes |
 | The API | It answers with a server error once in five minutes |
 | The budget | The month has cost half of the budget, all of it, or is on course to go over |
@@ -544,6 +570,13 @@ change to those values in a deploy must be copied into the stage's file.
 
 ## Still to come
 
+- The first real spots in the list, which the owner supplies.
+- Photos on a spot's page. A graded photo will show there with its grade,
+  tier, aircraft type, and airline, as the owner decided on 2026-11-24. It
+  shows no photographer and no registration. Only a photo whose owner
+  disclosed its place and posted it knowing it would be shown there
+  appears.
+- The Spots screen in the app reading this list.
 - Reputation, which gives a voter whose votes land near the final grades
   more weight. It needs a way to find a post's votes when the post closes.
 - A filter that keeps a photo with no aircraft out of the voting queue. It
