@@ -113,6 +113,20 @@ describe('deleting from the table and the bucket', () => {
     ]);
   });
 
+  test('a delete takes the photo’s post with it, in the same transaction', async () => {
+    const { dynamo, store } = setUp({}, fakeClient());
+    await store.remove('u1', 'p1', '2026-11-24T13:00:00.000Z');
+    const items = dynamo.sent[0]?.input.TransactItems;
+    assert.equal(items.length, 3);
+    assert.deepEqual(items[2].Delete, { TableName: 'records', Key: { pk: 'USER#u1', sk: 'POST#p1' } });
+  });
+
+  test('a save removes no post', async () => {
+    const { dynamo, store } = setUp();
+    await store.save('u1', photo);
+    assert.equal(dynamo.sent[0]?.input.TransactItems.length, 2);
+  });
+
   test('a delete for a deleted account touches no image', async () => {
     const s3 = fakeClient();
     const { store } = setUp({ TransactWriteCommand: [cancelled('ConditionalCheckFailed', 'None')] }, s3);

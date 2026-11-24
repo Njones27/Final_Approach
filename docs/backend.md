@@ -22,7 +22,7 @@ approved the run. A change to `backend/` reaches beta when it reaches
 | Stack | Holds |
 | --- | --- |
 | `FinalApproach-<stage>-Alerts` | The topic that alarms and the budget tell, and the month's budget |
-| `FinalApproach-<stage>-Storage` | The DynamoDB table of records, the S3 bucket of images, and the sweeper function |
+| `FinalApproach-<stage>-Storage` | The DynamoDB table of records with its index of posts open for votes, the S3 bucket of images, and the sweeper function |
 | `FinalApproach-<stage>-Identity` | The Cognito user pool and the four functions that check Sign in with Apple |
 | `FinalApproach-<stage>-Api` | The HTTP API and the functions behind its routes |
 | `FinalApproach-<stage>-Deploy` | The role that lets GitHub Actions deploy the stage. The owner deploys it by hand |
@@ -39,19 +39,60 @@ Every route needs a signed in user. A user reaches only their own data.
 | --- | --- |
 | `PUT /photos/{photoID}` | Saves one photo record. With an image size in the body, it also returns a link to upload that image |
 | `GET /photos` | Lists the user's photos, each with a link to its image, and the ids of photos that were deleted |
-| `DELETE /photos/{photoID}` | Deletes one photo and its image |
+| `DELETE /photos/{photoID}` | Deletes one photo, its image, and its post |
+| `PUT /posts/{photoID}` | Posts one saved photo, which opens it for votes. A second call changes nothing and answers with the first post |
+| `GET /posts` | Lists the user's own posts, each with when it was posted and when its voting window ends |
 | `DELETE /account` | Deletes every image and record the user has, and their sign in |
 
 A refusal carries a `message`. It also carries a `code` when the app acts on
 it, because two refusals can share a status. The codes are `notSignedIn`,
-`photoDeleted`, and `accountDeleted`. The app reads the code and never the
-message.
+`photoDeleted`, `accountDeleted`, `photoNotSaved`, and `imageHasLocation`.
+The app reads the code and never the message.
 
 A photo record is the app's own saved photo, kept as it is and returned only
 to its owner. The backend does not read inside it yet. It can hold where the
 photo was taken. A later route that shows a photo to another user must build
 its answer from named fields and leave the location out of an undisclosed
 photo. It must never send this record as it is.
+
+## Posting
+
+A post puts one photo in front of other users for their votes. It is the
+first record another user can reach, so it is built to give nothing away.
+
+- Posting never asks how the photo did in the technical check, and the
+  backend holds no result of that check. The check is advice to the
+  photographer. Every posted photo goes to the vote, and the votes alone
+  will set its grade. `docs/build-plan.md` has the decision under Grading.
+- A post holds the photo's id, a random id of its own, when it was posted,
+  and when its voting window ends. It holds no location, no name, and
+  nothing from the photo record. A voter will know a post only by its
+  random id, which does not name the owner.
+- A post is made only for a photo whose record and image have both arrived.
+  The app syncs first and posts second. `photoNotSaved` says to do that.
+- The image is checked before every post, in
+  `backend/src/posts/imageCheck.ts`. An Exif block with a GPS directory, an
+  XMP block that names a GPS position, or an IPTC block, which can name a
+  city, stops the post with `imageHasLocation`. An Exif block that cannot
+  be read stops it too. The app saves its images with no metadata, and this
+  check makes the backend hold the same line, so an undisclosed photo
+  cannot give its place away through its image. It runs for every photo,
+  because the image is never where a place is meant to be shown.
+- A photo is posted once. There is no route to take a post back, because a
+  photo that could be posted again would start its votes again. Deleting
+  the photo takes its post down.
+- The voting window is `votingWindowHours` in the stage settings, 72 hours.
+  Changing it moves the end of the window for photos posted from then on.
+- A post sits in its owner's partition of the table. An open post also
+  carries `votingKey`, which puts it in the `Voting` index. That index is
+  how the voting queue will find open posts across users. Nothing reads it
+  yet.
+
+Two limits are known. The check reads the blocks in front of the picture
+data, which is where cameras and editors write metadata, and not anything
+hidden after it. And an owner can upload a new image for a photo after it
+is posted. Both take a changed app to do, and both give away only the
+owner's own place.
 
 ## Sign in
 
@@ -87,6 +128,12 @@ make that hold.
   photo or account was deleted. The sweeper runs on every upload and removes
   an image that has nothing to belong to.
 - A delete that fails partway can be sent again and picks up where it stopped.
+
+A post keeps no copy of the image. It points at the photo's own image, so
+there is no second place to clear. Deleting a photo removes its post in the
+same step as the photo's record, so a post never outlives its photo. Deleting
+an account removes its posts with every other record in the user's partition.
+The `Voting` index follows the table, so a removed post leaves the index too.
 
 Two limits are known. The table can be restored to any point in the last 35
 days, so a deleted record stays in those backups until they age out, which
@@ -186,7 +233,7 @@ topic in the stage's `Alerts` stack, and the owner gets it as an email.
 
 | Alarm | Goes off when |
 | --- | --- |
-| Each function but the sign up check, six in all | The function fails once in five minutes |
+| Each function but the sign up check, seven in all | The function fails once in five minutes |
 | The sign up check, `PreSignUp` | It fails 20 times in five minutes |
 | The API | It answers with a server error once in five minutes |
 | The budget | The month has cost half of the budget, all of it, or is on course to go over |
@@ -366,6 +413,10 @@ change to those values in a deploy must be copied into the stage's file.
 
 ## Still to come
 
+- The rest of voting. The queue of posts to vote on, casting a vote, and the
+  grade that the votes set once the window has closed with enough votes.
+- A filter that keeps a photo with no aircraft out of the voting queue. It
+  is planned and not decided.
 - A first real sign in on an iPhone, from a TestFlight build against prod.
   Everything up to here is tested against stand ins for Apple and the
   backend.

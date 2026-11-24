@@ -80,6 +80,11 @@ export interface StageSettings {
   readonly maxDocumentBytes: number;
   /** How many photos one page of the collection holds. */
   readonly photosPerPage: number;
+  /**
+   * How long a posted photo stays open for votes. Changing it moves the
+   * end of the window for photos posted from then on.
+   */
+  readonly votingWindowHours: number;
   readonly accessTokenMinutes: number;
   readonly refreshTokenDays: number;
   /** Requests per second the API allows across all callers, and the burst above it. */
@@ -120,6 +125,7 @@ const shared = {
   maxImageBytes: 8 * 1024 * 1024,
   maxDocumentBytes: 32 * 1024,
   photosPerPage: 100,
+  votingWindowHours: 72,
   accessTokenMinutes: 60,
   refreshTokenDays: 365,
   requestsPerSecond: 50,

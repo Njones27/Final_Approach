@@ -114,6 +114,22 @@ describe('deleting an account', () => {
     assert.deepEqual(dynamo.named('QueryCommand')[1]?.input.ExclusiveStartKey, { pk: 'USER#u1', sk: 'PHOTO#p29' });
   });
 
+  test('a post is removed with the rest, because it sits in the user’s partition', async () => {
+    const { dynamo, store } = setUp({
+      dynamo: {
+        QueryCommand: [{ Items: [...keysOf(1), { pk: 'USER#u1', sk: 'POST#p0' }] }],
+      },
+    });
+    await store.deleteEverything(caller, now);
+    const removed = dynamo
+      .named('BatchWriteCommand')
+      .flatMap((command) => command.input.RequestItems.records)
+      .map((request) => request.DeleteRequest.Key.sk);
+    assert.deepEqual(removed, ['PHOTO#p0', 'POST#p0']);
+    // The sweep asks for the whole partition, and not for photos alone.
+    assert.equal(dynamo.named('QueryCommand')[0]?.input.KeyConditionExpression, 'pk = :pk');
+  });
+
   test('records DynamoDB left out of a batch are sent again', async () => {
     const [first, second] = keysOf(2);
     const { dynamo, store } = setUp({

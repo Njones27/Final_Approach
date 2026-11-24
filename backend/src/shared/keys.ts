@@ -31,6 +31,31 @@ export function isPhotoSortKey(sortKey: string): boolean {
   return sortKey.startsWith(photoSortKeyPrefix);
 }
 
+/**
+ * Every post's sort key starts with this. A post is the record that puts
+ * one photo in front of other users. It sits under its owner's partition,
+ * so deleting the account removes it with everything else.
+ */
+export const postSortKeyPrefix = 'POST#';
+
+export function postSortKey(photoID: string): string {
+  return `${postSortKeyPrefix}${photoID}`;
+}
+
+/**
+ * The index that finds the posts still open for votes, across all users.
+ * A post carries `votingKey` only while it is open, so a closed post drops
+ * out of the index by itself. `postID` is a random id that names the post
+ * to a voter without naming its owner.
+ */
+export const votingIndex = {
+  name: 'Voting',
+  partitionKey: 'votingKey',
+  sortKey: 'postID',
+  /** The one value `votingKey` takes. */
+  open: 'OPEN',
+} as const;
+
 /** The folder that holds every image a user uploaded. */
 export function userFolder(userID: string): string {
   return `users/${userID}/`;
