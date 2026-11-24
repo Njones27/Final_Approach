@@ -123,7 +123,7 @@ See Section 8 for the full design.
 ### FR-5 Community Voting
 
 - Voters see photos one at a time without the photographer's name or current score
-- Votes use a simple scale (for example 1 to 5)
+- Votes are whole stars from 1 to 5 (decided on 2026-11-24)
 - Users cannot vote on their own photos
 - Vote weight depends on voter reputation
 
@@ -178,7 +178,7 @@ The technical check is a coach and not a gate. The owner decided this on 2026-11
 ### Layer 3, Community Votes (Decided)
 
 - Covers what the AI can't judge well at launch, like composition, light, and mood
-- Proposed voting window of 72 hours with a minimum of 5 votes
+- Voting window of 72 hours with a minimum of 5 votes, both tunable. A photo short of votes at the end of its window stays open until it has them
 - Blind voting with scores hidden until close
 - Votes weighted by voter reputation, which grows when a voter's ratings align with final grades
 
@@ -261,7 +261,6 @@ Defaults chosen to match the founder's experience with SwiftUI and AWS. Any of t
 - iOS only for MVP, or cross-platform from the start?
 - Which ADS-B provider, and what does it cost at expected volume?
 - How accurate is ADS-B matching for distant or high-altitude aircraft?
-- Exact vote scale, voting window, and minimum vote count
 - Should spots be user-created from day one or curated at launch?
 - How should reputation be bootstrapped for early voters?
 - Will the grading engine later be shared with a car photography version, and should the architecture plan for that now?

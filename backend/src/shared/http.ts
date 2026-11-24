@@ -56,7 +56,10 @@ export type ProblemCode =
   | 'photoDeleted'
   | 'accountDeleted'
   | 'photoNotSaved'
-  | 'imageHasLocation';
+  | 'imageHasLocation'
+  | 'alreadyVoted'
+  | 'votingClosed'
+  | 'ownPost';
 
 /**
  * An error the app can show or act on. The message never echoes stored

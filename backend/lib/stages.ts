@@ -85,6 +85,19 @@ export interface StageSettings {
    * end of the window for photos posted from then on.
    */
   readonly votingWindowHours: number;
+  /** A vote is a whole number of stars from 1 to this. */
+  readonly voteScaleMax: number;
+  /**
+   * The votes a post needs before its grade is final. A post that reaches
+   * the end of its window with fewer stays open until it has them.
+   */
+  readonly minVotesToFinalize: number;
+  /** How many photos one answer of the voting queue holds. */
+  readonly votingQueueSize: number;
+  /** How many open posts one request reads to fill the queue. */
+  readonly votingQueueReadLimit: number;
+  /** How often finished posts are closed and taken out of the queue. */
+  readonly closerMinutes: number;
   readonly accessTokenMinutes: number;
   readonly refreshTokenDays: number;
   /** Requests per second the API allows across all callers, and the burst above it. */
@@ -126,6 +139,11 @@ const shared = {
   maxDocumentBytes: 32 * 1024,
   photosPerPage: 100,
   votingWindowHours: 72,
+  voteScaleMax: 5,
+  minVotesToFinalize: 5,
+  votingQueueSize: 10,
+  votingQueueReadLimit: 50,
+  closerMinutes: 15,
   accessTokenMinutes: 60,
   refreshTokenDays: 365,
   requestsPerSecond: 50,

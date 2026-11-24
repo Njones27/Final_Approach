@@ -24,7 +24,7 @@ approved the run. A change to `backend/` reaches beta when it reaches
 | `FinalApproach-<stage>-Alerts` | The topic that alarms and the budget tell, and the month's budget |
 | `FinalApproach-<stage>-Storage` | The DynamoDB table of records with its index of posts open for votes, the S3 bucket of images, and the sweeper function |
 | `FinalApproach-<stage>-Identity` | The Cognito user pool and the four functions that check Sign in with Apple |
-| `FinalApproach-<stage>-Api` | The HTTP API and the functions behind its routes |
+| `FinalApproach-<stage>-Api` | The HTTP API, the functions behind its routes, and the closer that runs on a schedule |
 | `FinalApproach-<stage>-Deploy` | The role that lets GitHub Actions deploy the stage. The owner deploys it by hand |
 
 The stage is `beta` or `prod`. Each stage is its own AWS account. What differs
@@ -33,7 +33,9 @@ between stages, and every limit that may need tuning, is data in
 
 ## Routes
 
-Every route needs a signed in user. A user reaches only their own data.
+Every route needs a signed in user. A user reaches only their own data. The
+voting routes are the one exception, and they show another user's photo with
+nothing else about it.
 
 | Route | What it does |
 | --- | --- |
@@ -41,13 +43,16 @@ Every route needs a signed in user. A user reaches only their own data.
 | `GET /photos` | Lists the user's photos, each with a link to its image, and the ids of photos that were deleted |
 | `DELETE /photos/{photoID}` | Deletes one photo, its image, and its post |
 | `PUT /posts/{photoID}` | Posts one saved photo, which opens it for votes. A second call changes nothing and answers with the first post |
-| `GET /posts` | Lists the user's own posts, each with when it was posted and when its voting window ends |
+| `GET /posts` | Lists the user's own posts, each with its voting window, how many votes are in, and its score once the grade is final |
+| `GET /votes/queue` | Hands the user some photos to vote on, each as a random id and a link to the image |
+| `PUT /votes/{postID}` | Counts the user's vote on one post, a whole number of stars from 1 to 5 |
 | `DELETE /account` | Deletes every image and record the user has, and their sign in |
 
 A refusal carries a `message`. It also carries a `code` when the app acts on
 it, because two refusals can share a status. The codes are `notSignedIn`,
-`photoDeleted`, `accountDeleted`, `photoNotSaved`, and `imageHasLocation`.
-The app reads the code and never the message.
+`photoDeleted`, `accountDeleted`, `photoNotSaved`, `imageHasLocation`,
+`alreadyVoted`, `votingClosed`, and `ownPost`. The app reads the code and
+never the message.
 
 A photo record is the app's own saved photo, kept as it is and returned only
 to its owner. The backend does not read inside it yet. It can hold where the
@@ -85,14 +90,78 @@ first record another user can reach, so it is built to give nothing away.
   Changing it moves the end of the window for photos posted from then on.
 - A post sits in its owner's partition of the table. An open post also
   carries `votingKey`, which puts it in the `Voting` index. That index is
-  how the voting queue will find open posts across users. Nothing reads it
-  yet.
+  how the voting queue finds open posts across users.
 
 Two limits are known. The check reads the blocks in front of the picture
 data, which is where cameras and editors write metadata, and not anything
 hidden after it. And an owner can upload a new image for a photo after it
 is posted. Both take a changed app to do, and both give away only the
 owner's own place.
+
+## Voting and the grade
+
+The owner decided on 2026-11-24 that the votes alone set a photo's grade.
+The rules are in `backend/src/votes/standing.ts`, and every number in them
+is data in `backend/lib/stages.ts`.
+
+- A vote is a whole number of stars from 1 to 5 (`voteScaleMax`).
+- A user has one vote on a post, and it cannot be changed. A user cannot
+  vote on their own photo, and never sees it in their queue.
+- A post takes votes until its window has ended and it has 5 votes
+  (`minVotesToFinalize`). A post that reaches the end of its window short of
+  votes stays open, and the vote that brings it to the minimum closes it.
+- The grade is the weighted average of the votes, stretched so that all one
+  star is 0 and all five stars is 100, and rounded to a whole number.
+  Nothing else takes part in it.
+- Every vote has a weight of 1 today. The weight is kept on each vote and
+  in the post's totals, so reputation can change it later without a change
+  to what is stored.
+
+Voting is blind in both directions.
+
+- The queue gives a voter the image and the post's random id. It gives no
+  name, no place, no count, no score, and no closing time. Casting a vote
+  answers with the vote and nothing about how the photo is doing.
+- The owner sees how many votes are in while voting is open. The score
+  appears only once the grade is final.
+- A vote is kept under its voter and names the post by its random id only,
+  so a voter's records never say whose photo they voted on.
+
+How it works.
+
+- The queue reads the `Voting` index on from a random id and wraps around
+  at the end. Post ids are random, so every open post has the same chance
+  of being near the front. It reads up to 50 posts (`votingQueueReadLimit`),
+  drops the voter's own, the ones they voted on, and the ones whose voting
+  has ended, and hands out up to 10 (`votingQueueSize`).
+- A vote is one transaction. It writes the vote, adds to the totals on the
+  post, and checks that the post is still open, so two votes at once cannot
+  both be the last one.
+- The closer runs every 15 minutes (`closerMinutes`). It writes the final
+  score on each post whose voting has ended and takes the post out of the
+  index. A post stops taking votes by the rules alone, so nothing depends
+  on when the closer runs. A score that was written down stands, even if
+  the settings change later.
+
+What deleting does to votes.
+
+- Deleting a photo removes its post, so it leaves the queue and takes no
+  more votes. The votes cast on it stay with their voters. Each holds a
+  random id and a number of stars and nothing of the photo.
+- Deleting an account removes the user's votes with their other records.
+  The totals on the posts they voted on keep what was already counted,
+  which is a sum that names nobody.
+
+Known limits.
+
+- The link to an image has the owner's id and the photo's id in its path.
+  Both are random ids that the app never shows, and no name can be found
+  from them. CloudFront in front of the images, listed under Still to come,
+  removes this.
+- Every open post is in one partition of the index, and the closer reads
+  all of it on each run. That is fine for thousands of open posts and needs
+  another look before many more.
+- Nothing stops one person from voting with two accounts.
 
 ## Sign in
 
@@ -233,7 +302,7 @@ topic in the stage's `Alerts` stack, and the owner gets it as an email.
 
 | Alarm | Goes off when |
 | --- | --- |
-| Each function but the sign up check, seven in all | The function fails once in five minutes |
+| Each function but the sign up check, nine in all | The function fails once in five minutes |
 | The sign up check, `PreSignUp` | It fails 20 times in five minutes |
 | The API | It answers with a server error once in five minutes |
 | The budget | The month has cost half of the budget, all of it, or is on course to go over |
@@ -413,8 +482,10 @@ change to those values in a deploy must be copied into the stage's file.
 
 ## Still to come
 
-- The rest of voting. The queue of posts to vote on, casting a vote, and the
-  grade that the votes set once the window has closed with enough votes.
+- The app's side of voting. Posting from the photo screen, the voting
+  screen with its five stars, and the grade in the collection.
+- Reputation, which gives a voter whose votes land near the final grades
+  more weight. It needs a way to find a post's votes when the post closes.
 - A filter that keeps a photo with no aircraft out of the voting queue. It
   is planned and not decided.
 - A first real sign in on an iPhone, from a TestFlight build against prod.

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { makePostsHandler } from '../src/posts/handler.ts';
-import type { Post, PostOutcome, PostStore } from '../src/posts/store.ts';
+import type { PostOutcome, PostStore, StoredPost } from '../src/posts/store.ts';
+import { emptyTally } from '../src/votes/standing.ts';
 import { exif, gpsTag, jfif, jpeg, orientationTag } from './jpeg.ts';
 import { apiEvent } from './support.ts';
 
@@ -12,7 +13,7 @@ function memoryStore() {
   const images = new Map<string, Uint8Array>();
   const saved = new Set<string>();
   const deleted = new Set<string>();
-  const posts = new Map<string, Post>();
+  const posts = new Map<string, StoredPost>();
   let accountDeleted = false;
   const key = (userID: string, photoID: string) => `${userID}/${photoID}`;
   const store: PostStore = {
@@ -23,8 +24,9 @@ function memoryStore() {
       if (!saved.has(id)) return { outcome: 'photoNotSaved' };
       const existing = posts.get(id);
       if (existing) return { outcome: 'alreadyPosted', post: existing };
-      posts.set(id, post);
-      return { outcome: 'posted', post };
+      const stored = { ...post, ...emptyTally };
+      posts.set(id, stored);
+      return { outcome: 'posted', post: stored };
     },
     async list(userID, after) {
       const mine = [...posts.entries()]
@@ -57,6 +59,7 @@ function setUp() {
   const handler = makePostsHandler({
     store: memory.store,
     votingWindowHours: 72,
+    rules: { scaleMax: 5, minVotes: 5 },
     now: () => clock,
     newPostID: () => `post-${(made += 1)}`,
   });
@@ -77,6 +80,8 @@ describe('posting a photo', () => {
       photoID: 'p1',
       postedAt: '2026-11-24T12:00:00.000Z',
       closesAt: '2026-11-27T12:00:00.000Z',
+      voteCount: 0,
+      status: 'voting',
     });
     assert.equal(posts.get('user-1/p1')?.postID, 'post-1');
   });
@@ -180,8 +185,70 @@ describe('listing posts', () => {
     const result = await handler(apiEvent({ routeKey: 'GET /posts' }));
     assert.equal(result.statusCode, 200);
     assert.deepEqual(bodyOf(result).posts, [
-      { photoID: 'p1', postedAt: '2026-11-24T12:00:00.000Z', closesAt: '2026-11-27T12:00:00.000Z' },
+      {
+        photoID: 'p1',
+        postedAt: '2026-11-24T12:00:00.000Z',
+        closesAt: '2026-11-27T12:00:00.000Z',
+        voteCount: 0,
+        status: 'voting',
+      },
     ]);
+    assert.equal(bodyOf(result).minVotes, 5);
+  });
+
+  const withVotes = (voteCount: number, total: number, finalScore?: number) => ({
+    voteCount,
+    weightSum: voteCount,
+    weightedValueSum: total,
+    ...(finalScore === undefined ? {} : { finalScore }),
+  });
+  const listed = async (setup: ReturnType<typeof setUp>) =>
+    bodyOf(await setup.handler(apiEvent({ routeKey: 'GET /posts' }))).posts[0];
+
+  test('while voting is open the owner sees the count and never the score', async () => {
+    const setup = setUp();
+    setup.savePhoto('user-1', 'p1');
+    await setup.handler(post('p1'));
+    setup.posts.set('user-1/p1', { ...setup.posts.get('user-1/p1')!, ...withVotes(9, 40) });
+    setup.setClock('2026-11-27T11:59:59.000Z');
+    const seen = await listed(setup);
+    assert.equal(seen.status, 'voting');
+    assert.equal(seen.voteCount, 9);
+    assert.equal(seen.score, undefined);
+  });
+
+  test('a post past its window with too few votes is still voting', async () => {
+    const setup = setUp();
+    setup.savePhoto('user-1', 'p1');
+    await setup.handler(post('p1'));
+    setup.posts.set('user-1/p1', { ...setup.posts.get('user-1/p1')!, ...withVotes(4, 20) });
+    setup.setClock('2026-12-24T12:00:00.000Z');
+    const seen = await listed(setup);
+    assert.equal(seen.status, 'voting');
+    assert.equal(seen.score, undefined);
+  });
+
+  test('once the window has ended with enough votes the grade is final, from the votes alone', async () => {
+    const setup = setUp();
+    setup.savePhoto('user-1', 'p1');
+    await setup.handler(post('p1'));
+    // Five votes that add up to twenty stars average four stars, which is 75.
+    setup.posts.set('user-1/p1', { ...setup.posts.get('user-1/p1')!, ...withVotes(5, 20) });
+    setup.setClock('2026-11-27T12:00:00.000Z');
+    const seen = await listed(setup);
+    assert.equal(seen.status, 'final');
+    assert.equal(seen.score, 75);
+    assert.equal(seen.voteCount, 5);
+  });
+
+  test('a score that was written down stands', async () => {
+    const setup = setUp();
+    setup.savePhoto('user-1', 'p1');
+    await setup.handler(post('p1'));
+    setup.posts.set('user-1/p1', { ...setup.posts.get('user-1/p1')!, ...withVotes(3, 15, 100) });
+    const seen = await listed(setup);
+    assert.equal(seen.status, 'final');
+    assert.equal(seen.score, 100);
   });
 
   test('a page marker that is not a photo id is refused', async () => {

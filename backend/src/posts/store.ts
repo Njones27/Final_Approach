@@ -1,3 +1,5 @@
+import type { Tally } from '../votes/standing.ts';
+
 /** One photo put in front of other users for their votes. */
 export interface Post {
   readonly photoID: string;
@@ -9,8 +11,14 @@ export interface Post {
   readonly closesAt: string;
 }
 
+/** A post as it is kept, with the votes counted on it so far. */
+export interface StoredPost extends Post, Tally {
+  /** The grade the votes gave, written down once voting has closed. */
+  readonly finalScore?: number;
+}
+
 export interface PostPage {
-  readonly posts: readonly Post[];
+  readonly posts: readonly StoredPost[];
   /** The photo id to pass as `after` for the next page, when there is one. */
   readonly nextAfter?: string;
 }
@@ -20,7 +28,7 @@ export interface PostPage {
  * request finds the first post and changes nothing.
  */
 export type PostOutcome =
-  | { readonly outcome: 'posted' | 'alreadyPosted'; readonly post: Post }
+  | { readonly outcome: 'posted' | 'alreadyPosted'; readonly post: StoredPost }
   | { readonly outcome: 'photoNotSaved' | 'photoDeleted' | 'accountDeleted' };
 
 /** Where posts are kept. The handler is tested against an in-memory one. */

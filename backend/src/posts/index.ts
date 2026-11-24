@@ -17,6 +17,7 @@ export const handler = makePostsHandler({
     maxImageBytes: numberSetting('MAX_IMAGE_BYTES'),
   }),
   votingWindowHours: numberSetting('VOTING_WINDOW_HOURS'),
+  rules: { scaleMax: numberSetting('VOTE_SCALE_MAX'), minVotes: numberSetting('MIN_VOTES') },
   now: () => new Date(),
   newPostID: randomUUID,
 });

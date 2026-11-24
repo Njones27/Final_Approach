@@ -14,7 +14,8 @@ import {
   postSortKeyPrefix,
   votingIndex,
 } from '../shared/keys.ts';
-import type { Post, PostOutcome, PostPage, PostStore } from './store.ts';
+import { emptyTally } from '../votes/standing.ts';
+import type { PostOutcome, PostPage, PostStore, StoredPost } from './store.ts';
 
 export interface AwsPostStoreSettings {
   readonly dynamo: Pick<DynamoDBDocumentClient, 'send'>;
@@ -43,12 +44,20 @@ function isNamed(error: unknown, ...names: string[]): boolean {
   return error instanceof Error && names.includes(error.name);
 }
 
-function postOf(item: Record<string, unknown>): Post {
+const count = (value: unknown): number => (typeof value === 'number' ? value : 0);
+
+function postOf(item: Record<string, unknown>): StoredPost {
+  const finalScore = item['finalScore'];
   return {
     photoID: String(item['photoID']),
     postID: String(item['postID']),
     postedAt: String(item['postedAt']),
     closesAt: String(item['closesAt']),
+    // A post has no totals until its first vote is counted.
+    voteCount: count(item['voteCount']),
+    weightSum: count(item['weightSum']),
+    weightedValueSum: count(item['weightedValueSum']),
+    ...(typeof finalScore === 'number' ? { finalScore } : {}),
   };
 }
 
@@ -56,7 +65,7 @@ function postOf(item: Record<string, unknown>): Post {
 export function makeAwsPostStore(settings: AwsPostStoreSettings): PostStore {
   const { dynamo, s3, tableName, bucketName } = settings;
 
-  async function find(userID: string, photoID: string): Promise<Post | undefined> {
+  async function find(userID: string, photoID: string): Promise<StoredPost | undefined> {
     const result = await dynamo.send(
       new GetCommand({
         TableName: tableName,
@@ -111,7 +120,7 @@ export function makeAwsPostStore(settings: AwsPostStoreSettings): PostStore {
             ],
           }),
         );
-        return { outcome: 'posted', post };
+        return { outcome: 'posted', post: { ...post, ...emptyTally } };
       } catch (error) {
         if (!isCancelledTransaction(error)) throw error;
         const reasons = error.CancellationReasons ?? [];

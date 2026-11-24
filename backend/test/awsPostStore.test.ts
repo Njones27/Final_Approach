@@ -25,13 +25,14 @@ const post = {
 };
 const cancelled = (...reasons: { Code: string; Item?: unknown }[]) =>
   awsError('TransactionCanceledException', { CancellationReasons: reasons });
+const noVotes = { voteCount: 0, weightSum: 0, weightedValueSum: 0 };
 const passed = { Code: 'None' };
 const failed = { Code: 'ConditionalCheckFailed' };
 
 describe('posting to the table', () => {
   test('a post checks the account and the photo, and is written once, in one transaction', async () => {
     const { dynamo, store } = setUp();
-    assert.deepEqual(await store.post('u1', post), { outcome: 'posted', post });
+    assert.deepEqual(await store.post('u1', post), { outcome: 'posted', post: { ...post, ...noVotes } });
     const [account, photo, put] = dynamo.sent[0]?.input.TransactItems;
     assert.deepEqual(account.ConditionCheck, {
       TableName: 'records',
@@ -97,7 +98,7 @@ describe('posting to the table', () => {
       TransactWriteCommand: [cancelled(passed, passed, failed)],
       GetCommand: [{ Item: { pk: 'USER#u1', sk: 'POST#p1', ...first, votingKey: 'OPEN' } }],
     });
-    assert.deepEqual(await store.post('u1', post), { outcome: 'alreadyPosted', post: first });
+    assert.deepEqual(await store.post('u1', post), { outcome: 'alreadyPosted', post: { ...first, ...noVotes } });
     assert.deepEqual(dynamo.named('GetCommand')[0]?.input, {
       TableName: 'records',
       Key: { pk: 'USER#u1', sk: 'POST#p1' },
@@ -126,13 +127,31 @@ describe('listing posts from the table', () => {
         },
       ],
     });
-    assert.deepEqual(await store.list('u1'), { posts: [post], nextAfter: 'p1' });
+    assert.deepEqual(await store.list('u1'), { posts: [{ ...post, ...noVotes }], nextAfter: 'p1' });
     assert.deepEqual(dynamo.sent[0]?.input, {
       TableName: 'records',
       KeyConditionExpression: 'pk = :pk AND begins_with(sk, :posts)',
       ExpressionAttributeValues: { ':pk': 'USER#u1', ':posts': 'POST#' },
       Limit: 2,
     });
+  });
+
+  test('a post is read with its votes, and with its final score once it has one', async () => {
+    const counted = { voteCount: 6, weightSum: 6, weightedValueSum: 27 };
+    const { store } = setUp({
+      QueryCommand: [
+        {
+          Items: [
+            { pk: 'USER#u1', sk: 'POST#p1', ...post, ...counted, votingKey: 'OPEN' },
+            { pk: 'USER#u1', sk: 'POST#p2', ...post, photoID: 'p2', ...counted, finalScore: 88, finalizedAt: 'x' },
+          ],
+        },
+      ],
+    });
+    assert.deepEqual((await store.list('u1')).posts, [
+      { ...post, ...counted },
+      { ...post, photoID: 'p2', ...counted, finalScore: 88 },
+    ]);
   });
 
   test('the next page starts inside the caller’s own partition', async () => {
