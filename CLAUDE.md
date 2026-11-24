@@ -25,6 +25,8 @@ for decisions and milestones before starting a feature.
   `Features/` holds one folder per screen.
 - `FinalApproach/FinalApproachTests/` holds app unit tests (Swift Testing).
 - `FinalApproach/Config/App.xcconfig` holds environment build settings.
+  `FinalApproach/Config/Stages/` holds one file per stage with that stage's
+  backend.
 - `FinalApproach/ci_scripts/` holds Xcode Cloud scripts.
 - `Packages/FinalApproachCore/` is a local Swift package with pure domain
   logic such as tiers, grade blending, and voting rules.

@@ -26,17 +26,29 @@ The app has one bundle ID, `com.finalapproach.app`, and one App Store Connect
 record. The environment is a build setting.
 
 1. `FinalApproach/Config/App.xcconfig` defines `APP_ENVIRONMENT`,
-   `APP_DISPLAY_NAME`, and `API_HOST`. Its defaults are the dev values.
-2. Each Xcode Cloud workflow sets the `APP_ENVIRONMENT` environment variable
+   `APP_DISPLAY_NAME`, `API_HOST`, `AUTH_HOST`, and `AUTH_CLIENT_ID`. Its
+   defaults are the dev values, which name no backend.
+2. `FinalApproach/Config/Stages/<stage>.xcconfig` holds the backend for one
+   stage, which is the API host, the host the app signs in at, and the id
+   the user pool gave the app. `beta.xcconfig` exists. `prod.xcconfig` is
+   added when prod is deployed.
+3. Each Xcode Cloud workflow sets the `APP_ENVIRONMENT` environment variable
    to `beta` or `prod`.
-3. `FinalApproach/ci_scripts/ci_post_clone.sh` runs after Xcode Cloud clones
+4. `FinalApproach/ci_scripts/ci_post_clone.sh` runs after Xcode Cloud clones
    the repo and writes `Config/Environment.generated.xcconfig`, which
-   `App.xcconfig` includes when it exists.
-4. `Info.plist` carries the values into the app, and `AppEnvironment.swift`
+   `App.xcconfig` includes when it exists. The generated file includes the
+   stage's file first and then sets the environment and the display name.
+5. `Info.plist` carries the values into the app, and `AppEnvironment.swift`
    reads them.
 
-`API_HOST` is a bare host name with no scheme, because a double slash starts a
-comment in an xcconfig file.
+The backend's values ship inside the app, so they are not secrets, and they
+live in the repo so that a build never depends on a value typed into Xcode
+Cloud. An `API_HOST` environment variable in a workflow still replaces the
+stage's host, which is of use only for pointing one build somewhere else.
+
+Each host is a bare host name with no scheme, because a double slash starts a
+comment in an xcconfig file. GitHub Actions checks that every stage file
+holds bare values only.
 
 ## Xcode Cloud setup
 
@@ -62,7 +74,6 @@ repo. These steps are done once in Xcode.
 | Environment, Xcode version | Latest Release |
 | Environment, macOS version | Latest Release |
 | Environment variable | `APP_ENVIRONMENT` = `beta` |
-| Environment variable, once the backend exists | `API_HOST` = the beta API host name |
 | Start condition | Branch Changes, branch `main` |
 | Start condition, files and folders | Start a build only when files change in `FinalApproach/` or `Packages/` |
 | Start condition, auto-cancel builds | On |
@@ -72,13 +83,13 @@ repo. These steps are done once in Xcode.
 
 ### Release workflow
 
-Create this one shortly before launch, after the prod AWS account exists.
+Create this one shortly before launch, after the prod AWS account exists and
+`FinalApproach/Config/Stages/prod.xcconfig` holds the prod backend.
 
 | Setting | Value |
 | --- | --- |
 | Name | Release |
 | Environment variable | `APP_ENVIRONMENT` = `prod` |
-| Environment variable | `API_HOST` = the prod API host name |
 | Start condition | Tag Changes, tags beginning with `v` |
 | Action 1 | Test, same as Beta |
 | Action 2 | Archive, deployment preparation TestFlight and App Store |

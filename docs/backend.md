@@ -93,8 +93,8 @@ than once.
 
 ## Sync in the app
 
-The app's side is being built in steps. Three pieces are in place, and
-nothing runs them yet, because no one can sign in.
+The app's side is being built in steps. The pieces below are in place, and
+nothing runs them yet, because the app has no sign in screen.
 
 - The rules are pure and live in the core package, in `PhotoSync.swift`.
   `SyncPlan.actions` takes what the device holds, what the backend listed,
@@ -107,6 +107,17 @@ nothing runs them yet, because no one can sign in.
   collection on the device. It records each step in the ledger as it
   finishes, so a sync that stops partway picks up where it stopped. The
   ledger is saved with the library on the device.
+- Signing in is in the same folder. `IdentityService` is the protocol,
+  `CognitoIdentityService` follows the steps under Sign in above, and
+  `SampleIdentityService` stands in for previews and tests. It needs no AWS
+  library, because each step is one plain request.
+- `AccountSession`, in `Models/`, holds who is signed in and hands out the
+  access token the routes need. It gets a new token shortly before the old
+  one runs out, and many callers at once share one request for it. When the
+  pool says the session has ended, the app is signed out.
+- The session is kept in the Keychain through `SessionStore`, on this device
+  only, so it is not copied to a backup or to another device. Signing out
+  removes it first and then tells the pool to end it.
 
 The rules a sync follows.
 
@@ -210,18 +221,19 @@ so it is only ever deployed by hand.
 
 ## Before the app can sign in
 
-These need the person who owns the Apple and App Store Connect accounts.
+One thing needs the person who owns the Apple developer account, which is to
+turn on the Sign in with Apple capability for `com.finalapproach.app`.
 
-1. Turn on the Sign in with Apple capability for `com.finalapproach.app` in
-   the Apple developer account.
-2. Set `API_HOST` in the Xcode Cloud Beta workflow to the beta API host in
-   the table above.
+The app finds the beta backend by itself. The values in the table above are
+in `FinalApproach/Config/Stages/beta.xcconfig`, and a beta build from Xcode
+Cloud takes them from there. `docs/ci-cd.md` describes how. A change to those
+values in a deploy must be copied into that file.
 
 ## Still to come
 
-- The rest of the app side. That is Sign in with Apple, running a sync when
-  the app opens and after a change, deleting the account on the backend when
-  the user deletes it in the app, and the screens for signing in.
+- The rest of the app side. That is running a sync when the app opens and
+  after a change, deleting the account on the backend when the user deletes
+  it in the app, and the screen that shows Apple's sign in sheet.
 - CloudFront in front of the images, when other users can see photos.
 - Telling Apple to revoke the user's tokens when an account is deleted, which
   App Store review asks for. It needs a key from the Apple developer account.

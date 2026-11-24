@@ -7,6 +7,10 @@
 	<string>$(APP_ENVIRONMENT)</string>
 	<key>APIHost</key>
 	<string>$(API_HOST)</string>
+	<key>AuthHost</key>
+	<string>$(AUTH_HOST)</string>
+	<key>AuthClientID</key>
+	<string>$(AUTH_CLIENT_ID)</string>
 	<!-- Bundled fonts in Resources/Fonts. They are copied to the bundle root. -->
 	<key>UIAppFonts</key>
 	<array>

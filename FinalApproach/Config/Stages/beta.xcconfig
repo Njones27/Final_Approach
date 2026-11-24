@@ -1,0 +1,10 @@
+// The beta backend. ci_scripts/ci_post_clone.sh includes this file in a beta
+// build. These values ship inside the app, so they are not secrets. They
+// come from the outputs of the beta deploy, and docs/backend.md lists them.
+//
+// Each host is a bare host name with no scheme. A double slash starts a
+// comment in an xcconfig file, so a full URL would be cut off.
+
+API_HOST = jcpx0b9hg8.execute-api.us-east-1.amazonaws.com
+AUTH_HOST = cognito-idp.us-east-1.amazonaws.com
+AUTH_CLIENT_ID = 1gcjpq4tk9nbt575ki8bqkn8d6

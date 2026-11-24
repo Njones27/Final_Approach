@@ -2,13 +2,18 @@
 //
 // Local builds use the values below. In Xcode Cloud, ci_scripts/ci_post_clone.sh
 // writes Environment.generated.xcconfig next to this file, and the optional
-// include at the bottom lets those values win.
+// include at the bottom lets those values win. That file takes a stage's
+// backend from Stages/<stage>.xcconfig.
 //
-// API_HOST holds a bare host name with no scheme. A double slash starts a
-// comment in an xcconfig file, so a full URL would be cut off.
+// API_HOST and AUTH_HOST hold a bare host name with no scheme. A double slash
+// starts a comment in an xcconfig file, so a full URL would be cut off.
+// AUTH_HOST is where the app signs in, and AUTH_CLIENT_ID is the id the user
+// pool gave the app.
 
 APP_ENVIRONMENT = dev
 APP_DISPLAY_NAME = Approach Dev
 API_HOST =
+AUTH_HOST =
+AUTH_CLIENT_ID =
 
 #include? "Environment.generated.xcconfig"
