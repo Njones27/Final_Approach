@@ -1,0 +1,98 @@
+name: Backend deploy
+
+# Deploys the backend to the beta AWS account when a change to it reaches
+# main. Prod is not deployed from here. See docs/backend.md.
+#
+# No AWS keys are stored in GitHub. The job asks GitHub for a short lived
+# token that says which repository and branch it runs for, and the beta
+# account trades that token for one hour of access. The account takes the
+# token only from the main branch of this repository, so a pull request or
+# a fork cannot deploy.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - backend/**
+      - .github/workflows/backend-deploy.yml
+      - .github/workflows/backend-checks.yml
+  # Lets the owner run a deploy by hand from the Actions tab.
+  workflow_dispatch:
+
+# One deploy at a time. A second one waits, and a running one is never cut off.
+concurrency:
+  group: backend-deploy-beta
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Checks
+    uses: ./.github/workflows/backend-checks.yml
+
+  beta:
+    name: Deploy to beta
+    needs: checks
+    # A run started by hand from another branch stops here. The beta account
+    # would turn its token away in any case.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Official Node.js image, the same one the checks use.
+    container: node:22
+    permissions:
+      contents: read
+      # Lets the job ask GitHub for the token it trades for AWS access.
+      id-token: write
+    env:
+      AWS_REGION: us-east-1
+      # The role in the beta account that this job takes on. It is a
+      # repository variable so the account's id is not written in the repo.
+      DEPLOY_ROLE: ${{ vars.BETA_DEPLOY_ROLE_ARN }}
+      # The deploy role stack is left out on purpose. The account's owner
+      # deploys it by hand, so a change to who may deploy never deploys itself.
+      STACKS: FinalApproach-beta-Storage FinalApproach-beta-Identity FinalApproach-beta-Api
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: The deploy role is set
+        run: |
+          if [ -z "${DEPLOY_ROLE}" ]; then
+            echo "::error::Set the repository variable BETA_DEPLOY_ROLE_ARN to the role from the FinalApproach-beta-Deploy stack. See docs/backend.md."
+            exit 1
+          fi
+
+      - name: Install
+        run: npm ci
+
+      - name: Sign in to the beta account
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ env.DEPLOY_ROLE }}
+          role-session-name: github-deploy-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Show what will change
+        # STACKS is a list of names, so it is split on purpose.
+        run: npx cdk diff ${STACKS} -c stage=beta
+
+      - name: Deploy
+        run: |
+          npx cdk deploy ${STACKS} -c stage=beta \
+            --require-approval never \
+            --outputs-file "${RUNNER_TEMP}/outputs.json"
+
+      - name: The API turns away a request with no sign in
+        run: |
+          api_url="$(node -e 'const outputs = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); process.stdout.write(outputs["FinalApproach-beta-Api"].ApiURL)' "${RUNNER_TEMP}/outputs.json")"
+          status="$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 30 "${api_url%/}/photos")"
+          if [ "${status}" != "401" ]; then
+            echo "::error::Expected 401 from GET /photos with no sign in, got ${status}."
+            exit 1
+          fi
+          echo "GET /photos with no sign in answered 401."
