@@ -8,7 +8,7 @@ check that works on Linux. This is the same split the WalkWorthy repo uses.
 | Core package tests (`Packages/FinalApproachCore`) | GitHub Actions, Linux | Every pull request and push to `main` |
 | `ci_scripts` lint and behavior checks | GitHub Actions, Linux | Every pull request and push to `main` |
 | App build and unit tests in the simulator | Xcode Cloud | Merge to `main` |
-| Archive and internal TestFlight | Xcode Cloud, Beta workflow | Merge to `main` |
+| Archive and internal TestFlight | Xcode Cloud, TestFlight workflow | Merge to `main` |
 | Archive, external TestFlight, App Store | Xcode Cloud, Release workflow | Version tag such as `v1.0.0` |
 | Backend type check, tests, and template build (`backend/`) | GitHub Actions, Linux | Every pull request and push to `main` |
 | Backend deploy to beta | GitHub Actions, Linux | Push to `main` that changes `backend/`, or by hand from the Actions tab |
@@ -18,22 +18,34 @@ check that works on Linux. This is the same split the WalkWorthy repo uses.
 
 | Stage | Backend | App build | Audience |
 | --- | --- | --- | --- |
-| dev | None yet, sample data | Debug build from Xcode | Local simulator and device |
-| beta | AWS beta account | Xcode Cloud Beta workflow | Internal TestFlight testers |
-| prod | AWS prod account | Xcode Cloud Release workflow, created before launch | External TestFlight and the App Store |
+| beta | AWS beta account | A build made in Xcode, named Approach Beta | The owner's simulator, or a device run from Xcode |
+| prod | AWS prod account | Xcode Cloud, named Final Approach | Internal TestFlight on merges to `main`. External TestFlight and the App Store from the Release workflow, created before launch |
+
+The owner chose this split on 2026-11-24. The simulator is where a change is
+tried against beta, and the phone runs what users will get. A build made in
+Xcode needs no setup to find beta.
+
+Two things follow from it.
+
+- A merge that changes the app and the backend sends the app to TestFlight
+  at once, while the prod backend waits for the approval. Approve that run
+  before testing the new build on the phone, or the app may call a backend
+  that is older than it.
+- What is saved from the phone is saved in the prod account. Deleting the
+  account in Profile removes it.
 
 The app has one bundle ID, `com.finalapproach.app`, and one App Store Connect
 record. The environment is a build setting.
 
-1. `FinalApproach/Config/App.xcconfig` defines `APP_ENVIRONMENT`,
-   `APP_DISPLAY_NAME`, `API_HOST`, `AUTH_HOST`, and `AUTH_CLIENT_ID`. Its
-   defaults are the dev values, which name no backend.
+1. `FinalApproach/Config/App.xcconfig` defines `APP_ENVIRONMENT` and
+   `APP_DISPLAY_NAME`, and includes `Stages/beta.xcconfig`. So a build made
+   in Xcode is a beta build.
 2. `FinalApproach/Config/Stages/<stage>.xcconfig` holds the backend for one
    stage, which is the API host, the host the app signs in at, and the id
    the user pool gave the app. `beta.xcconfig` and `prod.xcconfig` both
    exist.
 3. Each Xcode Cloud workflow sets the `APP_ENVIRONMENT` environment variable
-   to `beta` or `prod`.
+   to `prod`.
 4. `FinalApproach/ci_scripts/ci_post_clone.sh` runs after Xcode Cloud clones
    the repo and writes `Config/Environment.generated.xcconfig`, which
    `App.xcconfig` includes when it exists. The generated file includes the
@@ -66,14 +78,18 @@ repo. These steps are done once in Xcode.
    and grant Xcode Cloud access to the `Njones27/Final_Approach` repository
    when asked.
 
-### Beta workflow
+### TestFlight workflow
+
+This workflow was first made with the name Beta and with `APP_ENVIRONMENT`
+set to `beta`. The variable must now be `prod`. The name is free, and
+TestFlight says what it does.
 
 | Setting | Value |
 | --- | --- |
-| Name | Beta |
+| Name | TestFlight |
 | Environment, Xcode version | Latest Release |
 | Environment, macOS version | Latest Release |
-| Environment variable | `APP_ENVIRONMENT` = `beta` |
+| Environment variable | `APP_ENVIRONMENT` = `prod` |
 | Start condition | Branch Changes, branch `main` |
 | Start condition, files and folders | Start a build only when files change in `FinalApproach/` or `Packages/` |
 | Start condition, auto-cancel builds | On |
@@ -83,16 +99,15 @@ repo. These steps are done once in Xcode.
 
 ### Release workflow
 
-Create this one shortly before launch. The prod backend is deployed and
-`FinalApproach/Config/Stages/prod.xcconfig` holds it, so the workflow needs
-only the settings below.
+Create this one shortly before launch. It builds the same prod app as the
+TestFlight workflow, from a version tag, and sends it to external testers.
 
 | Setting | Value |
 | --- | --- |
 | Name | Release |
 | Environment variable | `APP_ENVIRONMENT` = `prod` |
 | Start condition | Tag Changes, tags beginning with `v` |
-| Action 1 | Test, same as Beta |
+| Action 1 | Test, same as the TestFlight workflow |
 | Action 2 | Archive, deployment preparation TestFlight and App Store |
 | Post-action | TestFlight External Testing |
 

@@ -26,7 +26,8 @@ for decisions and milestones before starting a feature.
 - `FinalApproach/FinalApproachTests/` holds app unit tests (Swift Testing).
 - `FinalApproach/Config/App.xcconfig` holds environment build settings.
   `FinalApproach/Config/Stages/` holds one file per stage with that stage's
-  backend. `FinalApproach/Config/FinalApproach.entitlements` holds what the
+  backend. A build made in Xcode talks to beta, and a build from Xcode Cloud
+  talks to prod. `FinalApproach/Config/FinalApproach.entitlements` holds what the
   app may ask the system for.
 - `FinalApproach/ci_scripts/` holds Xcode Cloud scripts.
 - `Packages/FinalApproachCore/` is a local Swift package with pure domain

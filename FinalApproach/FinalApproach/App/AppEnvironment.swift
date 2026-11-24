@@ -3,8 +3,10 @@ import Foundation
 /// Which backend this build talks to.
 ///
 /// The value comes from the `APP_ENVIRONMENT` build setting in
-/// `Config/App.xcconfig`. Xcode Cloud overrides it for beta and prod builds
-/// through `ci_scripts/ci_post_clone.sh`.
+/// `Config/App.xcconfig`, which is beta for a build made in Xcode. Xcode
+/// Cloud sets it to prod for a TestFlight build through
+/// `ci_scripts/ci_post_clone.sh`. A build with no setting at all is dev and
+/// has no backend.
 enum AppEnvironment: String {
     case dev
     case beta
