@@ -90,6 +90,23 @@ describe('the table', () => {
       TimeToLiveSpecification: { AttributeName: 'expiresAt', Enabled: true },
     });
   });
+
+  test('has one index, of the posts still open for votes', () => {
+    for (const stage of [beta, prod]) {
+      stage.storage.hasResourceProperties('AWS::DynamoDB::Table', {
+        GlobalSecondaryIndexes: [
+          {
+            IndexName: 'Voting',
+            KeySchema: [
+              { AttributeName: 'votingKey', KeyType: 'HASH' },
+              { AttributeName: 'postID', KeyType: 'RANGE' },
+            ],
+            Projection: { ProjectionType: 'ALL' },
+          },
+        ],
+      });
+    }
+  });
 });
 
 describe('what a deleted stack leaves behind', () => {
@@ -143,7 +160,7 @@ describe('sign in', () => {
 });
 
 describe('the API', () => {
-  test('has exactly the four routes, and each needs a signed in user', () => {
+  test('has exactly the six routes, and each needs a signed in user', () => {
     const routes = Object.values(beta.api.findResources('AWS::ApiGatewayV2::Route')).map(
       (route) => route['Properties'],
     );
@@ -151,9 +168,25 @@ describe('the API', () => {
       'DELETE /account',
       'DELETE /photos/{photoID}',
       'GET /photos',
+      'GET /posts',
       'PUT /photos/{photoID}',
+      'PUT /posts/{photoID}',
     ]);
     for (const route of routes) assert.equal(route.AuthorizationType, 'JWT', route.RouteKey);
+  });
+
+  test('the posts function knows how long a vote stays open', () => {
+    for (const [stage, name] of [[beta, 'beta'], [prod, 'prod']] as const) {
+      stage.api.hasResourceProperties('AWS::Lambda::Function', {
+        Environment: {
+          Variables: Match.objectLike({
+            VOTING_WINDOW_HOURS: String(stages[name].votingWindowHours),
+            MAX_IMAGE_BYTES: String(stages[name].maxImageBytes),
+          }),
+        },
+      });
+      assert.ok(stages[name].votingWindowHours >= 1);
+    }
   });
 
   test('is throttled', () => {
@@ -190,16 +223,41 @@ describe('what the functions may do', () => {
       'cognito-idp:AdminDeleteUser',
       'dynamodb:BatchWriteItem',
       'dynamodb:ConditionCheckItem',
+      'dynamodb:ConditionCheckItem',
       'dynamodb:DeleteItem',
+      'dynamodb:DeleteItem',
+      'dynamodb:GetItem',
       'dynamodb:PutItem',
       'dynamodb:PutItem',
+      'dynamodb:PutItem',
+      'dynamodb:Query',
       'dynamodb:Query',
       'dynamodb:Query',
       's3:DeleteObject',
       's3:DeleteObject',
       's3:GetObject',
+      's3:GetObject',
+      's3:ListBucket',
       's3:ListBucket',
       's3:PutObject',
+    ]);
+  });
+
+  test('the posts function reads and writes records and reads images, and changes no image', () => {
+    const role = Object.entries(beta.api.findResources('AWS::IAM::Policy')).find(([name]) =>
+      name.startsWith('PostsServiceRole'),
+    );
+    assert.ok(role);
+    const actions = role[1]['Properties'].PolicyDocument.Statement.flatMap(
+      (statement: { Action: string | string[] }) => statement.Action,
+    );
+    assert.deepEqual(actions.sort(), [
+      'dynamodb:ConditionCheckItem',
+      'dynamodb:GetItem',
+      'dynamodb:PutItem',
+      'dynamodb:Query',
+      's3:GetObject',
+      's3:ListBucket',
     ]);
   });
 
@@ -212,7 +270,7 @@ describe('what the functions may do', () => {
     const imageStatements = statements(beta.api).filter((statement) =>
       [statement.Action].flat().some((action) => action.startsWith('s3:') && action !== 's3:ListBucket'),
     );
-    assert.equal(imageStatements.length, 2);
+    assert.equal(imageStatements.length, 3);
     for (const statement of imageStatements) {
       assert.match(JSON.stringify(statement.Resource), /\/users\/\*/);
     }
@@ -378,6 +436,7 @@ describe('alarms and the budget', () => {
         'CreateAuthChallenge-errors',
         'DefineAuthChallenge-errors',
         'Photos-errors',
+        'Posts-errors',
         'PreSignUp-errors',
         'Sweeper-errors',
         'VerifyAuthChallenge-errors',
@@ -407,7 +466,7 @@ describe('alarms and the budget', () => {
   test('every alarm counts over one period, tells the topic, and stays quiet with no data', () => {
     for (const stage of [beta, prod]) {
       const alarms = alarmsOf(stage);
-      assert.equal(alarms.length, 8);
+      assert.equal(alarms.length, 9);
       for (const alarm of alarms) {
         assert.equal(alarm.Statistic, 'Sum');
         assert.equal(alarm.Period, 300);

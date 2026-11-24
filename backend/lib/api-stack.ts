@@ -45,9 +45,39 @@ export class ApiStack extends Stack {
         MAX_IMAGE_BYTES: String(stage.maxImageBytes),
       },
     });
-    // A save and a delete are each one transaction of a check and a put.
-    allow(photos, ['dynamodb:Query', 'dynamodb:PutItem', 'dynamodb:ConditionCheckItem'], table.tableArn);
+    // A save is one transaction of a check and a put. A delete also removes
+    // the photo's post in the same transaction.
+    allow(
+      photos,
+      ['dynamodb:Query', 'dynamodb:PutItem', 'dynamodb:ConditionCheckItem', 'dynamodb:DeleteItem'],
+      table.tableArn,
+    );
     allow(photos, ['s3:PutObject', 's3:GetObject', 's3:DeleteObject'], images.arnForObjects(userImages));
+
+    const posts = backendFunction(this, 'Posts', {
+      source: 'posts/index.ts',
+      stage,
+      alerts,
+      environment: {
+        ...storage,
+        POSTS_PER_PAGE: String(stage.photosPerPage),
+        MAX_IMAGE_BYTES: String(stage.maxImageBytes),
+        VOTING_WINDOW_HOURS: String(stage.votingWindowHours),
+      },
+    });
+    // A post is one transaction of two checks and a put, and a second post
+    // of the same photo reads the first.
+    allow(
+      posts,
+      ['dynamodb:Query', 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:ConditionCheckItem'],
+      table.tableArn,
+    );
+    // A post reads the photo's image to see that no place is written in it.
+    allow(posts, ['s3:GetObject'], images.arnForObjects(userImages));
+    // S3 says an image is missing only to a caller that may list the bucket.
+    // Any other caller is told it has no access, which reads like a fault.
+    // The function lists nothing.
+    allow(posts, ['s3:ListBucket'], images.bucketArn);
 
     const account = backendFunction(this, 'Account', {
       source: 'account/index.ts',
@@ -91,6 +121,13 @@ export class ApiStack extends Stack {
       methods: [HttpMethod.PUT, HttpMethod.DELETE],
       integration: photoRoutes,
     });
+    const postRoutes = new HttpLambdaIntegration('PostRoutes', posts);
+    this.api.addRoutes({ path: '/posts', methods: [HttpMethod.GET], integration: postRoutes });
+    this.api.addRoutes({
+      path: '/posts/{photoID}',
+      methods: [HttpMethod.PUT],
+      integration: postRoutes,
+    });
     this.api.addRoutes({
       path: '/account',
       methods: [HttpMethod.DELETE],
@@ -105,7 +142,7 @@ export class ApiStack extends Stack {
       watches: 'Api-server-errors',
       metric: this.api.metricServerError({ period: alarmPeriod(stage), statistic: 'Sum' }),
       threshold: stage.serverErrorsToAlarm,
-      description: `The API of the ${stage.name} backend answered with a server error. The logs of the Photos and Account functions say why.`,
+      description: `The API of the ${stage.name} backend answered with a server error. The logs of the Photos, Posts, and Account functions say why.`,
     });
 
     new CfnOutput(this, 'ApiURL', { value: live.url });

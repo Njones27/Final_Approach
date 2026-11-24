@@ -7,6 +7,7 @@ import {
   partitionKey,
   photoSortKey,
   photoSortKeyPrefix,
+  postSortKey,
 } from '../shared/keys.ts';
 import { imageContentType } from './document.ts';
 import type { DeletedPhoto, PhotoPage, PhotoStore, StoredPhoto, WriteOutcome } from './store.ts';
@@ -40,8 +41,9 @@ export function makeAwsPhotoStore(settings: AwsPhotoStoreSettings): PhotoStore {
   async function write(
     userID: string,
     item: Record<string, unknown>,
-    condition?: string,
+    options: { readonly condition?: string; readonly alsoDelete?: string } = {},
   ): Promise<WriteOutcome> {
+    const { condition, alsoDelete } = options;
     const pk = partitionKey(userID);
     try {
       await dynamo.send(
@@ -61,6 +63,7 @@ export function makeAwsPhotoStore(settings: AwsPhotoStoreSettings): PhotoStore {
                 ...(condition ? { ConditionExpression: condition } : {}),
               },
             },
+            ...(alsoDelete ? [{ Delete: { TableName: tableName, Key: { pk, sk: alsoDelete } } }] : []),
           ],
         }),
       );
@@ -82,7 +85,7 @@ export function makeAwsPhotoStore(settings: AwsPhotoStoreSettings): PhotoStore {
           documentJSON: photo.documentJSON,
           updatedAt: photo.updatedAt,
         },
-        'attribute_not_exists(deletedAt)',
+        { condition: 'attribute_not_exists(deletedAt)' },
       );
     },
 
@@ -125,7 +128,13 @@ export function makeAwsPhotoStore(settings: AwsPhotoStoreSettings): PhotoStore {
       // so another device that still has the photo cannot bring it back.
       // The marker goes first. An upload that lands after it is removed by
       // the sweeper, and one that landed before it is removed here.
-      const outcome = await write(userID, { sk: photoSortKey(photoID), photoID, deletedAt });
+      // The photo's post goes in the same step. A post shows the photo to
+      // other users, so it must not outlive the photo by a moment.
+      const outcome = await write(
+        userID,
+        { sk: photoSortKey(photoID), photoID, deletedAt },
+        { alsoDelete: postSortKey(photoID) },
+      );
       if (outcome !== 'saved') return outcome;
       await s3.send(new DeleteObjectCommand({ Bucket: bucketName, Key: imageKey(userID, photoID) }));
       return 'saved';

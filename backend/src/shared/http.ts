@@ -51,7 +51,12 @@ export function noContent(): ApiResult {
  * deleted photo and a deleted account, so the app reads this and not the
  * message, which is free to change.
  */
-export type ProblemCode = 'notSignedIn' | 'photoDeleted' | 'accountDeleted';
+export type ProblemCode =
+  | 'notSignedIn'
+  | 'photoDeleted'
+  | 'accountDeleted'
+  | 'photoNotSaved'
+  | 'imageHasLocation';
 
 /**
  * An error the app can show or act on. The message never echoes stored

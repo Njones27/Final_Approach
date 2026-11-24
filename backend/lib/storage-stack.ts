@@ -1,5 +1,5 @@
 import { Duration, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
-import { AttributeType, BillingMode, Table } from 'aws-cdk-lib/aws-dynamodb';
+import { AttributeType, BillingMode, ProjectionType, Table } from 'aws-cdk-lib/aws-dynamodb';
 import type { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
 import {
   BlockPublicAccess,
@@ -12,6 +12,7 @@ import { LambdaDestination } from 'aws-cdk-lib/aws-s3-notifications';
 import type { ITopic } from 'aws-cdk-lib/aws-sns';
 import type { Construct } from 'constructs';
 import { expiryAttribute } from '../src/account/awsStore.ts';
+import { votingIndex } from '../src/shared/keys.ts';
 import { allow, backendFunction, userImages } from './functions.ts';
 import type { StageSettings } from './stages.ts';
 
@@ -40,6 +41,17 @@ export class StorageStack extends Stack {
       timeToLiveAttribute: expiryAttribute,
       deletionProtection: keep,
       removalPolicy,
+    });
+
+    // The posts still open for votes, across all users. Only an open post
+    // carries the index's key, so the index holds nothing else. A post
+    // lives in its owner's partition, and the index follows it there, so a
+    // deleted post or account leaves nothing behind in the index.
+    this.table.addGlobalSecondaryIndex({
+      indexName: votingIndex.name,
+      partitionKey: { name: votingIndex.partitionKey, type: AttributeType.STRING },
+      sortKey: { name: votingIndex.sortKey, type: AttributeType.STRING },
+      projectionType: ProjectionType.ALL,
     });
 
     // The bucket keeps no old versions. Deleting a photo or an account must
