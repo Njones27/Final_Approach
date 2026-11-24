@@ -160,7 +160,7 @@ describe('sign in', () => {
 });
 
 describe('the API', () => {
-  test('has exactly the eight routes, and each needs a signed in user', () => {
+  test('has exactly the nine routes, and each needs a signed in user', () => {
     const routes = Object.values(beta.api.findResources('AWS::ApiGatewayV2::Route')).map(
       (route) => route['Properties'],
     );
@@ -169,6 +169,7 @@ describe('the API', () => {
       'DELETE /photos/{photoID}',
       'GET /photos',
       'GET /posts',
+      'GET /spots',
       'GET /votes/queue',
       'PUT /photos/{photoID}',
       'PUT /posts/{photoID}',
@@ -323,6 +324,17 @@ describe('what the functions may do', () => {
     ]);
     const query = statements.find((statement) => [statement.Action].flat().includes('dynamodb:Query'));
     assert.match(JSON.stringify(query?.Resource), /\/index\/Voting/);
+  });
+
+  test('the spots function reaches no table and no image', () => {
+    // The list of spots is in its code, so it needs nothing from the account.
+    const policies = Object.keys(beta.api.findResources('AWS::IAM::Policy'));
+    assert.ok(!policies.some((id) => id.startsWith('SpotsServiceRole')), policies.join(', '));
+    const spots = Object.entries(beta.api.findResources('AWS::Lambda::Function')).find(([id]) =>
+      /^Spots[0-9A-F]{8}$/.test(id),
+    );
+    assert.ok(spots, 'the Spots function');
+    assert.equal(spots[1]['Properties'].Environment, undefined);
   });
 
   test('the posts function reads and writes records and reads images, and changes no image', () => {
@@ -521,6 +533,7 @@ describe('alarms and the budget', () => {
         'Photos-errors',
         'Posts-errors',
         'PreSignUp-errors',
+        'Spots-errors',
         'Sweeper-errors',
         'VerifyAuthChallenge-errors',
         'Votes-errors',
@@ -550,7 +563,7 @@ describe('alarms and the budget', () => {
   test('every alarm counts over one period, tells the topic, and stays quiet with no data', () => {
     for (const stage of [beta, prod]) {
       const alarms = alarmsOf(stage);
-      assert.equal(alarms.length, 11);
+      assert.equal(alarms.length, 12);
       for (const alarm of alarms) {
         assert.equal(alarm.Statistic, 'Sum');
         assert.equal(alarm.Period, 300);

@@ -111,6 +111,10 @@ export class ApiStack extends Stack {
     // A voter reads a photo through a link this function signs.
     allow(votes, ['s3:GetObject'], images.arnForObjects(userImages));
 
+    // The list of spots is part of the function's own code. It reads no
+    // table and no image, so it is given no access to either.
+    const spots = backendFunction(this, 'Spots', { source: 'spots/index.ts', stage, alerts });
+
     const closer = backendFunction(this, 'Closer', {
       source: 'votes/closerIndex.ts',
       stage,
@@ -183,6 +187,11 @@ export class ApiStack extends Stack {
       integration: voteRoutes,
     });
     this.api.addRoutes({
+      path: '/spots',
+      methods: [HttpMethod.GET],
+      integration: new HttpLambdaIntegration('SpotRoutes', spots),
+    });
+    this.api.addRoutes({
       path: '/account',
       methods: [HttpMethod.DELETE],
       integration: new HttpLambdaIntegration('AccountRoutes', account),
@@ -196,7 +205,7 @@ export class ApiStack extends Stack {
       watches: 'Api-server-errors',
       metric: this.api.metricServerError({ period: alarmPeriod(stage), statistic: 'Sum' }),
       threshold: stage.serverErrorsToAlarm,
-      description: `The API of the ${stage.name} backend answered with a server error. The logs of the Photos, Posts, Votes, and Account functions say why.`,
+      description: `The API of the ${stage.name} backend answered with a server error. The logs of the Photos, Posts, Votes, Spots, and Account functions say why.`,
     });
 
     new CfnOutput(this, 'ApiURL', { value: live.url });
