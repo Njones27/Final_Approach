@@ -10,6 +10,10 @@
 // AUTH_HOST is where the app signs in, and AUTH_CLIENT_ID is the id the user
 // pool gave the app.
 
+// What the app is allowed to ask the system for. It lives next to this file
+// and outside the app's source folder, so it is not copied into the app.
+CODE_SIGN_ENTITLEMENTS = Config/FinalApproach.entitlements
+
 APP_ENVIRONMENT = dev
 APP_DISPLAY_NAME = Approach Dev
 API_HOST =
