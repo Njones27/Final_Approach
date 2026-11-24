@@ -9,23 +9,53 @@ export type StageName = 'beta' | 'prod';
  * renamed or deleted repository whose name is taken by someone else still
  * cannot deploy. All four are public. `GET /repos/<owner>/<repository>` on
  * GitHub's API returns them.
+ *
+ * The last part says which jobs of that repository may deploy. It is a
+ * branch or a GitHub environment, and never both, because GitHub writes
+ * only one of them into the token.
  */
-export interface DeploySource {
+export type DeploySource = DeployRepository & (DeployFromBranch | DeployFromEnvironment);
+
+export interface DeployRepository {
   /** The owner's name as GitHub writes it, with its capital letters. */
   readonly owner: string;
   readonly ownerID: number;
   /** The repository's name as GitHub writes it, with its capital letters. */
   readonly repository: string;
   readonly repositoryID: number;
+}
+
+/** A job that runs for a push to this branch, and names no environment. */
+export interface DeployFromBranch {
   readonly branch: string;
 }
 
 /**
- * The subject GitHub writes into the token of a job that runs for a push to
- * the source's branch. The role matches it exactly.
+ * A job that names this GitHub environment.
+ *
+ * The token of such a job does not say which branch it runs for. The
+ * environment's own settings on GitHub must therefore allow only the
+ * branch that may deploy, and name who approves a deploy. The steps are in
+ * `docs/backend.md`.
  */
+export interface DeployFromEnvironment {
+  readonly environment: string;
+}
+
+/** The subject GitHub writes into the token of a job the source allows. The role matches it exactly. */
 export function deploySubject(source: DeploySource): string {
-  return `repo:${source.owner}@${source.ownerID}/${source.repository}@${source.repositoryID}:ref:refs/heads/${source.branch}`;
+  const repository = `repo:${source.owner}@${source.ownerID}/${source.repository}@${source.repositoryID}`;
+  return 'environment' in source
+    ? `${repository}:environment:${source.environment}`
+    : `${repository}:ref:refs/heads/${source.branch}`;
+}
+
+/** Where a source allows a deploy from, in words. */
+export function deploySourceInWords(source: DeploySource): string {
+  const repository = `${source.owner}/${source.repository}`;
+  return 'environment' in source
+    ? `${repository}, environment ${source.environment}`
+    : `${repository}, branch ${source.branch}`;
 }
 
 /**
@@ -78,20 +108,30 @@ const shared = {
   logRetentionDays: 30,
 } as const;
 
+/** This repository on GitHub. */
+const repository: DeployRepository = {
+  owner: 'Njones27',
+  ownerID: 153565100,
+  repository: 'Final_Approach',
+  repositoryID: 1468200614,
+};
+
 export const stages: Record<StageName, StageSettings> = {
   beta: {
     ...shared,
     name: 'beta',
     keepDataOnStackDelete: false,
-    deployFrom: {
-      owner: 'Njones27',
-      ownerID: 153565100,
-      repository: 'Final_Approach',
-      repositoryID: 1468200614,
-      branch: 'main',
-    },
+    // Every change that reaches main goes to beta with nobody asked.
+    deployFrom: { ...repository, branch: 'main' },
   },
-  prod: { ...shared, name: 'prod', keepDataOnStackDelete: true },
+  prod: {
+    ...shared,
+    name: 'prod',
+    keepDataOnStackDelete: true,
+    // A deploy to prod waits for the approval that the `prod` environment
+    // on GitHub asks for, so prod trusts that environment and not a branch.
+    deployFrom: { ...repository, environment: 'prod' },
+  },
 };
 
 export function isStageName(value: unknown): value is StageName {
