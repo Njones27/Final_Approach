@@ -113,13 +113,6 @@ struct AddPhotoView: View {
                 text: $registration,
                 capitalization: .characters
             )
-            // A hardware keyboard ignores the capitals setting.
-            .onChange(of: registration) { _, typed in
-                let capitals = typed.uppercased()
-                if capitals != typed {
-                    registration = capitals
-                }
-            }
             DetailField(label: "Airline", prompt: "Southwest Airlines", text: $airline)
         }
     }
