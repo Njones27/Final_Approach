@@ -20,7 +20,7 @@ check that works on Linux. This is the same split the WalkWorthy repo uses.
 | --- | --- | --- | --- |
 | dev | None yet, sample data | Debug build from Xcode | Local simulator and device |
 | beta | AWS beta account | Xcode Cloud Beta workflow | Internal TestFlight testers |
-| prod | AWS prod account, created before launch | Xcode Cloud Release workflow | External TestFlight and the App Store |
+| prod | AWS prod account | Xcode Cloud Release workflow, created before launch | External TestFlight and the App Store |
 
 The app has one bundle ID, `com.finalapproach.app`, and one App Store Connect
 record. The environment is a build setting.
@@ -30,8 +30,8 @@ record. The environment is a build setting.
    defaults are the dev values, which name no backend.
 2. `FinalApproach/Config/Stages/<stage>.xcconfig` holds the backend for one
    stage, which is the API host, the host the app signs in at, and the id
-   the user pool gave the app. `beta.xcconfig` exists. `prod.xcconfig` is
-   added when prod is deployed.
+   the user pool gave the app. `beta.xcconfig` and `prod.xcconfig` both
+   exist.
 3. Each Xcode Cloud workflow sets the `APP_ENVIRONMENT` environment variable
    to `beta` or `prod`.
 4. `FinalApproach/ci_scripts/ci_post_clone.sh` runs after Xcode Cloud clones
@@ -83,8 +83,9 @@ repo. These steps are done once in Xcode.
 
 ### Release workflow
 
-Create this one shortly before launch, after the prod AWS account exists and
-`FinalApproach/Config/Stages/prod.xcconfig` holds the prod backend.
+Create this one shortly before launch. The prod backend is deployed and
+`FinalApproach/Config/Stages/prod.xcconfig` holds it, so the workflow needs
+only the settings below.
 
 | Setting | Value |
 | --- | --- |
@@ -181,10 +182,10 @@ reviewer or its limit to `main`.
 ## AWS accounts
 
 There is one AWS account for each stage. On the owner's Mac the beta account
-is the AWS CLI profile `fa_beta`. Every workload goes to beta first. The prod account stays
-empty until the owner sets up its deploy role and approves a first deploy.
+is the AWS CLI profile `fa_beta` and the prod account is `fa_prod`. Every
+workload goes to beta first.
 
-The `beta` stage of the backend is deployed in `us-east-1`. The CDK app takes
+Both stages of the backend are deployed in `us-east-1`. The CDK app takes
 the stage from `-c stage=<name>` and the account from the profile in use.
 GitHub Actions deploys beta when a backend change reaches `main`, and prod
 after the owner approves the same run. The steps are in `docs/backend.md`.

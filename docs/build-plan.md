@@ -212,12 +212,11 @@ tagging a batch at once, and suggesting nearby airports for a tag.
 The backend is a CDK app in `backend/`. It has a table of records, a bucket
 of images, a user pool that signs users in with Apple, and an HTTP API to
 save, list, and delete the signed in user's own photos and to delete the
-account. The `beta` stage is deployed. A backend change that reaches `main`
-goes to beta, and then to prod once the owner approves the run and the prod
-account is set up. The app's side can sign in from the
-Profile screen, sync when the app opens and after a change, and delete the
-account. A beta build offers the sign in, and a build with no backend does
-not. The design, the rules for deleting and for syncing, and how to deploy
+account. The `beta` and `prod` stages are both deployed. A backend change
+that reaches `main` goes to beta, and then to prod once the owner approves
+the run. The app's side can sign in from the Profile screen, sync when the
+app opens and after a change, and delete the account. A beta or prod build
+offers the sign in, and a build with no backend does not. The design, the rules for deleting and for syncing, and how to deploy
 are in `docs/backend.md`.
 
 ## Milestones
