@@ -1,7 +1,7 @@
 # Backend
 
 The backend is defined with the AWS CDK in TypeScript, in `backend/`. The
-`beta` stage is deployed and `prod` is not. Everything here builds and is
+`beta` and `prod` stages are both deployed. Everything here builds and is
 tested with no AWS account.
 
 ## Deployed stages
@@ -9,12 +9,13 @@ tested with no AWS account.
 | Stage | Region | API host | User pool id | App client id |
 | --- | --- | --- | --- | --- |
 | `beta` | `us-east-1` | `jcpx0b9hg8.execute-api.us-east-1.amazonaws.com` | `us-east-1_IhyFdSJ3t` | `1gcjpq4tk9nbt575ki8bqkn8d6` |
+| `prod` | `us-east-1` | `u2680zoug8.execute-api.us-east-1.amazonaws.com` | `us-east-1_fOCqYk7Xe` | `3sf5ptppnd7nvs255nndcfacjt` |
 
 These values ship inside the app, so they are not secrets. The beta stage
-was first deployed on 2026-11-24 from the commit that added the backend. A
-change to `backend/` reaches beta when it reaches `main`. It reaches prod
-when the owner approves the same run, once prod is set up as described
-below.
+was first deployed on 2026-11-24 from the commit that added the backend. The
+prod stage was first deployed the same day by the workflow, after the owner
+approved the run. A change to `backend/` reaches beta when it reaches
+`main`. It reaches prod when the owner approves the same run.
 
 ## What it holds
 
@@ -217,18 +218,20 @@ Both are done.
 
 ### Prod, set up once
 
-Prod is deployed by the same workflow, after an approval. Until the steps
-below are done, the prod job is left out of every run and the prod account
-stays empty. Do them in this order, because the prod role trusts every job
-that names the `prod` environment, and only the environment's settings keep
-other branches out and ask for the approval.
+Prod is deployed by the same workflow, after an approval. The steps below
+were done on 2026-11-24, and they are kept here for a new account. Without
+them the prod job is left out of every run. Do them in this order, because
+the prod role trusts every job that names the `prod` environment, and only
+the environment's settings keep other branches out and ask for the approval.
 
 1. On GitHub, open Settings, Environments, and make an environment named
    `prod`. Turn on Required reviewers and add the owner. Leave Prevent self
    review off, because the owner is the only reviewer. Under Deployment
    branches and tags choose Selected branches and tags, and add `main`.
 2. Sign in to the prod account with `aws login --profile fa_prod` and set
-   `AWS_REGION=us-east-1`.
+   `AWS_REGION=us-east-1`. Start from a folder that still exists, such as
+   the home folder. A Terminal window left in a deleted folder fails at the
+   first `git` or `npx` command.
 3. Bootstrap the account once, with
    `npx cdk bootstrap aws://<account id>/us-east-1 --profile fa_prod -c stage=prod`.
 4. Deploy the role, with
@@ -276,7 +279,7 @@ workflow is turned away, the account's CloudTrail event for
 
 A deploy needs the person who owns the AWS account. There is one AWS account
 for each stage. On the owner's Mac the beta account is the AWS CLI profile
-`fa_beta`.
+`fa_beta`, and the prod account is `fa_prod`.
 
 1. Sign in with `aws login --profile fa_beta`.
 2. Use `us-east-1`. Nothing in the code names a region, so set
@@ -289,8 +292,8 @@ for each stage. On the owner's Mac the beta account is the AWS CLI profile
 
 A new account is bootstrapped once before its first deploy, with
 `npx cdk bootstrap aws://<account id>/us-east-1 --profile <profile> -c stage=<stage>`.
-The stage is needed because the CDK runs the app even for a bootstrap. The
-beta account is already bootstrapped.
+The stage is needed because the CDK runs the app even for a bootstrap. Both
+accounts are already bootstrapped.
 
 The `prod` stage follows the same steps with its own profile, `fa_prod`, and
 `-c stage=prod`. A deploy by hand is for the first setup and for emergencies.
@@ -307,10 +310,11 @@ which `App.xcconfig` names. An archive is signed for an App ID, so a build
 for TestFlight fails to sign while the App ID does not have the capability.
 A simulator build is not affected.
 
-The app finds the beta backend by itself. The values in the table above are
-in `FinalApproach/Config/Stages/beta.xcconfig`, and a beta build from Xcode
-Cloud takes them from there. `docs/ci-cd.md` describes how. A change to those
-values in a deploy must be copied into that file.
+The app finds each backend by itself. The values in the table above are in
+`FinalApproach/Config/Stages/beta.xcconfig` and `prod.xcconfig`, and a build
+from Xcode Cloud takes its stage's values from there. `docs/ci-cd.md`
+describes how. A change to those values in a deploy must be copied into the
+stage's file.
 
 ## Still to come
 

@@ -55,18 +55,20 @@ jobs:
 
       - name: Post-clone script takes a stage's backend from the repo
         run: |
-          workdir="$(mktemp -d)"
-          mkdir -p "$workdir/FinalApproach"
-          cp -R FinalApproach/Config "$workdir/FinalApproach/Config"
-          CI_PRIMARY_REPOSITORY_PATH="$workdir" APP_ENVIRONMENT=beta FinalApproach/ci_scripts/ci_post_clone.sh
-          generated="$workdir/FinalApproach/Config/Environment.generated.xcconfig"
-          grep -qx '#include "Stages/beta.xcconfig"' "$generated"
-          # Nothing set by hand may replace the stage's own host.
-          if grep -q '^API_HOST' "$generated"; then
-            echo "expected no API_HOST line when the variable is unset"; exit 1
-          fi
-          # The include must come before the lines that replace its values.
-          test "$(grep -n '^#include' "$generated" | cut -d: -f1)" -lt "$(grep -n '^APP_ENVIRONMENT' "$generated" | cut -d: -f1)"
+          for stage in beta prod; do
+            workdir="$(mktemp -d)"
+            mkdir -p "$workdir/FinalApproach"
+            cp -R FinalApproach/Config "$workdir/FinalApproach/Config"
+            CI_PRIMARY_REPOSITORY_PATH="$workdir" APP_ENVIRONMENT="$stage" FinalApproach/ci_scripts/ci_post_clone.sh
+            generated="$workdir/FinalApproach/Config/Environment.generated.xcconfig"
+            grep -qx "#include \"Stages/${stage}.xcconfig\"" "$generated"
+            # Nothing set by hand may replace the stage's own host.
+            if grep -q '^API_HOST' "$generated"; then
+              echo "expected no API_HOST line when the variable is unset"; exit 1
+            fi
+            # The include must come before the lines that replace its values.
+            test "$(grep -n '^#include' "$generated" | cut -d: -f1)" -lt "$(grep -n '^APP_ENVIRONMENT' "$generated" | cut -d: -f1)"
+          done
 
       - name: Every stage file holds bare values only
         run: |
