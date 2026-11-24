@@ -91,8 +91,8 @@ than once.
 
 ## Sync in the app
 
-The app's side is being built in steps. Two pieces are in place, and nothing
-calls them yet.
+The app's side is being built in steps. Three pieces are in place, and
+nothing runs them yet, because no one can sign in.
 
 - The rules are pure and live in the core package, in `PhotoSync.swift`.
   `SyncPlan.actions` takes what the device holds, what the backend listed,
@@ -101,6 +101,10 @@ calls them yet.
 - The code that talks to the routes is in the app, in `Services/Backend/`.
   `PhotoBackend` is the protocol, `HTTPPhotoBackend` is the real one, and
   `SamplePhotoBackend` keeps everything in memory for previews and tests.
+- `SyncEngine`, in the same folder, carries the steps out against the
+  collection on the device. It records each step in the ledger as it
+  finishes, so a sync that stops partway picks up where it stopped. The
+  ledger is saved with the library on the device.
 
 The rules a sync follows.
 
@@ -118,6 +122,12 @@ The rules a sync follows.
 - A record this version of the app cannot read is left alone. A newer
   version of the app most likely saved it.
 - A sample photo ships with the app and is never sent.
+- A change the user makes while a sync is running stands. A photo deleted
+  while it is being sent is removed from the backend on the next sync, and a
+  photo edited while its newer copy is being fetched keeps the edit.
+- One photo that fails does not stop the rest. It is tried again on the next
+  sync. A sync stops only when no one is signed in, the account was deleted,
+  or the backend cannot be listed.
 
 ## Build and test
 
@@ -167,9 +177,9 @@ These need the person who owns the Apple and App Store Connect accounts.
 
 ## Still to come
 
-- The rest of the app side. That is Sign in with Apple, the engine that runs
-  the sync steps, telling the backend when a photo or the account is deleted,
-  and the screens for signing in.
+- The rest of the app side. That is Sign in with Apple, running a sync when
+  the app opens and after a change, deleting the account on the backend when
+  the user deletes it in the app, and the screens for signing in.
 - A deploy workflow. It needs an IAM role that GitHub Actions can assume
   through OIDC, limited to this repository, so no AWS keys are stored in
   GitHub.

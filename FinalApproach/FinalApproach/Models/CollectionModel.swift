@@ -43,6 +43,10 @@ final class CollectionModel {
     @ObservationIgnored private let store: (any PhotoStore)?
     /// The sample photos the user deleted, so they stay deleted.
     @ObservationIgnored private var removedSampleIDs: [String] = []
+    /// What the device remembers between syncs with the backend. It is
+    /// saved with the library, so a delete the backend has not confirmed
+    /// is still owed after the app closes.
+    @ObservationIgnored private(set) var syncLedger = SyncLedger()
     /// The images of logged photos that have been shown, by photo id. With
     /// a store this is only a cache, and the saved file is the real copy.
     /// It is not observed, because an image never changes once it is logged.
@@ -126,6 +130,7 @@ final class CollectionModel {
         }
         self.store = usableStore
         removedSampleIDs = saved.removedSampleIDs
+        syncLedger = saved.syncLedger ?? SyncLedger()
         let keptSamples = photos.filter { !saved.removedSampleIDs.contains($0.id) }
         self.photos = saved.photos + keptSamples
         self.profile = profile
@@ -294,14 +299,19 @@ final class CollectionModel {
         }
     }
 
-    /// Removes a photo and its saved image from the device. Once photos are
-    /// also kept on the backend, this must remove that copy too.
+    /// Removes a photo and its saved image from the device. A photo the
+    /// backend may hold is noted as a pending delete, and the next sync
+    /// removes that copy too.
     func deletePhoto(id: String) {
         guard let photo = photo(id: id) else { return }
         photos.removeAll { $0.id == id }
         loadedImages[id] = nil
-        if photo.isSample, !removedSampleIDs.contains(id) {
-            removedSampleIDs.append(id)
+        if photo.isSample {
+            if !removedSampleIDs.contains(id) {
+                removedSampleIDs.append(id)
+            }
+        } else {
+            syncLedger.noteDeletedHere(id: id)
         }
         guard let store else { return }
         do {
@@ -313,14 +323,16 @@ final class CollectionModel {
     }
 
     /// Removes the account's photos and every saved image from the device.
-    /// Once accounts exist, this must also delete the account and the
-    /// backend copies.
+    /// The backend's copies go with the account itself, which the caller
+    /// deletes through `PhotoBackend.deleteAccount`, so nothing is left for
+    /// a sync to remember.
     func deleteAccountAndPhotos() {
         for photo in photos where photo.isSample && !removedSampleIDs.contains(photo.id) {
             removedSampleIDs.append(photo.id)
         }
         photos.removeAll()
         loadedImages.removeAll()
+        syncLedger = SyncLedger()
         guard let store else { return }
         do {
             try store.deleteEverything()
@@ -344,9 +356,109 @@ final class CollectionModel {
         try store.saveLibrary(
             StoredLibrary(
                 photos: photos.filter { !$0.isSample },
-                removedSampleIDs: removedSampleIDs
+                removedSampleIDs: removedSampleIDs,
+                syncLedger: syncLedger
             )
         )
+    }
+
+    // MARK: Sync
+
+    /// The user's own photos as a sync sees them. Sample photos ship with
+    /// the app and are left out.
+    func localSyncStates() -> [LocalPhotoState] {
+        photos.compactMap { photo in
+            guard !photo.isSample, let fingerprint = try? photo.syncFingerprint() else { return nil }
+            return LocalPhotoState(
+                id: photo.id,
+                fingerprint: fingerprint,
+                hasImage: hasStoredImage(forPhotoID: photo.id)
+            )
+        }
+    }
+
+    /// The image of a logged photo as it is sent to the backend. It is the
+    /// saved file, which carries no metadata and so no location.
+    func storedImageData(forPhotoID id: String) -> Data? {
+        if let saved = store?.imageData(forPhotoID: id) {
+            return saved
+        }
+        return loadedImages[id]?.jpegData(compressionQuality: storedImageQuality)
+    }
+
+    /// Takes the backend's copy of a photo, from another device or after an
+    /// edit made there, and saves it. Pass the image when it was fetched.
+    func takeRemote(_ photo: SpottedPhoto, imageData: Data?) {
+        guard !photo.isSample else { return }
+        let image = imageData.flatMap(UIImage.init(data:))
+        if let image {
+            loadedImages[photo.id] = image
+        }
+        if let index = photos.firstIndex(where: { $0.id == photo.id }) {
+            photos[index] = photo
+        } else {
+            // The collection runs newest first, with the samples last.
+            let index = photos.firstIndex { $0.isSample || $0.loggedAt < photo.loggedAt } ?? photos.endIndex
+            photos.insert(photo, at: index)
+        }
+        guard let store else { return }
+        do {
+            if image != nil, let imageData {
+                try store.saveImage(imageData, forPhotoID: photo.id)
+            }
+            try saveLibrary(to: store)
+        } catch {
+            storageProblem = .couldNotSave
+        }
+    }
+
+    /// Saves the image of a photo the device already holds. Data that is
+    /// not an image is refused.
+    @discardableResult
+    func takeRemoteImage(_ data: Data, forPhotoID id: String) -> Bool {
+        guard let photo = photo(id: id), !photo.isSample, let image = UIImage(data: data) else { return false }
+        loadedImages[id] = image
+        guard let store else { return true }
+        do {
+            try store.saveImage(data, forPhotoID: id)
+        } catch {
+            storageProblem = .couldNotSave
+        }
+        return true
+    }
+
+    /// Removes a photo that was deleted on another device, with its image.
+    /// The backend already knows, so nothing is left owing.
+    func removeDeletedElsewhere(id: String) {
+        syncLedger.noteDeleteSettled(id: id)
+        guard let photo = photo(id: id), !photo.isSample else {
+            saveSyncLedger()
+            return
+        }
+        photos.removeAll { $0.id == id }
+        loadedImages[id] = nil
+        guard let store else { return }
+        do {
+            try store.deleteImage(forPhotoID: id)
+            try saveLibrary(to: store)
+        } catch {
+            storageProblem = .couldNotSave
+        }
+    }
+
+    /// Changes what the device remembers between syncs, and saves it.
+    func updateSyncLedger(_ change: (inout SyncLedger) -> Void) {
+        change(&syncLedger)
+        saveSyncLedger()
+    }
+
+    private func saveSyncLedger() {
+        guard let store else { return }
+        do {
+            try saveLibrary(to: store)
+        } catch {
+            storageProblem = .couldNotSave
+        }
     }
 
     // MARK: Identification
