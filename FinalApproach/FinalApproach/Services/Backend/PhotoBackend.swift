@@ -50,6 +50,10 @@ enum PhotoBackendError: Error, Equatable {
     case votingClosed
     /// The post is the user's own photo, which they cannot vote on.
     case ownPost
+    /// The photo has no post, so it cannot be shown at a spot.
+    case notPosted
+    /// The spot is not on the backend's list.
+    case unknownSpot
     /// The backend refused the request. The message is the backend's own.
     case refused(status: Int, message: String)
     /// The backend failed, and the request may work later.

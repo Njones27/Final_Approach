@@ -17,6 +17,10 @@ struct StoredLibrary: Equatable, Codable {
     var postStandings: [String: PostStanding]?
     /// The fewest votes a grade needs, as the backend last said.
     var postMinimumVotes: Int?
+    /// The spot's page each posted photo was shown on when the backend was
+    /// last asked, by photo id. It is optional so a library saved before
+    /// spot pages existed still opens.
+    var spotShowings: [String: SpotShowing]?
 }
 
 /// Keeps the user's logged photos and their images on the device.

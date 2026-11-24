@@ -54,6 +54,12 @@ final class CollectionModel {
     /// The fewest votes a grade needs, as the backend last said. It is nil
     /// until the backend has been asked.
     private(set) var backendMinimumVotes: Int?
+    /// The spot's page each posted photo is shown on, by photo id, as the
+    /// backend last said. A photo that is on no page is left out.
+    private(set) var spotShowings: [String: SpotShowing] = [:]
+    /// Called after one of the user's own photos leaves the device, or all
+    /// of them do. Anything that keeps a copy of a photo clears it then.
+    @ObservationIgnored var onPhotosRemoved: (() -> Void)?
     /// Called after the user adds, edits, or deletes one of their own
     /// photos, so a sync can follow. A change a sync makes does not call it.
     @ObservationIgnored var onLocalChange: (() -> Void)?
@@ -71,7 +77,9 @@ final class CollectionModel {
     private(set) var voteQueue: [VoteCandidate]
     /// How many photos were in today's vote set before any vote.
     let voteSetSize: Int
-    let airports: [Airport]
+    /// The listed spots, grouped by airport. A build with a backend takes
+    /// them from there, so the list changes with no release.
+    private(set) var airports: [Airport]
 
     let thresholds: TierThresholds
     /// The lowest score at which a check has nothing to suggest. The check
@@ -86,6 +94,9 @@ final class CollectionModel {
     /// How close, in meters, a photo must be to a spot to count as taken
     /// from it.
     let spotMatchRadius: Double
+    /// The longest an aircraft type or an airline may be to go on a spot's
+    /// page. The backend refuses a longer one.
+    let shownTextMaxLength: Int
     /// How strongly a saved image is compressed, from 0 to 1.
     let storedImageQuality: Double
     /// How each country writes its registrations, used to find one in the
@@ -115,6 +126,7 @@ final class CollectionModel {
         fixTargetScore: Double,
         votingRules: VotingRules = .launch,
         spotMatchRadius: Double,
+        shownTextMaxLength: Int,
         storedImageQuality: Double,
         registrationFormats: [RegistrationFormat],
         flightRankingRules: FlightRankingRules,
@@ -123,6 +135,7 @@ final class CollectionModel {
         store: (any PhotoStore)? = nil
     ) {
         self.spotMatchRadius = spotMatchRadius
+        self.shownTextMaxLength = shownTextMaxLength
         self.storedImageQuality = storedImageQuality
         self.registrationFormats = registrationFormats
         self.flightRankingRules = flightRankingRules
@@ -156,6 +169,7 @@ final class CollectionModel {
         self.votingRules = votingRules
         postStandings = saved.postStandings ?? [:]
         backendMinimumVotes = saved.postMinimumVotes
+        spotShowings = saved.spotShowings ?? [:]
         if store != nil, usableStore == nil {
             storageProblem = .couldNotOpen
         }
@@ -375,8 +389,11 @@ final class CollectionModel {
             }
         } else {
             syncLedger.noteDeletedHere(id: id)
-            // Deleting the photo takes its post down with it.
+            // Deleting the photo takes its post down with it, and takes
+            // it off its spot's page.
             postStandings[id] = nil
+            spotShowings[id] = nil
+            onPhotosRemoved?()
         }
         guard let store else { return }
         do {
@@ -401,6 +418,8 @@ final class CollectionModel {
         photos.removeAll()
         loadedImages.removeAll()
         postStandings.removeAll()
+        spotShowings.removeAll()
+        onPhotosRemoved?()
         syncLedger.noteDeviceCleared(accountDeleted: alsoOnBackend)
         timesCleared += 1
         guard let store else { return }
@@ -436,7 +455,8 @@ final class CollectionModel {
                 removedSampleIDs: removedSampleIDs,
                 syncLedger: syncLedger,
                 postStandings: postStandings.isEmpty ? nil : postStandings,
-                postMinimumVotes: backendMinimumVotes
+                postMinimumVotes: backendMinimumVotes,
+                spotShowings: spotShowings.isEmpty ? nil : spotShowings
             )
         )
     }
@@ -517,6 +537,8 @@ final class CollectionModel {
         photos.removeAll { $0.id == id }
         loadedImages[id] = nil
         postStandings[id] = nil
+        spotShowings[id] = nil
+        onPhotosRemoved?()
         guard let store else { return }
         do {
             try store.deleteImage(forPhotoID: id)
@@ -535,9 +557,14 @@ final class CollectionModel {
         let standings = listing.standings.filter { own.contains($0.key) }
         // A listing that names no usable minimum leaves the last one.
         let minimum = listing.minimumVotes.flatMap { $0 > 0 ? $0 : nil } ?? backendMinimumVotes
-        guard standings != postStandings || minimum != backendMinimumVotes else { return }
+        // Only a posted photo can be on a spot's page.
+        let showings = listing.showings.filter { standings[$0.key] != nil }
+        guard standings != postStandings || minimum != backendMinimumVotes || showings != spotShowings else {
+            return
+        }
         postStandings = standings
         backendMinimumVotes = minimum
+        spotShowings = showings
         savePostStandings()
     }
 
@@ -545,6 +572,14 @@ final class CollectionModel {
     func takePostStanding(_ standing: PostStanding, forPhotoID id: String) {
         guard let photo = photo(id: id), !photo.isSample else { return }
         postStandings[id] = standing
+        savePostStandings()
+    }
+
+    /// Takes the spot's page a posted photo is now shown on, or nil once it
+    /// is on none.
+    func takeSpotShowing(_ showing: SpotShowing?, forPhotoID id: String) {
+        guard postStandings[id] != nil || showing == nil, spotShowings[id] != showing else { return }
+        spotShowings[id] = showing
         savePostStandings()
     }
 
@@ -680,6 +715,51 @@ final class CollectionModel {
             }
         }
         return nil
+    }
+
+    /// Takes the backend's list of spots. It replaces the list in hand.
+    func takeSpotCatalog(_ airports: [Airport]) {
+        guard airports != self.airports else { return }
+        self.airports = airports
+    }
+
+    /// The listed spot a photo was taken from, as its owner sees it. It is
+    /// the spot the photo was logged with while that spot is still listed,
+    /// and otherwise the listed spot nearest to where it was taken.
+    ///
+    /// It reads the photo's own location, so nothing shown to another
+    /// person may use it. Those use `spotShowing(for:)`.
+    func listedSpot(for photo: SpottedPhoto) -> Spot? {
+        if let id = photo.spotID, let logged = spot(id: id) {
+            return logged
+        }
+        return photo.ownerCaptureCoordinate.flatMap { nearestSpot(to: $0) }
+    }
+
+    /// The aircraft type and airline other people may read beside a photo
+    /// on a spot's page.
+    ///
+    /// A blocked aircraft shows neither, because either one can help name
+    /// it. A line the backend would refuse is left out.
+    func shownDetails(for photo: SpottedPhoto) -> (aircraftType: String?, airline: String?) {
+        guard !photo.hasBlockedRegistration else { return (nil, nil) }
+        return (
+            ShownText.line(from: photo.aircraftType, maxLength: shownTextMaxLength),
+            ShownText.line(from: photo.airline, maxLength: shownTextMaxLength)
+        )
+    }
+
+    /// The spot's page a photo may be shown on, with what is read beside
+    /// it there. It is nil for a sample photo, for a photo whose owner kept
+    /// the location private, and for one taken away from every listed spot.
+    func spotShowing(for photo: SpottedPhoto) -> SpotShowing? {
+        guard !photo.isSample, !photo.isLocationUndisclosed else { return nil }
+        // Only what the owner disclosed is read here.
+        let listed = photo.publicSpotID.flatMap { spot(id: $0) }
+            ?? photo.publicCaptureCoordinate.flatMap { nearestSpot(to: $0) }
+        guard let listed else { return nil }
+        let details = shownDetails(for: photo)
+        return SpotShowing(spotID: listed.id, aircraftType: details.aircraftType, airline: details.airline)
     }
 
     /// The photos logged with no aircraft type, newest first. They fill no

@@ -47,6 +47,9 @@ enum SampleData {
     /// Placeholder distance, in meters, within which a photo counts as
     /// taken from a spot.
     static let spotMatchRadius = 1_500.0
+    /// The longest an aircraft type or an airline may be to go on a spot's
+    /// page. It matches the backend's own limit.
+    static let shownTextMaxLength = 80
     /// How strongly a logged photo's saved copy is compressed.
     static let storedImageQuality = 0.9
 
@@ -127,21 +130,27 @@ enum SampleData {
     ///
     /// Pass flight data only for a preview or a test. The app itself has
     /// none until the backend exists.
+    /// - Parameter airports: The spots the model starts with. Pass none
+    ///   for the sample spots. A build with a backend passes an empty list
+    ///   and takes its spots from the backend, because the sample spots
+    ///   are made up.
     static func model(
         store: (any PhotoStore)? = nil,
         flightData: (any FlightDataProvider)? = nil,
-        blockList: RegistrationBlockList = .empty
+        blockList: RegistrationBlockList = .empty,
+        airports: [Airport]? = nil
     ) -> CollectionModel {
         CollectionModel(
             photos: photos,
             profile: profile,
             voteQueue: voteQueue,
-            airports: airports,
+            airports: airports ?? Self.airports,
             thresholds: thresholds,
             passingCheckScore: passingCheckScore,
             checkRules: checkRules,
             fixTargetScore: fixTargetScore,
             spotMatchRadius: spotMatchRadius,
+            shownTextMaxLength: shownTextMaxLength,
             storedImageQuality: storedImageQuality,
             registrationFormats: registrationFormats,
             flightRankingRules: flightRankingRules,
@@ -446,8 +455,9 @@ enum SampleData {
                     summary: "Arrivals pass low from the east. The light is best in the afternoon.",
                     latitude: 33.6215,
                     longitude: -84.3990,
-                    photoCount: 128,
-                    photoNames: ["SampleB737", "SampleVC25A", "SampleFA18"]
+                    accessNotes: "Park on the gravel beside the road and walk to the fence line.",
+                    localRules: "Stay off the grass inside the fence, and keep the gate clear.",
+                    runwayNotes: "Looks at the two south runways. Arrivals use them when the wind is from the west."
                 ),
                 Spot(
                     id: "atl-cargo-ramp",
@@ -455,8 +465,7 @@ enum SampleData {
                     summary: "Freighters taxi past at close range. Bring a wide lens.",
                     latitude: 33.6492,
                     longitude: -84.4065,
-                    photoCount: 64,
-                    photoNames: ["SampleVC25A", "SampleE175", "SampleF22"]
+                    accessNotes: "A public sidewalk runs along the fence. There is street parking one block north."
                 ),
                 Spot(
                     id: "atl-north-deck",
@@ -464,17 +473,14 @@ enum SampleData {
                     summary: "A raised deck with a clear view of the north runways.",
                     latitude: 33.6568,
                     longitude: -84.4310,
-                    photoCount: 31,
-                    photoNames: ["SampleE175", "SampleB2", "SampleF22"]
+                    localRules: "The deck closes at dusk."
                 ),
                 Spot(
                     id: "atl-west-road",
                     name: "West road",
                     summary: "A quiet road beside the west end of the runways.",
                     latitude: 33.6395,
-                    longitude: -84.4575,
-                    photoCount: 12,
-                    photoNames: ["SampleB2", "SampleFA18", "SampleB737"]
+                    longitude: -84.4575
                 ),
             ]
         ),
@@ -489,22 +495,83 @@ enum SampleData {
                     name: "South end",
                     summary: "Departures climb overhead when the wind is from the north.",
                     latitude: 47.4285,
-                    longitude: -122.3085,
-                    photoCount: 47,
-                    photoNames: ["SampleF22", "SampleE175", "SampleB2"]
+                    longitude: -122.3085
                 ),
                 Spot(
                     id: "sea-east-hill",
                     name: "East hill",
                     summary: "A long view across all three runways with the mountains behind.",
                     latitude: 47.4520,
-                    longitude: -122.2920,
-                    photoCount: 22,
-                    photoNames: ["SampleFA18", "SampleB737", "SampleVC25A"]
+                    longitude: -122.2920
                 ),
             ]
         ),
     ]
+
+    /// One photo on a sample spot's page.
+    private struct ShownSample {
+        let spotID: String
+        let imageName: String
+        let score: Int
+        var aircraftType: String?
+        var airline: String?
+    }
+
+    /// The photos on the sample spots' pages. The grades are invented. One
+    /// names no aircraft, as a photo of a blocked aircraft does.
+    private static let shownSamples: [ShownSample] = [
+        shown("atl-south-approach", "SampleB737", 86, "Boeing 737 MAX 8", "Alaska Airlines"),
+        shown("atl-south-approach", "SampleVC25A", 91, "Boeing VC-25A", "US Air Force"),
+        shown("atl-south-approach", "SampleFA18", 66, "F/A-18E Super Hornet", "US Navy Blue Angels"),
+        shown("atl-south-approach", "SampleE175", 58),
+        shown("atl-cargo-ramp", "SampleVC25A", 88, "Boeing VC-25A", "US Air Force"),
+        shown("atl-cargo-ramp", "SampleE175", 77, "Embraer E175", "Delta Connection"),
+        shown("atl-north-deck", "SampleB2", 72, "B-2 Spirit", "US Air Force"),
+        shown("sea-south-end", "SampleF22", 83, "F-22 Raptor", "US Air Force"),
+        shown("sea-south-end", "SampleB737", 61, "Boeing 737 MAX 8"),
+        shown("sea-east-hill", "SampleFA18", 49, "F/A-18E Super Hornet", "US Navy Blue Angels"),
+    ]
+
+    private static func shown(
+        _ spotID: String,
+        _ imageName: String,
+        _ score: Int,
+        _ aircraftType: String? = nil,
+        _ airline: String? = nil
+    ) -> ShownSample {
+        ShownSample(
+            spotID: spotID,
+            imageName: imageName,
+            score: score,
+            aircraftType: aircraftType,
+            airline: airline
+        )
+    }
+
+    /// The sample spots with a few graded photos on their pages, for
+    /// previews and for a build with no backend. One spot has no photos.
+    static func spotBackend() -> SampleSpotBackend {
+        var images: [String: Data] = [:]
+        var pages: [String: [SampleSpotBackend.Photo]] = [:]
+        for (index, sample) in shownSamples.enumerated() {
+            // Each sample image is written out once, however many pages
+            // show it.
+            if images[sample.imageName] == nil {
+                images[sample.imageName] = UIImage(named: sample.imageName)?.jpegData(compressionQuality: 0.8)
+            }
+            guard let image = images[sample.imageName] else { continue }
+            pages[sample.spotID, default: []].append(
+                SampleSpotBackend.Photo(
+                    id: "spot-photo-\(index + 1)",
+                    image: image,
+                    score: sample.score,
+                    aircraftType: sample.aircraftType,
+                    airline: sample.airline
+                )
+            )
+        }
+        return SampleSpotBackend(airports: airports, photos: pages)
+    }
 
     // MARK: Helpers
 

@@ -11,19 +11,28 @@ struct FinalApproachApp: App {
     /// Takes votes on photos other people posted. A build with no backend
     /// keeps the sample set on the Vote screen.
     private let voting: VotingModel
+    /// Lists the spots and the photos shown at each. A build with no
+    /// backend keeps the sample spots.
+    private let spots: SpotsModel
 
     init() {
-        let model = SampleData.model(store: FilePhotoStore.standard)
+        // A build with a backend takes its spots from there. The sample
+        // spots are made up, so such a build starts with none.
+        let hasBackend = AppEnvironment.apiBaseURL != nil
+        let model = SampleData.model(store: FilePhotoStore.standard, airports: hasBackend ? [] : nil)
         let sync = SyncCoordinator.forThisBuild()
         sync.follow(model)
+        let spots = SpotsModel.forThisBuild(session: sync.session)
+        spots.follow(model)
         self.model = model
         self.sync = sync
+        self.spots = spots
         voting = VotingModel.forThisBuild(session: sync.session)
     }
 
     var body: some Scene {
         WindowGroup {
-            RootView(model: model, sync: sync, voting: voting)
+            RootView(model: model, sync: sync, voting: voting, spots: spots)
         }
     }
 }

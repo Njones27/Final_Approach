@@ -252,18 +252,21 @@ struct SpottedPhoto: Identifiable, Equatable, Codable {
 /// worked out and tested there.
 typealias Coordinate = GeoPoint
 
-/// A place to photograph aircraft from.
-struct Spot: Identifiable {
+/// A place to photograph aircraft from. The backend owns the list of them,
+/// so a spot is added or changed with no release.
+struct Spot: Identifiable, Equatable {
     let id: String
     let name: String
     let summary: String
     let latitude: Double
     let longitude: Double
-    /// How many photos other people have shared from this spot.
-    let photoCount: Int
-    /// Asset names of a few shared photos from this spot. Only photos whose
-    /// owners disclosed the location may appear here.
-    let photoNames: [String]
+    /// How to get there and where to stand. It is empty when nothing is
+    /// written.
+    var accessNotes = ""
+    /// What the place asks of a visitor, such as where not to park.
+    var localRules = ""
+    /// Which runways the spot looks at, and when each is in use.
+    var runwayNotes = ""
 
     var coordinate: Coordinate? {
         Coordinate(latitude: latitude, longitude: longitude)
@@ -271,7 +274,7 @@ struct Spot: Identifiable {
 }
 
 /// An airport and the spots around it.
-struct Airport: Identifiable {
+struct Airport: Identifiable, Equatable {
     /// The IATA code, such as "ATL".
     let id: String
     let city: String

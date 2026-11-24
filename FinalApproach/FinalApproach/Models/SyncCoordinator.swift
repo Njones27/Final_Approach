@@ -63,8 +63,22 @@ enum PostOutcome: Equatable {
     case couldNotPost
 }
 
-/// Decides when a sync runs, posts a photo for votes, and carries a delete
-/// of the account through to the backend.
+/// What came of asking to put a photo on a spot's page, or to take it off.
+enum SpotShowOutcome: Equatable {
+    case done
+    /// No one is signed in, or the sign in no longer works.
+    case signInNeeded
+    /// The photo is not posted, is gone, or its owner kept the location
+    /// private.
+    case cannotShow
+    /// The photo was taken away from every listed spot, or its spot is no
+    /// longer listed.
+    case spotNotListed
+    case couldNotChange
+}
+
+/// Decides when a sync runs, posts a photo for votes, shows a posted photo
+/// at its spot, and carries a delete of the account through to the backend.
 ///
 /// A sync runs when the app comes to the front and shortly after the user
 /// changes a photo. Nothing runs while no one is signed in, so a build with
@@ -269,6 +283,7 @@ final class SyncCoordinator {
             guard model.timesCleared == cleared, case .signedIn(let current) = session.state, current == userID
             else { return }
             model.takePostListing(listing)
+            await bringShowingsInLine(for: userID, on: model)
         } catch {
             #if DEBUG
             print("SyncCoordinator: The posts could not be listed. \(error)")
@@ -293,6 +308,11 @@ final class SyncCoordinator {
             guard model.timesCleared == cleared, case .signedIn(let current) = session.state, current == userID
             else { return .couldNotPost }
             model.takePostStanding(standing, forPhotoID: photoID)
+            // A photo whose owner disclosed its spot goes on that spot's
+            // page, which shows it once it is graded. The post stands
+            // whether or not this works, and the photo's own screen offers
+            // it again.
+            _ = await showAtSpot(photoID: photoID, on: model)
             return .posted
         } catch PhotoBackendError.notSignedIn {
             lastProblem = .signInEnded
@@ -311,6 +331,108 @@ final class SyncCoordinator {
             print("SyncCoordinator: The photo could not be posted. \(error)")
             #endif
             return .couldNotPost
+        }
+    }
+
+    // MARK: Showing a photo at its spot
+
+    /// Puts one posted photo on the page of the spot it was taken from.
+    ///
+    /// The owner chose this, by posting a photo whose spot they disclosed
+    /// or by asking for it on the photo's screen. The backend is sent the
+    /// spot's id, the aircraft type, and the airline, and nothing else. A
+    /// photo whose location is private is never sent.
+    func showAtSpot(photoID: String, on model: CollectionModel) async -> SpotShowOutcome {
+        guard let posts, case .signedIn(let userID) = session.state else { return .signInNeeded }
+        guard let photo = model.photo(id: photoID), !photo.isLocationUndisclosed,
+              model.postStandings[photoID] != nil
+        else { return .cannotShow }
+        guard let showing = model.spotShowing(for: photo) else { return .spotNotListed }
+        let cleared = model.timesCleared
+        do {
+            let kept = try await posts.show(photoID: photoID, at: showing)
+            guard model.timesCleared == cleared, case .signedIn(let current) = session.state, current == userID
+            else { return .couldNotChange }
+            model.takeSpotShowing(kept, forPhotoID: photoID)
+            return .done
+        } catch PhotoBackendError.notSignedIn {
+            lastProblem = .signInEnded
+            return .signInNeeded
+        } catch PhotoBackendError.notPosted, PhotoBackendError.photoDeleted {
+            return .cannotShow
+        } catch PhotoBackendError.unknownSpot {
+            return .spotNotListed
+        } catch {
+            #if DEBUG
+            print("SyncCoordinator: The photo could not be shown at its spot. \(error)")
+            #endif
+            return .couldNotChange
+        }
+    }
+
+    /// Takes one photo off its spot's page. The post and its grade stay.
+    func takeOffSpot(photoID: String, on model: CollectionModel) async -> SpotShowOutcome {
+        guard let posts, case .signedIn(let userID) = session.state else { return .signInNeeded }
+        let cleared = model.timesCleared
+        do {
+            try await posts.hide(photoID: photoID)
+            guard model.timesCleared == cleared, case .signedIn(let current) = session.state, current == userID
+            else { return .couldNotChange }
+            model.takeSpotShowing(nil, forPhotoID: photoID)
+            return .done
+        } catch PhotoBackendError.notSignedIn {
+            lastProblem = .signInEnded
+            return .signInNeeded
+        } catch {
+            #if DEBUG
+            print("SyncCoordinator: The photo could not be taken off its spot. \(error)")
+            #endif
+            return .couldNotChange
+        }
+    }
+
+    /// Brings each spot's page in line with the photo it shows, after the
+    /// backend has said where the user's photos are shown.
+    ///
+    /// A photo whose location is private is taken off. A photo whose
+    /// aircraft details changed, or whose aircraft is now blocked, has the
+    /// words beside it replaced. The spot itself is left as the owner set
+    /// it, and nothing here puts a photo on a page it was not on.
+    private func bringShowingsInLine(for userID: String, on model: CollectionModel) async {
+        guard let posts else { return }
+        let cleared = model.timesCleared
+        for (photoID, showing) in model.spotShowings {
+            guard let photo = model.photo(id: photoID) else { continue }
+            let details = model.shownDetails(for: photo)
+            let wanted = SpotShowing(
+                spotID: showing.spotID,
+                aircraftType: details.aircraftType,
+                airline: details.airline
+            )
+            guard photo.isLocationUndisclosed || wanted != showing else { continue }
+            do {
+                var kept: SpotShowing?
+                if photo.isLocationUndisclosed {
+                    try await posts.hide(photoID: photoID)
+                } else {
+                    kept = try await posts.show(photoID: photoID, at: wanted)
+                }
+                // An answer for an account that has since signed out, or
+                // for photos that were cleared meanwhile, is dropped.
+                guard model.timesCleared == cleared, case .signedIn(let current) = session.state,
+                      current == userID
+                else { return }
+                model.takeSpotShowing(kept, forPhotoID: photoID)
+            } catch PhotoBackendError.unknownSpot, PhotoBackendError.notPosted, PhotoBackendError.photoDeleted {
+                // This page cannot be changed now. The others still can.
+                continue
+            } catch {
+                // The next sync tries again.
+                #if DEBUG
+                print("SyncCoordinator: A spot's page could not be brought in line. \(error)")
+                #endif
+                return
+            }
         }
     }
 

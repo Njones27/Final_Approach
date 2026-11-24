@@ -26,6 +26,25 @@ struct SignedInAPI {
         return data
     }
 
+    /// The image behind a link the API handed out, or nil when the link ran
+    /// out or the image is gone.
+    func linkedImage(from url: URL) async throws -> Data? {
+        // The link carries its own permission, so no token is sent with it.
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        let (data, response) = try await transport.send(request)
+        switch response.statusCode {
+        case 200..<300:
+            return data
+        case 403, 404:
+            // The storage answers this way for an image that is not there
+            // and for a link that ran out.
+            return nil
+        default:
+            throw PhotoBackendError.unavailable(status: response.statusCode)
+        }
+    }
+
     func decode<Answer: Decodable>(_ data: Data) throws -> Answer {
         do {
             return try JSONDecoder().decode(Answer.self, from: data)
@@ -55,6 +74,10 @@ struct SignedInAPI {
             return .votingClosed
         case (_, "ownPost"):
             return .ownPost
+        case (_, "notPosted"):
+            return .notPosted
+        case (_, "unknownSpot"):
+            return .unknownSpot
         case (500..., _):
             return .unavailable(status: status)
         default:

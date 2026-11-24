@@ -97,6 +97,12 @@ their features.
   1,500 meters, a placeholder in `SampleData`. The owner's located photos
   appear on the Spots map as small photo pins, shared or not, because only
   the owner sees that map. "Your photos" in the airport menu frames them all.
+- The spots come from the backend, and a build with a backend ships with
+  none of its own. Each spot has a page with the best graded photos people
+  chose to show there. A photo shows with its grade, tier, aircraft type,
+  and airline, and with no photographer and no registration. Posting a
+  disclosed photo puts it on its spot's page, and its owner can take it off.
+  The details are in `docs/backend.md` under Spots in the app.
 - Images are read from the device the first time each is shown and are not
   resized for the grid yet. A collection of many photos will want thumbnails.
 
