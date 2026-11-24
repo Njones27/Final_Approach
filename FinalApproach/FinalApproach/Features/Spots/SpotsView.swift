@@ -113,7 +113,7 @@ struct SpotsView: View {
                 ForEach(ownPhotoPlaces) { place in
                     // A photo pin stands above its place, so it does not cover
                     // the pin of the spot it was taken from.
-                    Annotation(place.photo.aircraftType, coordinate: place.coordinate, anchor: .bottom) {
+                    Annotation(place.photo.typeTitle, coordinate: place.coordinate, anchor: .bottom) {
                         PhotoPin(
                             image: model.image(for: place.photo),
                             description: place.photo.imageDescription,
@@ -334,7 +334,7 @@ private struct OwnPhotoCard: View {
             // other's place.
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(photo.aircraftType)
+                    Text(photo.typeTitle)
                         .font(.title3.weight(.bold))
                         .foregroundStyle(Theme.ink)
                         .lineLimit(1)

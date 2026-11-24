@@ -14,7 +14,7 @@ struct CollectionTile: View {
     var shotCount = 1
 
     private var shownTitle: String {
-        title ?? photo.aircraftType
+        title ?? photo.typeTitle
     }
 
     @Environment(CollectionModel.self) private var model

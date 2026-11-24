@@ -166,6 +166,31 @@ struct SectionHeading: View {
     }
 }
 
+/// A labeled text field with a hairline under it.
+struct DetailField: View {
+    let label: String
+    let prompt: String
+    @Binding var text: String
+    var capitalization: TextInputAutocapitalization = .words
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(.footnote)
+                .foregroundStyle(Theme.secondaryText)
+            TextField(label, text: $text, prompt: Text(prompt))
+                .font(.body)
+                .foregroundStyle(Theme.ink)
+                .textInputAutocapitalization(capitalization)
+                .autocorrectionDisabled()
+                .frame(minHeight: 28)
+            Rectangle()
+                .fill(Theme.hairline)
+                .frame(height: 1)
+        }
+    }
+}
+
 extension Double {
     /// A score as the whole number the user sees, such as "83".
     var scoreText: String {

@@ -380,6 +380,17 @@ enum SampleData {
         isAircraftFound: false
     )
 
+    /// A photo the user logged without naming the aircraft.
+    static let unknownAircraftPhoto = SpottedPhoto(
+        id: "preview-unknown",
+        imageName: nil,
+        aircraftType: "",
+        registration: "",
+        airline: "",
+        activity: "",
+        status: .logged
+    )
+
     // MARK: Voting
 
     static let voteQueue: [VoteCandidate] = [

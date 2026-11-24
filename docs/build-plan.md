@@ -24,7 +24,7 @@ The look is called Darkroom. The rules below apply to every screen.
 
 - Four tabs hold the four sections, which are Collection, Spots, Vote, and
   Profile. Adding a photo is an action, so it is a button on Collection and
-  not a tab. The tab bar hides on pushed screens.
+  not a tab. The tab bar stays in place on every screen, pushed ones too.
 - The system tab bar, toolbars, and sheets are used as they are, so they pick
   up Liquid Glass on iOS 26 with no custom drawing.
 - The system font carries the interface. Barlow Condensed is bundled and used
@@ -59,7 +59,10 @@ their features.
   device. It takes the camera settings, the capture time, and the location,
   and makes a copy of the image sized for the screen.
 - Until identification exists, the user types the aircraft type, the
-  registration, and the airline on the Add screen. Only the type is required.
+  registration, and the airline on the Add screen. None of them is required.
+  A photo logged with no type is shown as "Unknown aircraft". It fills no
+  type slot, and the types view lists it after the slots. "Edit aircraft
+  details" on the photo screen names it later.
 - A photo's saved location is kept with the photo. The spot map milestone
   shows disclosed photos to other people.
 - The wording for camera settings, such as "1/640 s" and "f/7.1", lives in the
@@ -184,8 +187,11 @@ What runs on the phone today, with no backend:
   fills it in. It is not filled in by itself, because a wing or a winglet can
   hide the end of a registration and the part that shows still reads as a
   valid one. The user can change every field.
-- A photo with no saved location can be tagged with a listed spot. The tag
-  places the photo on the Spots map and gives the flight lookup a place.
+- A photo with no saved location can be placed with a pin on a map. The pin
+  can go anywhere, with a search to move the map to an airport or a place by
+  name, and the listed spots are marked on it. The pin places the photo on
+  the Spots map, links it to a listed spot when one is within reach, and
+  gives the flight lookup a place.
 - `FlightRanker` ranks the aircraft near a photo by distance, height, and the
   direction the camera pointed, and keeps the best three. Its weights are
   placeholders in `SampleData.flightRankingRules`. A registration that matches

@@ -29,7 +29,6 @@ struct SlotView: View {
         }
         .background(Theme.ground)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarVisibility(.hidden, for: .tabBar)
     }
 
     private func content(for entry: CollectionEntry) -> some View {

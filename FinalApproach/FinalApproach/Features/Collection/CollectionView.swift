@@ -149,12 +149,20 @@ struct CollectionView: View {
             }
             if let kind = grouping.slotKind {
                 let slots = model.slots(kind)
+                // A photo with no type fills no type slot. The types view
+                // still shows each one, so a logged photo is never hidden.
+                let unidentified = kind == .aircraftType
+                    ? model.unidentifiedPhotos.filter { $0.id != model.bestPhoto?.id }
+                    : []
                 LazyVGrid(columns: columns, spacing: 2) {
                     ForEach(slots) { slot in
                         slotTile(for: slot)
                     }
+                    ForEach(unidentified) { photo in
+                        photoTile(for: photo, isHero: false, source: .tile(photo.id))
+                    }
                 }
-                if slots.isEmpty {
+                if slots.isEmpty, unidentified.isEmpty {
                     Text(grouping.emptyText)
                         .font(.footnote)
                         .foregroundStyle(Theme.secondaryText)

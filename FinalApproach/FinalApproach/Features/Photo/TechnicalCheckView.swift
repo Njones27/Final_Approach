@@ -23,7 +23,6 @@ struct TechnicalCheckView: View {
         .background(Theme.ground)
         .navigationTitle("Technical check")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarVisibility(.hidden, for: .tabBar)
     }
 
     private func content(for photo: SpottedPhoto) -> some View {

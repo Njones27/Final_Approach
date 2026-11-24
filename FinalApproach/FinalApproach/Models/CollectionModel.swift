@@ -272,6 +272,28 @@ final class CollectionModel {
         }
     }
 
+    /// Changes the aircraft details of a photo the user logged, and saves
+    /// the change. Passing nil for the registration leaves it as it is.
+    func updateDetails(forPhotoID id: String, aircraftType: String, registration: String?, airline: String) {
+        guard let index = photos.firstIndex(where: { $0.id == id }), !photos[index].isSample else { return }
+        let newRegistration = registration?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .uppercased()
+        photos[index] = photos[index].replacingDetails(
+            aircraftType: aircraftType.trimmingCharacters(in: .whitespacesAndNewlines),
+            registration: newRegistration,
+            // A blocked registration is kept with the photo and never shown.
+            isRegistrationBlocked: newRegistration.map { isBlocked(registration: $0) },
+            airline: airline.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+        guard let store else { return }
+        do {
+            try saveLibrary(to: store)
+        } catch {
+            storageProblem = .couldNotSave
+        }
+    }
+
     /// Removes a photo and its saved image from the device. Once photos are
     /// also kept on the backend, this must remove that copy too.
     func deletePhoto(id: String) {
@@ -423,6 +445,14 @@ final class CollectionModel {
             }
         }
         return nil
+    }
+
+    /// The photos logged with no aircraft type, newest first. They fill no
+    /// type slot, so the types view lists them by themselves.
+    var unidentifiedPhotos: [SpottedPhoto] {
+        photos
+            .filter { !$0.isTypeKnown }
+            .sorted { $0.loggedAt > $1.loggedAt }
     }
 
     /// The listed spot closest to where a photo was taken, or nil when none
