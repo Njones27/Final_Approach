@@ -47,6 +47,13 @@ final class CollectionModel {
     /// saved with the library, so a delete the backend has not confirmed
     /// is still owed after the app closes.
     @ObservationIgnored private(set) var syncLedger = SyncLedger()
+    /// Where each photo the user posted stands with the vote, by photo id,
+    /// as the backend last said. It is kept apart from the photo's own
+    /// record, so a new vote never counts as an edit to the photo.
+    private(set) var postStandings: [String: PostStanding] = [:]
+    /// The fewest votes a grade needs, as the backend last said. It is nil
+    /// until the backend has been asked.
+    private(set) var backendMinimumVotes: Int?
     /// Called after the user adds, edits, or deletes one of their own
     /// photos, so a sync can follow. A change a sync makes does not call it.
     @ObservationIgnored var onLocalChange: (() -> Void)?
@@ -147,6 +154,8 @@ final class CollectionModel {
         self.checkRules = checkRules
         self.fixTargetScore = fixTargetScore
         self.votingRules = votingRules
+        postStandings = saved.postStandings ?? [:]
+        backendMinimumVotes = saved.postMinimumVotes
         if store != nil, usableStore == nil {
             storageProblem = .couldNotOpen
         }
@@ -208,13 +217,56 @@ final class CollectionModel {
         checkReport(for: photo).overallScore()
     }
 
+    /// The fewest votes a photo needs before its grade can be final. The
+    /// backend's word wins, so it can change with no release.
+    var minimumVotes: Int {
+        backendMinimumVotes ?? votingRules.minimumVotes
+    }
+
+    /// Where a photo is on its way to a grade.
+    ///
+    /// A photo the user posted takes this from what the backend last said
+    /// about its post. A sample photo takes it from its own status.
+    func progress(for photo: SpottedPhoto, at now: Date = Date()) -> PhotoProgress {
+        if !photo.isSample, let standing = postStandings[photo.id] {
+            if let score = standing.finalScore {
+                return .graded(score: Double(score), voteCount: standing.voteCount)
+            }
+            return .voting(
+                votesIn: standing.voteCount,
+                votesNeeded: standing.votesNeeded(minimumVotes: minimumVotes),
+                hoursLeft: standing.hoursLeft(at: now)
+            )
+        }
+        switch photo.status {
+        case .logged:
+            return .logged
+        case let .voting(votesIn, hoursLeft):
+            return .voting(
+                votesIn: votesIn,
+                votesNeeded: max(minimumVotes - votesIn, 0),
+                hoursLeft: hoursLeft
+            )
+        case let .graded(voteAverage, voteCount):
+            // The tier is set from the rounded grade, so the number on
+            // screen and the tier beside it always agree.
+            guard let score = FinalGrade.score(voteAverage: voteAverage, rules: votingRules)?.rounded() else {
+                return .logged
+            }
+            return .graded(score: score, voteCount: voteCount)
+        }
+    }
+
     /// The final grade as a whole number, or nil until voting has closed.
     /// The votes alone set it, so a photo is never marked down for style.
     func finalScore(for photo: SpottedPhoto) -> Double? {
-        guard case let .graded(voteAverage, _) = photo.status else { return nil }
-        // The tier is set from the rounded grade, so the number on screen and
-        // the tier beside it always agree.
-        return FinalGrade.score(voteAverage: voteAverage, rules: votingRules)?.rounded()
+        guard case let .graded(score, _) = progress(for: photo) else { return nil }
+        return score
+    }
+
+    /// True for a photo the user logged that has not been posted yet.
+    func canBePosted(_ photo: SpottedPhoto) -> Bool {
+        !photo.isSample && progress(for: photo) == .logged
     }
 
     /// The technical reading as a whole number, for a photo that has no
@@ -323,6 +375,8 @@ final class CollectionModel {
             }
         } else {
             syncLedger.noteDeletedHere(id: id)
+            // Deleting the photo takes its post down with it.
+            postStandings[id] = nil
         }
         guard let store else { return }
         do {
@@ -346,6 +400,7 @@ final class CollectionModel {
         }
         photos.removeAll()
         loadedImages.removeAll()
+        postStandings.removeAll()
         syncLedger.noteDeviceCleared(accountDeleted: alsoOnBackend)
         timesCleared += 1
         guard let store else { return }
@@ -379,7 +434,9 @@ final class CollectionModel {
             StoredLibrary(
                 photos: photos.filter { !$0.isSample },
                 removedSampleIDs: removedSampleIDs,
-                syncLedger: syncLedger
+                syncLedger: syncLedger,
+                postStandings: postStandings.isEmpty ? nil : postStandings,
+                postMinimumVotes: backendMinimumVotes
             )
         )
     }
@@ -459,9 +516,41 @@ final class CollectionModel {
         }
         photos.removeAll { $0.id == id }
         loadedImages[id] = nil
+        postStandings[id] = nil
         guard let store else { return }
         do {
             try store.deleteImage(forPhotoID: id)
+            try saveLibrary(to: store)
+        } catch {
+            storageProblem = .couldNotSave
+        }
+    }
+
+    // MARK: Posting
+
+    /// Takes the backend's word on every post the user has made, and saves
+    /// it. A photo the backend lists no post for is not posted.
+    func takePostListing(_ listing: PostListing) {
+        let own = Set(photos.filter { !$0.isSample }.map(\.id))
+        let standings = listing.standings.filter { own.contains($0.key) }
+        // A listing that names no usable minimum leaves the last one.
+        let minimum = listing.minimumVotes.flatMap { $0 > 0 ? $0 : nil } ?? backendMinimumVotes
+        guard standings != postStandings || minimum != backendMinimumVotes else { return }
+        postStandings = standings
+        backendMinimumVotes = minimum
+        savePostStandings()
+    }
+
+    /// Takes where one photo stands, right after it was posted.
+    func takePostStanding(_ standing: PostStanding, forPhotoID id: String) {
+        guard let photo = photo(id: id), !photo.isSample else { return }
+        postStandings[id] = standing
+        savePostStandings()
+    }
+
+    private func savePostStandings() {
+        guard let store else { return }
+        do {
             try saveLibrary(to: store)
         } catch {
             storageProblem = .couldNotSave

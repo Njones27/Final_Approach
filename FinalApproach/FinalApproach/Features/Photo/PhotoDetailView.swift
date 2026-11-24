@@ -1,15 +1,22 @@
 import FinalApproachCore
 import SwiftUI
 
-/// One photo with its grade, where the grade sits on the tier scale, and the
-/// fixes that would lift it.
+/// One photo with its grade, where the grade sits on the tier scale, the
+/// ideas that would lift it, and the way to post it for votes.
 struct PhotoDetailView: View {
     let photoID: String
 
     @Environment(CollectionModel.self) private var model
+    /// It is missing in a preview that does not give one, and the screen
+    /// then offers no way to post.
+    @Environment(SyncCoordinator.self) private var sync: SyncCoordinator?
     @Environment(\.dismiss) private var dismiss
     @State private var isConfirmingDelete = false
     @State private var isEditingDetails = false
+    @State private var isConfirmingPost = false
+    @State private var isPosting = false
+    /// Why the last try at posting did not work, or nil.
+    @State private var postProblem: PostOutcome?
 
     var body: some View {
         Group {
@@ -42,10 +49,12 @@ struct PhotoDetailView: View {
                         .revealed(order: 1)
                     feedback(for: photo)
                         .revealed(order: 2)
-                    cameraSection(for: photo)
+                    postSection(for: photo)
                         .revealed(order: 3)
-                    locationSection(for: photo)
+                    cameraSection(for: photo)
                         .revealed(order: 4)
+                    locationSection(for: photo)
+                        .revealed(order: 5)
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 18)
@@ -84,7 +93,25 @@ struct PhotoDetailView: View {
                 dismiss()
             }
         } message: {
-            Text("The photo and its grade are removed from your collection.")
+            Text(
+                model.progress(for: photo).isPosted
+                    ? "The photo, its votes, and its grade are removed. Other people can no longer see it."
+                    : "The photo and its grade are removed from your collection."
+            )
+        }
+        .confirmationDialog(
+            "Post this photo for votes?",
+            isPresented: $isConfirmingPost,
+            titleVisibility: .visible
+        ) {
+            Button("Post") {
+                post(photo)
+            }
+        } message: {
+            Text(
+                "Voters see the photo and nothing else. They do not see your name or where it was taken. "
+                    + "A post cannot be taken back, but deleting the photo removes it."
+            )
         }
         .sheet(isPresented: $isEditingDetails) {
             EditDetailsView(photo: photo)
@@ -126,40 +153,61 @@ struct PhotoDetailView: View {
 
     @ViewBuilder
     private func gradeBlock(for photo: SpottedPhoto) -> some View {
-        switch photo.status {
-        case let .graded(voteAverage, voteCount):
-            if let score = model.finalScore(for: photo) {
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack(alignment: .center, spacing: 18) {
-                        Text(score.scoreText)
-                            .font(.condensed(78, relativeTo: .largeTitle))
-                            .foregroundStyle(Theme.ink)
-                            .accessibilityLabel("Grade \(score.scoreText)")
-                        VStack(alignment: .leading, spacing: 3) {
-                            TierLabel(tier: model.tier(for: photo))
-                            technicalLine(for: photo)
-                            Text("Votes \(voteAverage.formatted(.number.precision(.fractionLength(1)))) from \(voteCount) people")
-                                .font(.footnote)
-                                .monospacedDigit()
-                                .foregroundStyle(Theme.secondaryText)
-                        }
+        switch model.progress(for: photo) {
+        case let .graded(score, voteCount):
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .center, spacing: 18) {
+                    Text(score.scoreText)
+                        .font(.condensed(78, relativeTo: .largeTitle))
+                        .foregroundStyle(Theme.ink)
+                        .accessibilityLabel("Grade \(score.scoreText)")
+                    VStack(alignment: .leading, spacing: 3) {
+                        TierLabel(tier: model.tier(for: photo))
+                        Text("From \(Self.counted(voteCount, "vote"))")
+                            .font(.footnote)
+                            .monospacedDigit()
+                            .foregroundStyle(Theme.secondaryText)
+                        technicalLine(for: photo)
                     }
-                    TierScaleView(score: score, thresholds: model.thresholds)
                 }
+                TierScaleView(score: score, thresholds: model.thresholds)
             }
-        case let .voting(votesIn, hoursLeft):
+        case let .voting(votesIn, votesNeeded, hoursLeft):
             VStack(alignment: .leading, spacing: 3) {
                 Text("Voting is open")
                     .font(.headline)
                     .foregroundStyle(Theme.ink)
-                Text("\(votesIn) of \(model.votingRules.minimumVotes) votes so far. The grade arrives in about \(hoursLeft) hours.")
+                Text(Self.votingLine(votesIn: votesIn, votesNeeded: votesNeeded, hoursLeft: hoursLeft))
                     .font(.footnote)
+                    .monospacedDigit()
                     .foregroundStyle(Theme.secondaryText)
                 technicalLine(for: photo)
             }
         case .logged:
             checkVerdict(for: photo)
         }
+    }
+
+    /// How the vote on a photo is going, in a sentence or two. The owner is
+    /// told how many votes are in and never how they are going.
+    static func votingLine(votesIn: Int, votesNeeded: Int, hoursLeft: Int) -> String {
+        let minimum = votesIn + votesNeeded
+        switch (hoursLeft > 0, votesNeeded > 0) {
+        case (true, true):
+            return "\(votesIn) of \(counted(minimum, "vote")) so far. "
+                + "The grade arrives in about \(counted(hoursLeft, "hour")), once \(counted(minimum, "vote")) are in."
+        case (true, false):
+            return "\(counted(votesIn, "vote")) so far. The grade arrives in about \(counted(hoursLeft, "hour"))."
+        case (false, true):
+            return "\(votesIn) of \(counted(minimum, "vote")) so far. The grade arrives with \(votesNeeded) more."
+        case (false, false):
+            return "\(counted(votesIn, "vote")) so far. The grade arrives in a few minutes."
+        }
+    }
+
+    /// A count with its noun, such as "1 vote" or "3 votes".
+    static func counted(_ count: Int, _ noun: String) -> String {
+        count == 1 ? "1 \(noun)" : "\(count) \(noun)s"
     }
 
     /// What the technical check read in a photo that has no grade yet. The
@@ -255,6 +303,88 @@ struct PhotoDetailView: View {
                 .buttonStyle(.secondary)
                 .padding(.top, 18)
             }
+        }
+    }
+
+    // MARK: Posting
+
+    /// The way to post a photo for votes. The technical check never stands
+    /// in the way. When it has ideas, the button says the photo can be
+    /// posted anyway.
+    @ViewBuilder
+    private func postSection(for photo: SpottedPhoto) -> some View {
+        // A build with no backend has nowhere to post, so it shows nothing.
+        if let sync, sync.offersPosting, model.canBePosted(photo) {
+            let hasIdeas = !photo.fixes.isEmpty
+            VStack(alignment: .leading, spacing: 12) {
+                Rectangle()
+                    .fill(Theme.hairline)
+                    .frame(height: 1)
+                    .padding(.bottom, 6)
+                SectionHeading("Post for votes")
+                Text(
+                    hasIdeas
+                        ? "The ideas above are only advice. Other people see the photo and nothing else, and their votes alone set the grade."
+                        : "Other people see the photo and nothing else, and their votes alone set the grade."
+                )
+                .font(.subheadline)
+                .foregroundStyle(Theme.secondaryText)
+
+                if sync.session.isSignedIn {
+                    Button {
+                        isConfirmingPost = true
+                    } label: {
+                        if isPosting {
+                            ProgressView()
+                                .tint(Theme.ground)
+                                .accessibilityLabel("Posting")
+                        } else {
+                            Text(hasIdeas ? "Post anyway" : "Post for votes")
+                        }
+                    }
+                    .buttonStyle(.primary)
+                    .disabled(isPosting)
+
+                    if let postProblem {
+                        Text(Self.message(for: postProblem))
+                            .font(.footnote)
+                            .foregroundStyle(Theme.ink)
+                    }
+                } else {
+                    Text("Sign in on Profile to post this photo.")
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.ink)
+                }
+            }
+        }
+    }
+
+    private func post(_ photo: SpottedPhoto) {
+        guard let sync, !isPosting else { return }
+        isPosting = true
+        postProblem = nil
+        Task {
+            let outcome = await sync.post(photoID: photo.id, on: model)
+            isPosting = false
+            postProblem = outcome == .posted ? nil : outcome
+        }
+    }
+
+    /// What to tell the user when a photo was not posted.
+    static func message(for outcome: PostOutcome) -> String {
+        switch outcome {
+        case .posted:
+            "The photo is posted."
+        case .signInNeeded:
+            "Sign in again on Profile, then post this photo."
+        case .notSavedYet:
+            "The photo has not reached your account yet. Check your connection and try again."
+        case .imageHasLocation:
+            "The photo's file has a location written inside it, so it was not posted. Add the photo again and post the new copy."
+        case .photoGone:
+            "This photo is no longer in your account."
+        case .couldNotPost:
+            "Posting did not work. Try again in a moment."
         }
     }
 
@@ -442,4 +572,24 @@ private struct FixRow: View {
         PhotoDetailView(photoID: "b2-spirit")
     }
     .environment(SampleData.model())
+}
+
+#Preview("Ready to post") {
+    let model = SampleData.model()
+    model.add(SampleData.loggedPhoto(in: model))
+    return NavigationStack {
+        PhotoDetailView(photoID: "preview-logged")
+    }
+    .environment(model)
+    .environment(SyncCoordinator.preview(.signedIn))
+}
+
+#Preview("Post, signed out") {
+    let model = SampleData.model()
+    model.add(SampleData.loggedPhoto(in: model))
+    return NavigationStack {
+        PhotoDetailView(photoID: "preview-logged")
+    }
+    .environment(model)
+    .environment(SyncCoordinator.preview(.signedOut))
 }

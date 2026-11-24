@@ -38,6 +38,12 @@ enum PhotoBackendError: Error, Equatable {
     case accountDeleted
     /// A sample photo ships with the app and is never sent.
     case notTheUsersPhoto
+    /// The photo's record or image has not reached the backend yet, so it
+    /// cannot be posted. A sync sends them.
+    case photoNotSaved
+    /// The image has a location written inside it, so the backend will not
+    /// show it to other users.
+    case imageHasLocation
     /// The backend refused the request. The message is the backend's own.
     case refused(status: Int, message: String)
     /// The backend failed, and the request may work later.

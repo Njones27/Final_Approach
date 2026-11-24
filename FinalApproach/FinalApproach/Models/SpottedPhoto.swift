@@ -1,7 +1,9 @@
 import FinalApproachCore
 import Foundation
 
-/// Where a photo is in the grading process.
+/// Where a photo is in the grading process, as it is saved with the photo.
+/// A photo the user logged is saved as `logged`, and what the backend says
+/// about its post is kept apart from it. The screens read `PhotoProgress`.
 enum GradeStatus: Equatable, Codable {
     /// Logged, with no grade yet.
     case logged
@@ -9,6 +11,24 @@ enum GradeStatus: Equatable, Codable {
     case voting(votesIn: Int, hoursLeft: Int)
     /// Voting closed with enough votes.
     case graded(voteAverage: Double, voteCount: Int)
+}
+
+/// Where a photo is on its way to a grade, as its owner's screens show it.
+///
+/// A photo the user posted takes this from the backend's word on its post.
+/// A sample photo takes it from its own `status`.
+enum PhotoProgress: Equatable {
+    /// Not posted. Nobody else has seen the photo.
+    case logged
+    /// Posted and open for votes. `hoursLeft` is 0 once the voting window
+    /// has ended, and the photo then stays open until `votesNeeded` more
+    /// votes arrive.
+    case voting(votesIn: Int, votesNeeded: Int, hoursLeft: Int)
+    /// The votes have set the grade, from 0 to 100.
+    case graded(score: Double, voteCount: Int)
+
+    /// True once the photo is in front of other users, or was.
+    var isPosted: Bool { self != .logged }
 }
 
 /// One finding from the technical check, written for the photographer.

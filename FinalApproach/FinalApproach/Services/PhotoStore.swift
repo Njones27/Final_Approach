@@ -11,6 +11,12 @@ struct StoredLibrary: Equatable, Codable {
     /// What the device remembers between syncs with the backend. It is
     /// optional so a library saved before sync existed still opens.
     var syncLedger: SyncLedger?
+    /// Where each posted photo stood with the vote when the backend was
+    /// last asked, by photo id. It is optional so a library saved before
+    /// posting existed still opens.
+    var postStandings: [String: PostStanding]?
+    /// The fewest votes a grade needs, as the backend last said.
+    var postMinimumVotes: Int?
 }
 
 /// Keeps the user's logged photos and their images on the device.

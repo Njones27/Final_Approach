@@ -47,8 +47,24 @@ enum SyncStatus: Equatable {
     }
 }
 
-/// Decides when a sync runs, and carries a delete of the account through to
-/// the backend.
+/// What came of asking to post a photo for votes.
+enum PostOutcome: Equatable {
+    case posted
+    /// No one is signed in, or the sign in no longer works.
+    case signInNeeded
+    /// The photo or its image has not reached the backend, most likely
+    /// because the device is offline.
+    case notSavedYet
+    /// The image has a location written inside it, so the backend will not
+    /// show it to other users.
+    case imageHasLocation
+    /// The photo is gone, or was posted already.
+    case photoGone
+    case couldNotPost
+}
+
+/// Decides when a sync runs, posts a photo for votes, and carries a delete
+/// of the account through to the backend.
 ///
 /// A sync runs when the app comes to the front and shortly after the user
 /// changes a photo. Nothing runs while no one is signed in, so a build with
@@ -65,6 +81,9 @@ final class SyncCoordinator {
 
     @ObservationIgnored private let backend: (any PhotoBackend)?
     @ObservationIgnored private let engine: SyncEngine?
+    @ObservationIgnored private let posts: (any PostBackend)?
+    /// Callers waiting for the sync that is running to finish.
+    @ObservationIgnored private var syncWaiters: [CheckedContinuation<Void, Never>] = []
     @ObservationIgnored private let pacing: SyncPacing
     @ObservationIgnored private let sleep: (Duration) async throws -> Void
     /// The wait before the sync that follows a change.
@@ -74,21 +93,29 @@ final class SyncCoordinator {
     @ObservationIgnored private var isSendingAccountDelete = false
 
     /// Pass no backend for a build that has none. Such a build never syncs.
+    /// Pass no `posts` and posting is not offered.
     init(
         session: AccountSession,
         backend: (any PhotoBackend)?,
+        posts: (any PostBackend)? = nil,
         pacing: SyncPacing,
         sleep: @escaping (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) {
         self.session = session
         self.backend = backend
         self.engine = backend.map { SyncEngine(backend: $0) }
+        // A photo is synced before it is posted, so posting needs both.
+        self.posts = backend == nil ? nil : posts
         self.pacing = pacing
         self.sleep = sleep
     }
 
     /// True when a sync could run now.
     var canSync: Bool { engine != nil && session.isSignedIn }
+
+    /// True in a build whose backend takes posts. A build without one shows
+    /// no way to post.
+    var offersPosting: Bool { posts != nil }
 
     /// Where the user's photos stand with the backend, for the Profile
     /// screen.
@@ -176,12 +203,32 @@ final class SyncCoordinator {
             return
         }
         isSyncing = true
-        defer { isSyncing = false }
+        defer {
+            isSyncing = false
+            let waiters = syncWaiters
+            syncWaiters = []
+            for waiter in waiters {
+                waiter.resume()
+            }
+        }
         repeat {
             isAskedAgain = false
             await runOnce(engine, on: model)
             // A sync that could not start is not tried again at once.
         } while isAskedAgain && lastProblem == nil && canSync
+    }
+
+    /// Runs a sync and comes back only when one that started after this
+    /// call has finished. When a sync is already running, it is asked to
+    /// run once more, and this waits for that.
+    private func syncAndWait(on model: CollectionModel) async {
+        guard canSync else { return }
+        guard isSyncing else {
+            await sync(on: model)
+            return
+        }
+        isAskedAgain = true
+        await withCheckedContinuation { syncWaiters.append($0) }
     }
 
     private func runOnce(_ engine: SyncEngine, on model: CollectionModel) async {
@@ -191,6 +238,7 @@ final class SyncCoordinator {
         do {
             lastReport = try await engine.run(on: model)
             lastProblem = nil
+            await refreshPosts(for: userID, on: model)
         } catch PhotoBackendError.notSignedIn {
             lastProblem = .signInEnded
         } catch PhotoBackendError.accountDeleted {
@@ -203,6 +251,66 @@ final class SyncCoordinator {
             print("SyncCoordinator: The sync could not run. \(error)")
             #endif
             lastProblem = .unavailable
+        }
+    }
+
+    // MARK: Posting
+
+    /// Asks the backend where the user's posts stand, and hands the answer
+    /// to the collection. A failure leaves what was last heard, and the
+    /// next sync asks again.
+    private func refreshPosts(for userID: String, on model: CollectionModel) async {
+        guard let posts else { return }
+        let cleared = model.timesCleared
+        do {
+            let listing = try await posts.listPosts()
+            // An answer for an account that has since signed out, or for
+            // photos that were cleared meanwhile, is dropped.
+            guard model.timesCleared == cleared, case .signedIn(let current) = session.state, current == userID
+            else { return }
+            model.takePostListing(listing)
+        } catch {
+            #if DEBUG
+            print("SyncCoordinator: The posts could not be listed. \(error)")
+            #endif
+        }
+    }
+
+    /// Posts one of the user's photos for votes.
+    ///
+    /// The photo is synced first, because the backend posts only a photo
+    /// whose record and image it already holds. Other users are shown the
+    /// image and nothing else. Posting never looks at the technical check,
+    /// which is advice to the photographer.
+    func post(photoID: String, on model: CollectionModel) async -> PostOutcome {
+        guard let posts, case .signedIn(let userID) = session.state else { return .signInNeeded }
+        guard let photo = model.photo(id: photoID), model.canBePosted(photo) else { return .photoGone }
+        waiting?.cancel()
+        await syncAndWait(on: model)
+        let cleared = model.timesCleared
+        do {
+            let standing = try await posts.post(photoID: photoID)
+            guard model.timesCleared == cleared, case .signedIn(let current) = session.state, current == userID
+            else { return .couldNotPost }
+            model.takePostStanding(standing, forPhotoID: photoID)
+            return .posted
+        } catch PhotoBackendError.notSignedIn {
+            lastProblem = .signInEnded
+            return .signInNeeded
+        } catch PhotoBackendError.photoNotSaved {
+            return .notSavedYet
+        } catch PhotoBackendError.imageHasLocation {
+            return .imageHasLocation
+        } catch PhotoBackendError.photoDeleted {
+            return .photoGone
+        } catch PhotoBackendError.accountDeleted {
+            lastProblem = .accountDeleted
+            return .couldNotPost
+        } catch {
+            #if DEBUG
+            print("SyncCoordinator: The photo could not be posted. \(error)")
+            #endif
+            return .couldNotPost
         }
     }
 
@@ -279,14 +387,20 @@ extension SyncCoordinator {
             store: KeychainSessionStore.forThisBuild
         )
         var backend: (any PhotoBackend)?
+        var posts: (any PostBackend)?
         if let apiURL = AppEnvironment.apiBaseURL {
             backend = HTTPPhotoBackend(
                 baseURL: apiURL,
                 transport: transport,
                 accessToken: { try await session.accessToken() }
             )
+            posts = HTTPPostBackend(
+                baseURL: apiURL,
+                transport: transport,
+                accessToken: { try await session.accessToken() }
+            )
         }
-        return SyncCoordinator(session: session, backend: backend, pacing: SyncPacing())
+        return SyncCoordinator(session: session, backend: backend, posts: posts, pacing: SyncPacing())
     }
 
     /// Who a preview shows.
@@ -317,12 +431,14 @@ extension SyncCoordinator {
             )
         }
         let hasBackend = account != .noBackend
+        let photos = SamplePhotoBackend()
         return SyncCoordinator(
             session: AccountSession(
                 identity: hasBackend ? SampleIdentityService() : nil,
                 store: MemorySessionStore(saved)
             ),
-            backend: hasBackend ? SamplePhotoBackend() : nil,
+            backend: hasBackend ? photos : nil,
+            posts: hasBackend ? SamplePostBackend(photos: photos) : nil,
             pacing: SyncPacing()
         )
     }

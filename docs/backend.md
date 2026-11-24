@@ -295,6 +295,39 @@ sign in ends by itself within the hour. If the same person signs in there
 again later, those photos are sent to the new account. Closing this needs
 the backend to remember a deleted account, which it does not do today.
 
+## Posting in the app
+
+Posting sits on top of sync. A photo is synced first and posted second,
+because the backend posts only a photo whose record and image it holds.
+
+- `PostBackend`, in `Services/Backend/`, is the protocol for the two post
+  routes. `HTTPPostBackend` is the real one and `SamplePostBackend` keeps
+  posts in memory for previews and tests. A request to post sends the
+  photo's id in the path and no body, so nothing about the photo is sent
+  again. `SignedInAPI` is the caller every signed in route shares.
+- `SyncCoordinator.post` runs a sync, waits for it, and then posts. A sync
+  that was already running is asked to run once more, and the post waits for
+  that one.
+- What the backend says about a post is a `PostStanding`, in the core
+  package. It holds when the photo was posted, when its window ends, how
+  many votes are in, and the score once it is final.
+- The standings are kept with the collection, apart from the photo's own
+  record. A new vote is then never an edit to the photo, so it starts no
+  upload. They are saved with the library on the device, and every sync
+  asks the backend for them again. The backend's list replaces what was
+  heard before, so a photo it lists no post for is not posted.
+- The screens read `CollectionModel.progress(for:)`, which is logged,
+  voting, or graded. A photo the user posted takes it from its standing. A
+  sample photo takes it from its own saved status.
+- The fewest votes a grade needs comes from the backend with the list of
+  posts, so it can change with no release.
+- The photo screen offers the post in a build that has a backend. The button
+  reads Post for votes, or Post anyway when the technical check has ideas.
+  The check never stands in the way. The user confirms once, because a post
+  cannot be taken back.
+- Deleting a photo or the account forgets its standing on the device. The
+  backend removes the post with the photo.
+
 ## Alarms and the budget
 
 Each stage tells its owner when something is wrong. Everything goes to one
@@ -482,8 +515,8 @@ change to those values in a deploy must be copied into the stage's file.
 
 ## Still to come
 
-- The app's side of voting. Posting from the photo screen, the voting
-  screen with its five stars, and the grade in the collection.
+- The voting screen with its five stars. Posting from the photo screen and
+  the grade in the collection are built, under Posting in the app above.
 - Reputation, which gives a voter whose votes land near the final grades
   more weight. It needs a way to find a post's votes when the post closes.
 - A filter that keeps a photo with no aircraft out of the voting queue. It

@@ -366,6 +366,24 @@ enum SampleData {
         )
     }
 
+    /// A photo as the user logs one, which is the only kind that can be
+    /// posted. It has no sample image, so previews show a placeholder.
+    static func loggedPhoto(in model: CollectionModel) -> SpottedPhoto {
+        let check = model.technicalCheck(for: softBrightMeasurements, camera: vc25Camera)
+        return SpottedPhoto(
+            id: "preview-logged",
+            imageName: nil,
+            aircraftType: "Boeing VC-25A",
+            registration: "29000",
+            airline: "US Air Force",
+            activity: "",
+            camera: vc25Camera,
+            status: .logged,
+            findings: check.findings,
+            fixes: check.fixes
+        )
+    }
+
     /// A logged photo in which the technical check found no aircraft, so
     /// it has no score.
     static let unfoundPhoto = SpottedPhoto(

@@ -95,18 +95,7 @@ struct HTTPPhotoBackend: PhotoBackend {
     /// Sends a signed in request to the API and returns the body of a
     /// successful answer.
     private func call(_ method: String, _ url: URL, body: Data? = nil) async throws -> Data {
-        var request = URLRequest(url: url)
-        request.httpMethod = method
-        request.setValue("Bearer \(try await accessToken())", forHTTPHeaderField: "Authorization")
-        if let body {
-            request.httpBody = body
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        }
-        let (data, response) = try await transport.send(request)
-        guard (200..<300).contains(response.statusCode) else {
-            throw Self.problem(status: response.statusCode, body: data)
-        }
-        return data
+        try await api.call(method, url, body: body)
     }
 
     /// Sends an image to the link the backend gave for it.
@@ -126,29 +115,17 @@ struct HTTPPhotoBackend: PhotoBackend {
     }
 
     private func decode<Answer: Decodable>(_ data: Data) throws -> Answer {
-        do {
-            return try JSONDecoder().decode(Answer.self, from: data)
-        } catch {
-            throw PhotoBackendError.unreadableAnswer
-        }
+        try api.decode(data)
     }
 
-    /// Turns a refusal into the error the app acts on. The backend sends a
-    /// code for the refusals that share a status.
+    /// The caller every signed in route shares.
+    private var api: SignedInAPI {
+        SignedInAPI(baseURL: baseURL, transport: transport, accessToken: accessToken)
+    }
+
+    /// Turns a refusal into the error the app acts on.
     static func problem(status: Int, body: Data) -> PhotoBackendError {
-        let answer = try? JSONDecoder().decode(ProblemAnswer.self, from: body)
-        switch (status, answer?.code) {
-        case (401, _), (_, "notSignedIn"):
-            return .notSignedIn
-        case (_, "photoDeleted"):
-            return .photoDeleted
-        case (_, "accountDeleted"):
-            return .accountDeleted
-        case (500..., _):
-            return .unavailable(status: status)
-        default:
-            return .refused(status: status, message: answer?.message ?? "")
-        }
+        SignedInAPI.problem(status: status, body: body)
     }
 }
 
@@ -205,9 +182,4 @@ private struct ListAnswer: Decodable {
     let photos: [Entry]
     let deleted: [Deleted]
     let nextAfter: String?
-}
-
-private struct ProblemAnswer: Decodable {
-    let message: String?
-    let code: String?
 }
