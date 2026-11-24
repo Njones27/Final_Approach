@@ -203,9 +203,15 @@ What runs on the phone today, with no backend:
 - A registration on the block list is never suggested, and a photo logged
   with one keeps it hidden. The list is empty until the backend supplies it.
 
-Still to come in this milestone: the backend lookup, the public registry
-lookup for a reading with no flight data, the per-camera clock correction,
-tagging a batch at once, and suggesting nearby airports for a tag.
+Still to come in this milestone: the public registry lookup for a reading
+with no flight data, tagging a batch at once, and suggesting nearby airports
+for a tag.
+
+The flight data lookup, which is step 2 above, is built last. The owner
+moved it there on 2026-11-24. It is milestone 10, after voting and the spot
+map, and it brings the per-camera clock correction with it, since that only
+matters when a photo's time is matched against flights. Until then a photo
+is identified by the registration read from it and by what the user types.
 
 ## Backend
 
@@ -230,13 +236,17 @@ for deleting and for syncing, and how to deploy are in `docs/backend.md`.
 5. **Local collection.** Quickshot logging, slots, and upgrades, stored on the
    device. The user's own located photos appear on the Spots map, each linked
    to the nearest spot.
-6. **Identification.** Location tagging, registration reading, the flight data
-   lookup, and the automatic description.
+6. **Identification.** Location tagging, registration reading, and the
+   automatic description. The flight data lookup is milestone 10.
 7. **Backend foundation.** Sign in with Apple, photo upload, and sync in the
    beta account.
 8. **Voting and final grades.**
 9. **Spot map and spot pages.** Real spots from the backend, with the
    disclosed photos other people took there. An undisclosed photo never
    appears.
-10. **Launch preparation.** Prod account, Release workflow, external
-    TestFlight, App Store review.
+10. **Flight data lookup.** The backend asks the flight data provider what
+    was flying near a photo, with the per-camera clock correction. It is
+    last of the features because it needs a paid plan and a check of the
+    provider's license terms.
+11. **Launch preparation.** Release workflow, external TestFlight, App Store
+    review. The prod account is already set up.
