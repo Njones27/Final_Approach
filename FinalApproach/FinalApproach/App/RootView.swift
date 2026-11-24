@@ -12,6 +12,8 @@ private enum AppTab: Int, Hashable {
 /// button on the Collection screen and not a tab.
 struct RootView: View {
     @State private var model: CollectionModel
+    @State private var sync: SyncCoordinator
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage(AppearanceSetting.storageKey) private var appearance = AppearanceSetting.system
     @State private var selectedTab = AppTab.collection
     /// How each tab last arrived, so its content can come in from the side
@@ -19,8 +21,9 @@ struct RootView: View {
     @State private var arrivals: [AppTab: TabArrival] = [:]
     @State private var tabChanges = 0
 
-    init(model: CollectionModel) {
+    init(model: CollectionModel, sync: SyncCoordinator) {
         _model = State(initialValue: model)
+        _sync = State(initialValue: sync)
     }
 
     var body: some View {
@@ -44,7 +47,14 @@ struct RootView: View {
         }
         .tint(Theme.ink)
         .environment(model)
+        .environment(sync)
         .preferredColorScheme(appearance.colorScheme)
+        // The photos are brought into line with the backend each time the
+        // app opens or comes back to the front.
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            guard phase == .active else { return }
+            Task { await sync.appBecameActive(on: model) }
+        }
     }
 
     /// The selected tab. A change also records which side the new tab sits
@@ -69,5 +79,5 @@ struct RootView: View {
 }
 
 #Preview {
-    RootView(model: SampleData.model())
+    RootView(model: SampleData.model(), sync: .preview())
 }

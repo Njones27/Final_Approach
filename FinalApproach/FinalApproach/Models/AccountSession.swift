@@ -13,6 +13,9 @@ final class AccountSession {
     enum State: Equatable {
         case signedOut
         case signedIn(userID: String)
+        /// The user asked to delete their account and the backend has not
+        /// confirmed it yet. Nothing is synced in this state.
+        case deletingAccount(userID: String)
     }
 
     private(set) var state: State = .signedOut
@@ -41,14 +44,21 @@ final class AccountSession {
         // With no backend there is nothing a saved sign in could be used for.
         if identity != nil, let saved = try? store.load() {
             stored = saved
-            state = .signedIn(userID: saved.userID)
+            state = Self.state(of: saved)
         }
     }
 
     /// False in a build with no backend, where signing in is not offered.
     var canSignIn: Bool { identity != nil }
 
-    var isSignedIn: Bool { stored != nil }
+    /// True while someone is signed in and their account is not on its way
+    /// out.
+    var isSignedIn: Bool {
+        if case .signedIn = state { true } else { false }
+    }
+
+    /// True while a delete of the account is owed to the backend.
+    var isAccountDeleteOwed: Bool { stored?.isAccountDeleteOwed == true }
 
     /// Signs in with the identity token from Sign in with Apple.
     ///
@@ -57,6 +67,8 @@ final class AccountSession {
     /// shows a signed in user it would forget on the next launch.
     func signIn(identityToken: String) async throws {
         guard let identity else { throw PhotoBackendError.notSignedIn }
+        // A new sign in would replace the tokens the delete still needs.
+        guard !isAccountDeleteOwed else { throw PhotoBackendError.accountDeleted }
         guard let userID = IdentityToken.subject(of: identityToken) else {
             throw IdentityError.tokenRefused
         }
@@ -70,8 +82,11 @@ final class AccountSession {
     /// Signs out on this device at once, and then tells the backend so the
     /// refresh token stops working. The backend is told on a best effort
     /// basis, because the user must be able to sign out with no network.
+    ///
+    /// It does nothing while a delete of the account is owed, because the
+    /// delete needs the sign in to finish.
     func signOut() async {
-        guard let session = stored else { return }
+        guard let session = stored, !session.isAccountDeleteOwed else { return }
         forget()
         do {
             try await identity?.signOut(session.tokens)
@@ -95,6 +110,37 @@ final class AccountSession {
         return try await refreshed(session).accessToken
     }
 
+    // MARK: Deleting the account
+
+    /// Records that the user asked to delete their account.
+    ///
+    /// The request is saved before anything is removed. If the app closes or
+    /// the network is down, the delete is still owed the next time the app
+    /// opens. It throws when the request cannot be saved, and then nothing
+    /// has changed.
+    func beginAccountDelete() throws {
+        guard var session = stored else { throw PhotoBackendError.notSignedIn }
+        guard !session.isAccountDeleteOwed else { return }
+        session.isAccountDeleteOwed = true
+        try store.save(session)
+        stored = session
+        state = Self.state(of: session)
+    }
+
+    /// Call when the backend confirmed that the account is deleted. The
+    /// sign in is forgotten. The backend is not told to end it, because the
+    /// account and its tokens are already gone.
+    func finishAccountDelete() {
+        guard isAccountDeleteOwed else { return }
+        forget()
+    }
+
+    private static func state(of session: StoredSession) -> State {
+        session.isAccountDeleteOwed
+            ? .deletingAccount(userID: session.userID)
+            : .signedIn(userID: session.userID)
+    }
+
     // MARK: Refreshing
 
     /// One refresh, shared by every caller that asks while it runs.
@@ -110,13 +156,15 @@ final class AccountSession {
                 tokens = try await identity.refresh(session.tokens)
             } catch IdentityError.sessionEnded {
                 // The user signed out elsewhere, or the account is gone.
-                if self.stored == session { self.forget() }
+                if self.holds(session) { self.forget() }
                 throw PhotoBackendError.notSignedIn
             }
             // The user may have signed out, or signed in again, while the
             // refresh was on its way. Their change stands.
-            guard self.stored == session else { throw PhotoBackendError.notSignedIn }
-            let renewed = StoredSession(userID: session.userID, tokens: tokens)
+            guard self.holds(session), var renewed = self.stored else {
+                throw PhotoBackendError.notSignedIn
+            }
+            renewed.tokens = tokens
             self.stored = renewed
             // A failed save costs one more refresh on the next launch.
             try? self.store.save(renewed)
@@ -124,6 +172,13 @@ final class AccountSession {
         }
         refreshing = task
         return try await task.value
+    }
+
+    /// True while the saved sign in is still the one a refresh started
+    /// from. Asking to delete the account in the meantime does not change
+    /// that, so the new tokens are kept for the delete to use.
+    private func holds(_ session: StoredSession) -> Bool {
+        stored?.userID == session.userID && stored?.tokens == session.tokens
     }
 
     private func forget() {

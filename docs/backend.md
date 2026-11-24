@@ -93,8 +93,8 @@ than once.
 
 ## Sync in the app
 
-The app's side is being built in steps. The pieces below are in place, and
-nothing runs them yet, because the app has no sign in screen.
+The app's side is being built in steps. The pieces below are in place. They
+run once someone is signed in, which waits for the sign in screen.
 
 - The rules are pure and live in the core package, in `PhotoSync.swift`.
   `SyncPlan.actions` takes what the device holds, what the backend listed,
@@ -118,6 +118,11 @@ nothing runs them yet, because the app has no sign in screen.
 - The session is kept in the Keychain through `SessionStore`, on this device
   only, so it is not copied to a backup or to another device. Signing out
   removes it first and then tells the pool to end it.
+- `SyncCoordinator`, in `Models/`, decides when a sync runs. One runs each
+  time the app comes to the front, and one runs shortly after the user adds,
+  edits, or deletes a photo. Changes made together go in one sync. A sync
+  asked for while one runs makes that one run once more. The wait after a
+  change is data in `SyncPacing`.
 
 The rules a sync follows.
 
@@ -141,6 +146,31 @@ The rules a sync follows.
 - One photo that fails does not stop the rest. It is tried again on the next
   sync. A sync stops only when no one is signed in, the account was deleted,
   or the backend cannot be listed.
+- The ledger belongs to one account. When another user signs in on the same
+  device, the ledger is started again for them. A delete the first account
+  is still owed is set aside, and it is sent when that user next signs in
+  on the device. It is never sent to the other user's account.
+
+Deleting the account from the app follows three steps, in this order.
+
+1. The request is saved in the Keychain, next to the tokens it needs. If it
+   cannot be saved, nothing is removed and the user is told to try again.
+2. Every photo and image is removed from the device. A sync that is running
+   stops and puts nothing back.
+3. The backend is told. When the backend fails partway, the request is sent
+   again at once, a few times. With no network the delete stays owed, and it
+   is sent each time the app comes to the front until it goes through.
+
+While a delete is owed nothing syncs, and no one can sign in or out, because
+the delete needs the tokens. If the sign in itself stops working in that
+time, the delete counts as done. That is what happens when the first request
+did reach the backend, which removes the user from the pool.
+
+One limit is known on the app's side. A second device that still holds the
+user's photos keeps them when the account is deleted from the first one. Its
+sign in ends by itself within the hour. If the same person signs in there
+again later, those photos are sent to the new account. Closing this needs
+the backend to remember a deleted account, which it does not do today.
 
 ## Build and test
 
@@ -231,9 +261,8 @@ values in a deploy must be copied into that file.
 
 ## Still to come
 
-- The rest of the app side. That is running a sync when the app opens and
-  after a change, deleting the account on the backend when the user deletes
-  it in the app, and the screen that shows Apple's sign in sheet.
+- The rest of the app side. That is the entitlement and the screen that
+  shows Apple's sign in sheet, with a way to sign out.
 - CloudFront in front of the images, when other users can see photos.
 - Telling Apple to revoke the user's tokens when an account is deleted, which
   App Store review asks for. It needs a key from the Apple developer account.

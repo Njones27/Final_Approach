@@ -51,10 +51,78 @@ public struct SyncLedger: Sendable, Equatable, Codable {
     /// A delete stays here until it is confirmed, so a failed request cannot
     /// leave a deleted photo's image on the backend.
     public var pendingDeletes: Set<String>
+    /// The account the records and the pending deletes belong to. It is nil
+    /// until a sync has run for a signed in user.
+    public var owner: String?
+    /// Deletes still owed to accounts other than the owner, by account. They
+    /// are sent when that account next signs in on this device, so a delete
+    /// is not forgotten when the user signs out before it was confirmed.
+    public var parkedDeletes: [String: Set<String>]
 
-    public init(records: [String: SyncRecord] = [:], pendingDeletes: Set<String> = []) {
+    public init(
+        records: [String: SyncRecord] = [:],
+        pendingDeletes: Set<String> = [],
+        owner: String? = nil,
+        parkedDeletes: [String: Set<String>] = [:]
+    ) {
         self.records = records
         self.pendingDeletes = pendingDeletes
+        self.owner = owner
+        self.parkedDeletes = parkedDeletes
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case records, pendingDeletes, owner, parkedDeletes
+    }
+
+    /// A ledger saved before it had an owner still opens.
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        records = try values.decode([String: SyncRecord].self, forKey: .records)
+        pendingDeletes = try values.decode(Set<String>.self, forKey: .pendingDeletes)
+        owner = try values.decodeIfPresent(String.self, forKey: .owner)
+        parkedDeletes = try values.decodeIfPresent([String: Set<String>].self, forKey: .parkedDeletes) ?? [:]
+    }
+
+    /// Call before a sync for the signed in user.
+    ///
+    /// A ledger with no owner becomes that user's. A ledger that belongs to
+    /// another account is started again, because nothing in it describes
+    /// what this account holds. The deletes the other account is still owed
+    /// are set aside for it, and any deletes set aside for this user come
+    /// back.
+    public mutating func claim(for userID: String) {
+        guard owner != userID else { return }
+        if let owner {
+            if !pendingDeletes.isEmpty {
+                parkedDeletes[owner, default: []].formUnion(pendingDeletes)
+            }
+            records = [:]
+            pendingDeletes = []
+        }
+        if let owed = parkedDeletes.removeValue(forKey: userID) {
+            pendingDeletes.formUnion(owed)
+        }
+        owner = userID
+    }
+
+    /// Call when every photo is removed from the device at once.
+    ///
+    /// With `accountDeleted` set, the owner's account goes too, so nothing
+    /// more is owed to it. Without it only the device was cleared, so the
+    /// owner's unconfirmed deletes are set aside for their next sign in.
+    /// Deletes owed to other accounts always stay.
+    public mutating func noteDeviceCleared(accountDeleted: Bool) {
+        if let owner {
+            if accountDeleted {
+                parkedDeletes[owner] = nil
+            } else if !pendingDeletes.isEmpty {
+                parkedDeletes[owner, default: []].formUnion(pendingDeletes)
+            }
+        }
+        records = [:]
+        pendingDeletes = []
+        owner = nil
     }
 
     /// Call before a photo is first sent. It leaves a mark that the backend

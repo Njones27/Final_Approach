@@ -3,9 +3,11 @@ import SwiftUI
 /// The photographer's totals, level, and settings.
 struct ProfileView: View {
     @Environment(CollectionModel.self) private var model
+    @Environment(SyncCoordinator.self) private var sync
     @AppStorage(AppearanceSetting.storageKey) private var appearance = AppearanceSetting.system
     @AppStorage(LocationPrivacySetting.storageKey) private var locationPrivacy = LocationPrivacySetting.askEachTime
     @State private var isConfirmingDelete = false
+    @State private var didDeleteFail = false
 
     var body: some View {
         NavigationStack {
@@ -53,10 +55,20 @@ struct ProfileView: View {
                 titleVisibility: .visible
             ) {
                 Button("Delete account and photos", role: .destructive) {
-                    model.deleteAccountAndPhotos()
+                    Task {
+                        // The coordinator also deletes the account on the
+                        // backend when someone is signed in.
+                        let deleted = await sync.deleteAccountAndPhotos(on: model)
+                        didDeleteFail = !deleted
+                    }
                 }
             } message: {
                 Text("Every photo and grade is removed. This cannot be undone.")
+            }
+            .alert("Your account could not be deleted", isPresented: $didDeleteFail) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Nothing was removed. Try again in a moment.")
             }
         }
     }
@@ -133,4 +145,5 @@ private struct StatView: View {
 #Preview {
     ProfileView()
         .environment(SampleData.model())
+        .environment(SyncCoordinator.preview())
 }

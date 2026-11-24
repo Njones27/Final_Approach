@@ -264,6 +264,139 @@ struct AccountSessionTests {
         #expect(account.state == .signedOut)
         #expect(store.session == nil)
     }
+
+    // MARK: Deleting the account
+
+    @Test func askingToDeleteTheAccountIsSavedBeforeItCounts() async throws {
+        let store = MemorySessionStore()
+        let account = session(store: store)
+        try await account.signIn(identityToken: appleToken())
+
+        try account.beginAccountDelete()
+
+        #expect(account.state == .deletingAccount(userID: "apple-user-1"))
+        #expect(account.isAccountDeleteOwed)
+        #expect(!account.isSignedIn)
+        #expect(store.session?.isAccountDeleteOwed == true)
+        // The delete still needs the token.
+        let token = try await account.accessToken()
+        #expect(token == "sample-access-1")
+    }
+
+    @Test func aDeleteCannotBeAskedForWithNoOneSignedIn() {
+        let account = session()
+        #expect(throws: PhotoBackendError.notSignedIn) {
+            try account.beginAccountDelete()
+        }
+        #expect(account.state == .signedOut)
+    }
+
+    @Test func aDeleteThatCannotBeSavedChangesNothing() async throws {
+        let store = MemorySessionStore()
+        let account = session(store: store)
+        try await account.signIn(identityToken: appleToken())
+        store.failsSaves = true
+
+        #expect(throws: SessionStoreError.self) {
+            try account.beginAccountDelete()
+        }
+        #expect(account.state == .signedIn(userID: "apple-user-1"))
+        #expect(!account.isAccountDeleteOwed)
+        #expect(store.session?.isAccountDeleteOwed == false)
+    }
+
+    @Test func anOwedDeleteIsStillOwedAfterTheAppCloses() async throws {
+        let store = MemorySessionStore()
+        let account = session(store: store)
+        try await account.signIn(identityToken: appleToken())
+        try account.beginAccountDelete()
+
+        let relaunched = session(store: store)
+
+        #expect(relaunched.state == .deletingAccount(userID: "apple-user-1"))
+        #expect(relaunched.isAccountDeleteOwed)
+    }
+
+    @Test func aRefreshKeepsTheOwedDelete() async throws {
+        let store = MemorySessionStore()
+        let account = session(store: store)
+        try await account.signIn(identityToken: appleToken())
+        try account.beginAccountDelete()
+        clock.now += 3600
+
+        let token = try await account.accessToken()
+
+        #expect(token == "sample-access-2")
+        #expect(account.state == .deletingAccount(userID: "apple-user-1"))
+        #expect(store.session?.isAccountDeleteOwed == true)
+        #expect(store.session?.tokens.accessToken == "sample-access-2")
+    }
+
+    @Test func aDeleteAskedForDuringARefreshKeepsTheNewTokens() async throws {
+        let store = MemorySessionStore()
+        let account = session(store: store)
+        try await account.signIn(identityToken: appleToken())
+        clock.now += 3600
+        identity.duringRefresh = {
+            _ = try? account.beginAccountDelete()
+        }
+
+        let token = try await account.accessToken()
+
+        #expect(token == "sample-access-2")
+        #expect(account.state == .deletingAccount(userID: "apple-user-1"))
+        #expect(store.session?.isAccountDeleteOwed == true)
+        #expect(store.session?.tokens.accessToken == "sample-access-2")
+    }
+
+    @Test func noOneCanSignInOrOutWhileADeleteIsOwed() async throws {
+        let store = MemorySessionStore()
+        let account = session(store: store)
+        try await account.signIn(identityToken: appleToken())
+        try account.beginAccountDelete()
+
+        await #expect(throws: PhotoBackendError.accountDeleted) {
+            try await account.signIn(identityToken: appleToken(for: "apple-user-2"))
+        }
+        await account.signOut()
+
+        #expect(account.state == .deletingAccount(userID: "apple-user-1"))
+        #expect(store.session?.userID == "apple-user-1")
+        #expect(identity.liveRefreshTokens == ["sample-refresh-1"])
+    }
+
+    @Test func aConfirmedDeleteForgetsTheSignIn() async throws {
+        let store = MemorySessionStore()
+        let account = session(store: store)
+        try await account.signIn(identityToken: appleToken())
+        try account.beginAccountDelete()
+
+        account.finishAccountDelete()
+
+        #expect(account.state == .signedOut)
+        #expect(store.session == nil)
+    }
+
+    @Test func finishingADeleteNoOneAskedForDoesNothing() async throws {
+        let store = MemorySessionStore()
+        let account = session(store: store)
+        try await account.signIn(identityToken: appleToken())
+
+        account.finishAccountDelete()
+
+        #expect(account.state == .signedIn(userID: "apple-user-1"))
+        #expect(store.session != nil)
+    }
+
+    @Test func aSignInSavedBeforeADeleteCouldBeOwedStillOpens() throws {
+        let saved = Data(
+            #"{"userID":"apple-user-1","tokens":{"accessToken":"a","refreshToken":"r","accessTokenExpiresAt":0}}"#.utf8
+        )
+        let session = try JSONDecoder().decode(StoredSession.self, from: saved)
+        #expect(session.userID == "apple-user-1")
+        #expect(!session.isAccountDeleteOwed)
+        #expect(session.tokens.refreshToken == "r")
+    }
 }
 
 /// The Keychain, on the simulator.
