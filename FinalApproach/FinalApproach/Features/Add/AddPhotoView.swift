@@ -95,9 +95,10 @@ struct AddPhotoView: View {
         }
         .sheet(isPresented: $isPickingPlace) {
             PlacePickerView(
-                // The map opens on the pin, or where the last photo was
-                // taken, since photos are often logged a few at a time.
-                start: pinnedPlace ?? model.locatedPhotos.first?.ownerCaptureCoordinate,
+                // The map opens on the pin, or where the user's last photo
+                // was taken, since photos are often logged a few at a time.
+                // The sample photos are not the user's, so they do not count.
+                start: pinnedPlace ?? model.locatedPhotos.first { !$0.isSample }?.ownerCaptureCoordinate,
                 hasPin: pinnedPlace != nil
             ) { place in
                 withAnimation(Motion.swap) {

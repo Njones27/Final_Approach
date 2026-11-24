@@ -63,8 +63,12 @@ struct PlacePickerView: View {
                 }
             }
             .background(Theme.ground)
-            .navigationTitle("Where was this taken?")
+            // The title is short, so it still fits beside "Remove pin".
+            .navigationTitle("Location")
             .navigationBarTitleDisplayMode(.inline)
+            // The map runs under the bar. The bar keeps its backing, so the
+            // title never sits straight on the map's labels.
+            .toolbarBackgroundVisibility(.visible, for: .navigationBar)
             .searchable(text: $searchText, prompt: "Search for an airport or a place")
             .onSubmit(of: .search) {
                 Task {
