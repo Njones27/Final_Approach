@@ -1,11 +1,13 @@
 import { Duration, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
 import { AccountRecovery, UserPool, type UserPoolClient } from 'aws-cdk-lib/aws-cognito';
+import type { ITopic } from 'aws-cdk-lib/aws-sns';
 import type { Construct } from 'constructs';
 import { backendFunction } from './functions.ts';
 import type { StageSettings } from './stages.ts';
 
 export interface IdentityStackProps extends StackProps {
   readonly stage: StageSettings;
+  readonly alerts: ITopic;
 }
 
 /**
@@ -26,11 +28,13 @@ export class IdentityStack extends Stack {
       APPLE_AUDIENCE: stage.appleAudience,
       MAX_APPLE_TOKEN_AGE_SECONDS: String(stage.maxAppleTokenAgeSeconds),
     };
-    const trigger = (name: string, environment?: Record<string, string>) =>
+    const trigger = (name: string, environment?: Record<string, string>, errorsToAlarm?: number) =>
       backendFunction(this, name, {
         source: `auth/${name[0]?.toLowerCase()}${name.slice(1)}.ts`,
         stage,
+        alerts: props.alerts,
         ...(environment ? { environment } : {}),
+        ...(errorsToAlarm === undefined ? {} : { errorsToAlarm }),
       });
 
     this.users = new UserPool(this, 'Users', {
@@ -40,7 +44,9 @@ export class IdentityStack extends Stack {
       deletionProtection: keep,
       removalPolicy: keep ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
       lambdaTriggers: {
-        preSignUp: trigger('PreSignUp', appleRules),
+        // This one refuses a sign up by failing, and anyone can send a bad
+        // sign up. So its alarm waits for many refusals and not for one.
+        preSignUp: trigger('PreSignUp', appleRules, stage.signUpRefusalsToAlarm),
         defineAuthChallenge: trigger('DefineAuthChallenge'),
         createAuthChallenge: trigger('CreateAuthChallenge'),
         verifyAuthChallengeResponse: trigger('VerifyAuthChallenge', appleRules),

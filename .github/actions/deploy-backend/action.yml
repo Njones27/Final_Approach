@@ -45,7 +45,7 @@ runs:
         fi
         # The deploy role stack is left out on purpose. The account's owner
         # deploys it by hand, so a change to who may deploy never deploys itself.
-        echo "STACKS=FinalApproach-${STAGE}-Storage FinalApproach-${STAGE}-Identity FinalApproach-${STAGE}-Api" >> "${GITHUB_ENV}"
+        echo "STACKS=FinalApproach-${STAGE}-Alerts FinalApproach-${STAGE}-Storage FinalApproach-${STAGE}-Identity FinalApproach-${STAGE}-Api" >> "${GITHUB_ENV}"
 
     - name: Install
       shell: bash

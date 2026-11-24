@@ -9,6 +9,7 @@ import {
   ObjectOwnership,
 } from 'aws-cdk-lib/aws-s3';
 import { LambdaDestination } from 'aws-cdk-lib/aws-s3-notifications';
+import type { ITopic } from 'aws-cdk-lib/aws-sns';
 import type { Construct } from 'constructs';
 import { expiryAttribute } from '../src/account/awsStore.ts';
 import { allow, backendFunction, userImages } from './functions.ts';
@@ -16,6 +17,7 @@ import type { StageSettings } from './stages.ts';
 
 export interface StorageStackProps extends StackProps {
   readonly stage: StageSettings;
+  readonly alerts: ITopic;
 }
 
 /** The table of records and the bucket of images. */
@@ -57,6 +59,7 @@ export class StorageStack extends Stack {
     this.sweeper = backendFunction(this, 'Sweeper', {
       source: 'photos/sweeperIndex.ts',
       stage,
+      alerts: props.alerts,
       environment: {
         TABLE_NAME: this.table.tableName,
         BUCKET_NAME: this.images.bucketName,

@@ -16,6 +16,7 @@ function templates(stageName: StageName) {
   const app = new App({ context: { 'aws:cdk:bundling-stacks': [] } });
   const backend = buildBackend(app, stages[stageName]);
   return {
+    alerts: Template.fromStack(backend.alerts),
     storage: Template.fromStack(backend.storage),
     identity: Template.fromStack(backend.identity),
     api: Template.fromStack(backend.api),
@@ -326,6 +327,138 @@ describe('deploying from GitHub', () => {
   });
 });
 
+describe('alarms and the budget', () => {
+  /** Every alarm in the three stacks that hold something to watch. */
+  const alarmsOf = (stage: typeof beta) =>
+    [stage.storage, stage.identity, stage.api].flatMap((template) =>
+      Object.values(template.findResources('AWS::CloudWatch::Alarm')).map((alarm) => alarm['Properties']),
+    );
+
+  test('each stage has one topic, and it takes only encrypted connections', () => {
+    for (const stage of [beta, prod]) {
+      stage.alerts.resourceCountIs('AWS::SNS::Topic', 1);
+      stage.alerts.hasResourceProperties('AWS::SNS::TopicPolicy', {
+        PolicyDocument: {
+          Statement: Match.arrayWith([
+            Match.objectLike({ Effect: 'Deny', Condition: { Bool: { 'aws:SecureTransport': 'false' } } }),
+          ]),
+        },
+      });
+    }
+  });
+
+  test('only the alarms and the budgets of the same account can write to the topic', () => {
+    const [policy] = Object.values(prod.alerts.findResources('AWS::SNS::TopicPolicy'));
+    const allowed = (policy?.['Properties'].PolicyDocument.Statement as Record<string, any>[]).filter(
+      (statement) => statement['Effect'] === 'Allow',
+    );
+    assert.deepEqual(allowed.map((statement) => statement['Principal']).sort((a, b) => a.Service.localeCompare(b.Service)), [
+      { Service: 'budgets.amazonaws.com' },
+      { Service: 'cloudwatch.amazonaws.com' },
+    ]);
+    for (const statement of allowed) {
+      assert.equal(statement['Action'], 'sns:Publish');
+      assert.deepEqual(statement['Condition'].StringEquals, { 'aws:SourceAccount': { Ref: 'AWS::AccountId' } });
+      assert.ok(statement['Condition'].ArnLike['aws:SourceArn']);
+    }
+  });
+
+  test('the topic has no subscriber, so no address is written in the repository', () => {
+    for (const stage of [beta, prod]) stage.alerts.resourceCountIs('AWS::SNS::Subscription', 0);
+  });
+
+  test('every function has an alarm on its failed runs', () => {
+    for (const stage of [beta, prod]) {
+      const watched = alarmsOf(stage)
+        .filter((alarm) => alarm.Namespace === 'AWS/Lambda' && alarm.MetricName === 'Errors')
+        .map((alarm) => alarm.AlarmName.replace(/^final-approach-(beta|prod)-/, ''))
+        .sort();
+      assert.deepEqual(watched, [
+        'Account-errors',
+        'CreateAuthChallenge-errors',
+        'DefineAuthChallenge-errors',
+        'Photos-errors',
+        'PreSignUp-errors',
+        'Sweeper-errors',
+        'VerifyAuthChallenge-errors',
+      ]);
+    }
+  });
+
+  test('one failed run sets an alarm off, but a refused sign up is not news', () => {
+    const thresholds = Object.fromEntries(alarmsOf(prod).map((alarm) => [alarm.AlarmName, alarm.Threshold]));
+    assert.equal(thresholds['final-approach-prod-Photos-errors'], stages.prod.functionErrorsToAlarm);
+    assert.equal(thresholds['final-approach-prod-Sweeper-errors'], 1);
+    assert.equal(thresholds['final-approach-prod-PreSignUp-errors'], stages.prod.signUpRefusalsToAlarm);
+    assert.ok(stages.prod.signUpRefusalsToAlarm > stages.prod.functionErrorsToAlarm);
+  });
+
+  test('the API has an alarm on its server errors', () => {
+    for (const stage of [beta, prod]) {
+      stage.api.hasResourceProperties('AWS::CloudWatch::Alarm', {
+        Namespace: 'AWS/ApiGateway',
+        MetricName: '5xx',
+        Threshold: 1,
+        Dimensions: [{ Name: 'ApiId', Value: Match.anyValue() }],
+      });
+    }
+  });
+
+  test('every alarm counts over one period, tells the topic, and stays quiet with no data', () => {
+    for (const stage of [beta, prod]) {
+      const alarms = alarmsOf(stage);
+      assert.equal(alarms.length, 8);
+      for (const alarm of alarms) {
+        assert.equal(alarm.Statistic, 'Sum');
+        assert.equal(alarm.Period, 300);
+        assert.equal(alarm.EvaluationPeriods, 1);
+        assert.equal(alarm.ComparisonOperator, 'GreaterThanOrEqualToThreshold');
+        assert.equal(alarm.TreatMissingData, 'notBreaching');
+        assert.equal(alarm.AlarmActions.length, 1);
+        assert.match(JSON.stringify(alarm.AlarmActions[0]), /FinalApproach-(beta|prod)-Alerts/);
+      }
+    }
+  });
+
+  test('the budget is the stage’s own, and it tells the topic', () => {
+    for (const [stage, settings] of [
+      [beta, stages.beta],
+      [prod, stages.prod],
+    ] as const) {
+      const [budget] = Object.values(stage.alerts.findResources('AWS::Budgets::Budget'));
+      const properties = budget?.['Properties'];
+      assert.deepEqual(properties.Budget.BudgetLimit, { Amount: settings.monthlyBudgetUSD, Unit: 'USD' });
+      assert.equal(properties.Budget.BudgetType, 'COST');
+      assert.equal(properties.Budget.TimeUnit, 'MONTHLY');
+      assert.equal(properties.Budget.BudgetName, `final-approach-${settings.name}-monthly-cost`);
+
+      const notices = properties.NotificationsWithSubscribers as Record<string, any>[];
+      assert.deepEqual(
+        notices.map((notice) => `${notice['Notification'].NotificationType} ${notice['Notification'].Threshold}`),
+        [...settings.budgetAlertPercents.map((percent) => `ACTUAL ${percent}`), 'FORECASTED 100'],
+      );
+      for (const notice of notices) {
+        assert.equal(notice['Notification'].ThresholdType, 'PERCENTAGE');
+        assert.equal(notice['Subscribers'].length, 1);
+        assert.equal(notice['Subscribers'][0].SubscriptionType, 'SNS');
+      }
+      // The budget is refused until the topic lets it write.
+      assert.equal(budget?.['DependsOn'].length, 1);
+    }
+  });
+
+  test('the stage settings are amounts that make sense', () => {
+    for (const stage of Object.values(stages)) {
+      assert.ok(stage.monthlyBudgetUSD > 0);
+      assert.ok(stage.alarmPeriodMinutes >= 1);
+      assert.ok(stage.functionErrorsToAlarm >= 1 && stage.serverErrorsToAlarm >= 1);
+      // A budget takes five notices at most, and one is the forecast.
+      assert.ok(stage.budgetAlertPercents.length >= 1 && stage.budgetAlertPercents.length <= 4);
+      for (const percent of stage.budgetAlertPercents) assert.ok(percent > 0);
+    }
+  });
+});
+
 describe('stages', () => {
   test('only beta and prod exist', () => {
     assert.deepEqual(Object.keys(stages), ['beta', 'prod']);
@@ -342,5 +475,6 @@ describe('stages', () => {
   test('the stacks carry the stage in their names', () => {
     assert.equal(beta.stacks.api.stackName, 'FinalApproach-beta-Api');
     assert.equal(prod.stacks.storage.stackName, 'FinalApproach-prod-Storage');
+    assert.equal(prod.stacks.alerts.stackName, 'FinalApproach-prod-Alerts');
   });
 });

@@ -5,7 +5,9 @@ import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations
 import type { IUserPool, IUserPoolClient } from 'aws-cdk-lib/aws-cognito';
 import type { ITable } from 'aws-cdk-lib/aws-dynamodb';
 import type { IBucket } from 'aws-cdk-lib/aws-s3';
+import type { ITopic } from 'aws-cdk-lib/aws-sns';
 import type { Construct } from 'constructs';
+import { alarmPeriod, countAlarm } from './alarms.ts';
 import { allow, backendFunction, userImages } from './functions.ts';
 import { deletedAccountMarkerSeconds, type StageSettings } from './stages.ts';
 
@@ -15,6 +17,7 @@ export interface ApiStackProps extends StackProps {
   readonly images: IBucket;
   readonly users: IUserPool;
   readonly appClient: IUserPoolClient;
+  readonly alerts: ITopic;
 }
 
 /** The longest API Gateway waits for a function, less a second to answer. */
@@ -26,12 +29,13 @@ export class ApiStack extends Stack {
 
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
-    const { stage, table, images, users } = props;
+    const { stage, table, images, users, alerts } = props;
     const storage = { TABLE_NAME: table.tableName, BUCKET_NAME: images.bucketName };
 
     const photos = backendFunction(this, 'Photos', {
       source: 'photos/index.ts',
       stage,
+      alerts,
       environment: {
         ...storage,
         PHOTOS_PER_PAGE: String(stage.photosPerPage),
@@ -48,6 +52,7 @@ export class ApiStack extends Stack {
     const account = backendFunction(this, 'Account', {
       source: 'account/index.ts',
       stage,
+      alerts,
       timeout: longestRequest,
       environment: {
         ...storage,
@@ -90,6 +95,17 @@ export class ApiStack extends Stack {
       path: '/account',
       methods: [HttpMethod.DELETE],
       integration: new HttpLambdaIntegration('AccountRoutes', account),
+    });
+
+    // A function that fails answers with a server error, and so does an API
+    // that cannot reach its function. This alarm catches both.
+    countAlarm(this, 'ServerErrors', {
+      stage,
+      alerts,
+      watches: 'Api-server-errors',
+      metric: this.api.metricServerError({ period: alarmPeriod(stage), statistic: 'Sum' }),
+      threshold: stage.serverErrorsToAlarm,
+      description: `The API of the ${stage.name} backend answered with a server error. The logs of the Photos and Account functions say why.`,
     });
 
     new CfnOutput(this, 'ApiURL', { value: live.url });

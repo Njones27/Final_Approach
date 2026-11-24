@@ -4,7 +4,9 @@ import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Architecture, Runtime, type IFunction } from 'aws-cdk-lib/aws-lambda';
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
 import { LogGroup, type RetentionDays } from 'aws-cdk-lib/aws-logs';
+import type { ITopic } from 'aws-cdk-lib/aws-sns';
 import type { Construct } from 'constructs';
+import { alarmPeriod, countAlarm } from './alarms.ts';
 import type { StageSettings } from './stages.ts';
 
 export interface BackendFunctionProps {
@@ -13,18 +15,27 @@ export interface BackendFunctionProps {
   readonly stage: StageSettings;
   readonly environment?: Record<string, string>;
   readonly timeout?: Duration;
+  /** The topic that is told when the function fails. */
+  readonly alerts: ITopic;
+  /**
+   * Failed runs in one alarm period that set the alarm off, for a function
+   * that fails on purpose. Left out, the stage's own number is used.
+   */
+  readonly errorsToAlarm?: number;
 }
 
 /**
  * One Lambda function with the defaults every function here shares. Its
  * code and its SDK are bundled together, so what runs is what was tested.
+ * Every function gets an alarm on its failed runs, so one added later is
+ * watched with nothing more to write.
  */
 export function backendFunction(scope: Construct, id: string, props: BackendFunctionProps): NodejsFunction {
   const logGroup = new LogGroup(scope, `${id}Logs`, {
     retention: props.stage.logRetentionDays as RetentionDays,
     removalPolicy: RemovalPolicy.DESTROY,
   });
-  return new NodejsFunction(scope, id, {
+  const fn = new NodejsFunction(scope, id, {
     entry: fileURLToPath(new URL(`../src/${props.source}`, import.meta.url)),
     handler: 'handler',
     runtime: Runtime.NODEJS_22_X,
@@ -35,6 +46,15 @@ export function backendFunction(scope: Construct, id: string, props: BackendFunc
     ...(props.environment ? { environment: props.environment } : {}),
     bundling: { externalModules: [], minify: true, sourceMap: false },
   });
+  countAlarm(scope, `${id}Errors`, {
+    stage: props.stage,
+    alerts: props.alerts,
+    watches: `${id}-errors`,
+    metric: fn.metricErrors({ period: alarmPeriod(props.stage), statistic: 'Sum' }),
+    threshold: props.errorsToAlarm ?? props.stage.functionErrorsToAlarm,
+    description: `The ${id} function of the ${props.stage.name} backend failed. Its log group says why.`,
+  });
+  return fn;
 }
 
 /** Every image key the backend writes, as a pattern for a policy. */
