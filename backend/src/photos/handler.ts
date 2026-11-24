@@ -6,6 +6,7 @@ import {
   noContent,
   notFound,
   notSignedIn,
+  photoGone,
   problem,
   type ApiEvent,
   type ApiResult,
@@ -40,7 +41,7 @@ export function makePhotosHandler(settings: PhotoHandlerSettings) {
       updatedAt,
     });
     if (outcome === 'accountDeleted') return accountGone();
-    if (outcome === 'photoDeleted') return problem(410, 'This photo was deleted.');
+    if (outcome === 'photoDeleted') return photoGone();
 
     const { imageBytes } = upload.value;
     if (imageBytes === undefined) return json(200, { photoID, updatedAt });

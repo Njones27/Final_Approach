@@ -46,11 +46,23 @@ export function noContent(): ApiResult {
   return { statusCode: 204 };
 }
 
-/** An error the app can show or act on. The message never echoes stored data. */
-export function problem(statusCode: number, message: string): ApiResult {
-  return json(statusCode, { message });
+/**
+ * A reason the app acts on. Two refusals can share a status, such as a
+ * deleted photo and a deleted account, so the app reads this and not the
+ * message, which is free to change.
+ */
+export type ProblemCode = 'notSignedIn' | 'photoDeleted' | 'accountDeleted';
+
+/**
+ * An error the app can show or act on. The message never echoes stored
+ * data. The code is there only when the app does something about it.
+ */
+export function problem(statusCode: number, message: string, code?: ProblemCode): ApiResult {
+  return json(statusCode, code === undefined ? { message } : { message, code });
 }
 
-export const notSignedIn = (): ApiResult => problem(401, 'Sign in to continue.');
-export const accountGone = (): ApiResult => problem(410, 'This account was deleted.');
+export const notSignedIn = (): ApiResult => problem(401, 'Sign in to continue.', 'notSignedIn');
+export const accountGone = (): ApiResult =>
+  problem(410, 'This account was deleted.', 'accountDeleted');
+export const photoGone = (): ApiResult => problem(410, 'This photo was deleted.', 'photoDeleted');
 export const notFound = (): ApiResult => problem(404, 'There is nothing at this address.');

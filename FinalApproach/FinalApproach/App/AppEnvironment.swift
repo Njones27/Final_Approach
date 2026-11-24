@@ -22,6 +22,24 @@ enum AppEnvironment: String {
         return raw
     }()
 
+    /// The address of the backend's API for this build, or nil while the
+    /// build has no backend.
+    static let apiBaseURL: URL? = apiHost.flatMap { baseURL(forHost: $0) }
+
+    /// The HTTPS address for a bare host name. A value that is not a plain
+    /// host name gives nil, so a mistyped setting cannot point the app at an
+    /// address with a path or a sign in inside it.
+    static func baseURL(forHost host: String) -> URL? {
+        let isPlainHost = host.allSatisfy { character in
+            character.isASCII && (character.isLetter || character.isNumber || character == "." || character == "-")
+        }
+        guard !host.isEmpty, isPlainHost else { return nil }
+        var parts = URLComponents()
+        parts.scheme = "https"
+        parts.host = host
+        return parts.url
+    }
+
     var displayName: String {
         switch self {
         case .dev: "Development"

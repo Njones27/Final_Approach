@@ -108,6 +108,7 @@ describe('saving a photo', () => {
     await handler(apiEvent({ routeKey: 'DELETE /photos/{photoID}', photoID: 'p1' }));
     const result = await handler(savePhoto('p1', { imageBytes: 10 }));
     assert.equal(result.statusCode, 410);
+    assert.equal(parse(result).code, 'photoDeleted');
     assert.equal(parse(result).upload, undefined);
     assert.equal(photos.size, 0);
   });
@@ -117,6 +118,7 @@ describe('saving a photo', () => {
     deleteAccount();
     const result = await handler(savePhoto('p1', { imageBytes: 10 }));
     assert.equal(result.statusCode, 410);
+    assert.equal(parse(result).code, 'accountDeleted');
     assert.equal(parse(result).upload, undefined);
     assert.equal(photos.size, 0);
   });
@@ -196,6 +198,7 @@ describe('who may call', () => {
     for (const claims of unverified) {
       const result = await handler(apiEvent({ routeKey: 'GET /photos', claims }));
       assert.equal(result.statusCode, 401);
+      assert.equal(parse(result).code, 'notSignedIn');
     }
   });
 

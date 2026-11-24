@@ -1,3 +1,4 @@
+import FinalApproachCore
 import Foundation
 
 /// Everything about the user's collection that is saved on the device,
@@ -7,6 +8,9 @@ struct StoredLibrary: Equatable, Codable {
     var photos: [SpottedPhoto] = []
     /// The sample photos the user deleted, so they stay deleted.
     var removedSampleIDs: [String] = []
+    /// What the device remembers between syncs with the backend. It is
+    /// optional so a library saved before sync existed still opens.
+    var syncLedger: SyncLedger?
 }
 
 /// Keeps the user's logged photos and their images on the device.

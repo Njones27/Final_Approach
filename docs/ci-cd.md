@@ -11,7 +11,7 @@ check that works on Linux. This is the same split the WalkWorthy repo uses.
 | Archive and internal TestFlight | Xcode Cloud, Beta workflow | Merge to `main` |
 | Archive, external TestFlight, App Store | Xcode Cloud, Release workflow | Version tag such as `v1.0.0` |
 | Backend type check, tests, and template build (`backend/`) | GitHub Actions, Linux | Every pull request and push to `main` |
-| Backend deploys | GitHub Actions | Added after the first deploy by hand. See `docs/backend.md` |
+| Backend deploys | By hand from the owner's Mac for now | See `docs/backend.md`. A GitHub Actions workflow comes later |
 
 ## Environments
 
@@ -120,12 +120,12 @@ Conventions, carried over from WalkWorthy:
 
 ## AWS accounts
 
-There is one AWS account for each stage. On the owner's Mac they are the AWS
-CLI profiles `fa-beta` and `fa-prod`. Every workload goes to `fa-beta` first,
-and `fa-prod` stays empty until shortly before public launch.
+There is one AWS account for each stage. On the owner's Mac the beta account
+is the AWS CLI profile `fa_beta`. Every workload goes to beta first, and the
+prod account stays empty until shortly before public launch.
 
-The backend is written and has not been deployed. The CDK app takes the stage
-from `-c stage=<name>` and the account from the profile in use. The first
-deploy is by hand from the owner's Mac. After that, GitHub Actions will deploy
-by assuming an IAM role through OIDC, so no AWS keys are stored in GitHub. The
-steps are in `docs/backend.md`.
+The `beta` stage of the backend is deployed in `us-east-1`. The CDK app takes
+the stage from `-c stage=<name>` and the account from the profile in use.
+Deploys are by hand from the owner's Mac for now. Later, GitHub Actions will
+deploy by assuming an IAM role through OIDC, so no AWS keys are stored in
+GitHub. The steps are in `docs/backend.md`.

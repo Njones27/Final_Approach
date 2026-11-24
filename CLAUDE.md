@@ -20,7 +20,8 @@ for decisions and milestones before starting a feature.
   point, environment, and settings. `Design/` holds the theme and shared
   views. `Models/` holds app state and sample data. `Services/` holds code
   that reads from the system or an external service, such as the photo
-  metadata reader, the text reader, and the on-device photo store.
+  metadata reader, the text reader, the on-device photo store, and the
+  backend client in `Services/Backend/`.
   `Features/` holds one folder per screen.
 - `FinalApproach/FinalApproachTests/` holds app unit tests (Swift Testing).
 - `FinalApproach/Config/App.xcconfig` holds environment build settings.
