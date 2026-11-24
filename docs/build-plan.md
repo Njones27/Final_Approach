@@ -12,6 +12,7 @@ order of work. The design context stays the source for product requirements.
 | CI/CD | Xcode Cloud for the app, GitHub Actions for the core package and the backend. See `docs/ci-cd.md` |
 | Identity | Final Approach, bundle ID `com.finalapproach.app` |
 | Voting | 1 to 5 scale, 72 hour window, 5 vote minimum |
+| Grading | The technical check coaches before posting and never gates or lowers a grade. Votes alone set the public grade. See Grading below |
 | Spots | Curated at launch |
 | Reuse | Grading logic lives in `Packages/FinalApproachCore` so a car photography version could share it |
 | Order of work | UI design first, then one small milestone at a time |
@@ -134,11 +135,12 @@ their features.
     rest of a formation.
   - An aircraft that fills most of the photo is treated as a deliberate
     close-up, so reaching a side is not held against it.
-- A photo passes when no check that ran needs work. Passing is the gate
-  before voting.
+- A photo passes when no check that ran needs work. The app still calls
+  passing the gate before voting, which the Grading section below replaces.
 - A fix is worth the points the grade would gain if that check reached the
   fix target score. That is the gain in the technical score times the
-  technical check's share of the grade.
+  technical check's share of the grade. This also changes with Grading
+  below, where a fix is worth points of the technical reading only.
 - The rules in `SampleData` are provisional. They come from 40 finished
   photos measured on a Mac on 2026-11-23. That set holds no rejects, so the
   low end of each curve is a guess, and the photos were edited web exports
@@ -148,6 +150,38 @@ their features.
   and asking for the processor does not help. A photo imported there is not
   scored. The requests run on a Mac. Results on a real iPhone have not been
   checked yet.
+
+## Grading
+
+The owner decided on 2026-11-24 that the technical check coaches and the
+votes decide. A photo that breaks the rules on purpose, such as a slow
+shutter pan or a silhouette, must never be scored lower for it.
+
+- The check runs before a photo is posted and lists what could be better.
+  The photo can always be posted anyway.
+- The result of the check is private to the photographer. No other user
+  sees it.
+- Every posted photo enters voting. Nothing about the check keeps one out.
+- The public grade and the tier come from the votes alone. The 30 percent
+  share that the design first gave to an AI score is dropped.
+- Until a photo has enough votes, the photographer's own collection shows
+  the technical reading as a private, provisional number, so the collection
+  and its slots work for a photo nobody has voted on yet. Once the votes are
+  in, they replace it.
+- With no gate, a photo of nothing can reach the voting queue. A narrow
+  filter for a photo with no aircraft found is the planned answer, and it
+  is not decided yet.
+
+What the app still does the old way, and what changes with milestone 8.
+
+- The photo screen and the technical check screen word the check as a gate
+  and as a share of the grade. They become advice, and the number is named
+  as a technical reading.
+- `GradeWeights` and `FinalGrade` in the core package blend an AI score
+  with the votes. The final grade becomes the vote score alone.
+- A fix is worth points of the technical reading, and not of the grade.
+- Posting, and the choice to post anyway, arrive with voting, since a photo
+  is not shared with anyone before then.
 
 ## Identification
 
@@ -240,7 +274,8 @@ for deleting and for syncing, and how to deploy are in `docs/backend.md`.
    automatic description. The flight data lookup is milestone 10.
 7. **Backend foundation.** Sign in with Apple, photo upload, and sync in the
    beta account.
-8. **Voting and final grades.**
+8. **Voting and final grades.** The technical check becomes advice before
+   posting, and the votes alone set the grade. See Grading above.
 9. **Spot map and spot pages.** Real spots from the backend, with the
    disclosed photos other people took there. An undisclosed photo never
    appears.

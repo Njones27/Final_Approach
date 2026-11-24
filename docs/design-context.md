@@ -8,7 +8,7 @@ Sections marked **Decided** are settled. Sections marked **Proposed** are reason
 
 ## 1. Product Summary
 
-A mobile app where plane spotters photograph real aircraft to build a collection of types, airlines, liveries, and individual airframes, and where better photos are worth more. Every shot can be graded by a mix of AI scoring and community votes, with specific feedback on what to fix. Higher grades earn higher tiers in the collection, XP, and a chance to be featured on a map of spotting locations.
+A mobile app where plane spotters photograph real aircraft to build a collection of types, airlines, liveries, and individual airframes, and where better photos are worth more. Every shot gets specific feedback on what to fix before it is posted, and its grade comes from community votes. Higher grades earn higher tiers in the collection, XP, and a chance to be featured on a map of spotting locations.
 
 Identification is handled largely by matching the photo's time and location against ADS-B flight data, so logging is fast and accurate. Rare arrival alerts give users a reason to go out and shoot.
 
@@ -25,7 +25,7 @@ None of these grade the photo itself. A blurry phone shot of a 737 counts the sa
 
 ## 3. Main Differentiator (Decided)
 
-**The app rewards taking better pictures.** Every graded shot gets a score from an AI technical check plus community votes, with specific, fixable feedback. Better shots unlock higher collection tiers. The collection mechanic alone is not novel for planes, so grading and feedback must drive design priorities.
+**The app rewards taking better pictures.** Every shot gets specific, fixable feedback from an AI technical check before it is posted, and a grade from community votes. The check coaches and never marks a photo down, so a shot that breaks the rules on purpose is not penalized for it. Better shots unlock higher collection tiers. The collection mechanic alone is not novel for planes, so grading and feedback must drive design priorities.
 
 ## 4. Target Users
 
@@ -42,9 +42,9 @@ None of these grade the photo itself. A blurry phone shot of a 737 counts the sa
 3. User confirms the registration, type, and airline
 4. The photo is logged as a Quickshot, filling any new collection slots
 5. User can submit the shot for grading
-6. AI technical check runs instantly and returns feedback
-7. If it passes, the shot enters community voting
-8. Final grade sets the tier for that collection slot
+6. AI technical check runs instantly and returns feedback, before the shot is posted
+7. The user can fix the shot or post it anyway, and a posted shot enters community voting
+8. The votes set the final grade, which sets the tier for that collection slot
 9. A later, better shot of the same aircraft can upgrade the slot
 
 ## 6. Scope
@@ -113,11 +113,12 @@ None of these grade the photo itself. A blurry phone shot of a 737 counts the sa
 See Section 8 for the full design.
 
 - Grading is opt-in per photo
-- AI technical check returns a pass or fail with specific feedback within a few seconds
-- Passing shots enter community voting
+- AI technical check returns specific feedback within a few seconds, before the photo is posted
+- The feedback is advice, shown only to the photographer, and the photo can be posted anyway
+- Every posted shot enters community voting
 - Grade finalizes after the voting window closes and minimum votes are met
 
-**Acceptance** A tilted shot with heat haze fails the technical check with feedback naming both problems.
+**Acceptance** A tilted shot with heat haze gets feedback naming both problems, and can still be posted and voted on.
 
 ### FR-5 Community Voting
 
@@ -163,7 +164,9 @@ Runs on-device where possible so feedback is instant. Uses standard computer vis
 | Heat haze | Local distortion detection around the aircraft edges | "Heat haze is softening the image, shoot earlier in the day or closer" |
 | Framing | Object detection for aircraft size, position, and cutoff | "Tail is clipped, zoom out slightly" |
 
-All thresholds should live in config so they can be tuned without a release. The technical check acts as a gate. A shot has to pass to enter voting.
+All thresholds should live in config so they can be tuned without a release.
+
+The technical check is a coach and not a gate. The owner decided this on 2026-11-24, so that a photo is never scored lower for creativity. The check runs before a photo is posted and says what could be better. Only the photographer sees its result, and the photo can be posted anyway. It takes no part in the public grade. Until a photo has enough votes, the photographer's own collection shows the technical reading as a private, provisional number.
 
 ### Layer 2, Aesthetic Score (Proposed)
 
@@ -179,11 +182,11 @@ All thresholds should live in config so they can be tuned without a release. The
 - Blind voting with scores hidden until close
 - Votes weighted by voter reputation, which grows when a voter's ratings align with final grades
 
-### Final Grade (Proposed)
+### Final Grade (Decided on 2026-11-24)
 
-- Final score is a weighted blend of the AI aesthetic score and weighted vote average, on a 0 to 100 scale
-- Starting weights of 30 percent AI and 70 percent votes
-- AI weight increases as a custom model trained on vote data improves
+- Final score is the weighted vote average, on a 0 to 100 scale
+- The technical check and any AI score take no part in it, so no photo is marked down for style
+- The earlier proposal blended 30 percent AI with 70 percent votes, and it was dropped
 - Every grade shows the reasons behind it so it never feels arbitrary
 
 ## 9. Identification Design (Proposed)
