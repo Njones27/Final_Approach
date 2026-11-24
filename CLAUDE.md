@@ -118,6 +118,10 @@ GitHub Actions runs the core package tests, the `ci_scripts` checks, and the
 backend checks on every pull request. It deploys the backend to beta when a
 change to `backend/` reaches `main`, and then to prod once the owner
 approves the run. Nothing reaches prod without that approval.
+An app change reaches TestFlight, which talks to prod, as soon as it merges.
+So a backend change goes in its own pull request, and is approved to prod,
+before the app change that needs it. The check named Prod holds this backend
+stops a pull request that breaks this order.
 Xcode Cloud builds the app on merges to `main`. Details and the environment
 mechanism are in `docs/ci-cd.md`. Pin every GitHub Action by full commit SHA
 with the release in a trailing comment.
