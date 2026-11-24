@@ -1,7 +1,18 @@
 # Backend
 
-The backend is defined with the AWS CDK in TypeScript, in `backend/`. It has
-not been deployed. Everything here builds and is tested with no AWS account.
+The backend is defined with the AWS CDK in TypeScript, in `backend/`. The
+`beta` stage is deployed and `prod` is not. Everything here builds and is
+tested with no AWS account.
+
+## Deployed stages
+
+| Stage | Region | API host | User pool id | App client id |
+| --- | --- | --- | --- | --- |
+| `beta` | `us-east-1` | `jcpx0b9hg8.execute-api.us-east-1.amazonaws.com` | `us-east-1_IhyFdSJ3t` | `1gcjpq4tk9nbt575ki8bqkn8d6` |
+
+These values ship inside the app, so they are not secrets. The beta stage
+was first deployed on 2026-11-24 from the commit that added the backend. A
+change to `backend/` reaches beta only when it is deployed again.
 
 ## What it holds
 
@@ -122,36 +133,46 @@ The tests use Node's own test runner and run the TypeScript files directly,
 so there is no build step. Node 22 is needed. GitHub Actions runs the same
 four commands on every pull request.
 
-## Before the first deploy
+## Deploying by hand
 
-These need the person who owns the AWS and Apple accounts. There is one AWS
-account for each stage. On the owner's Mac they are the AWS CLI profiles
-`fa-beta` and `fa-prod`.
+A deploy needs the person who owns the AWS account. There is one AWS account
+for each stage. On the owner's Mac the beta account is the AWS CLI profile
+`fa_beta`.
 
-1. Sign in with `aws login --profile fa-beta`.
-2. Pick a region. Nothing in the code names one. The plan is `us-east-1`
-   unless the owner chooses another.
-3. Run `npx cdk bootstrap --profile fa-beta` once in that account and region.
-4. Look at what will be created with
-   `npx cdk diff --profile fa-beta -c stage=beta`, then deploy with
-   `npx cdk deploy --all --profile fa-beta -c stage=beta`.
-5. Turn on the Sign in with Apple capability for `com.finalapproach.app` in
+1. Sign in with `aws login --profile fa_beta`.
+2. Use `us-east-1`. Nothing in the code names a region, so set
+   `AWS_REGION=us-east-1` in the shell.
+3. Look at what will change with
+   `npx cdk diff --profile fa_beta -c stage=beta`.
+4. Deploy with `npx cdk deploy --all --profile fa_beta -c stage=beta`.
+5. Check it. `GET /photos` with no sign in answers 401, and a second
+   `cdk diff` shows no differences.
+
+A new account is bootstrapped once before its first deploy, with
+`npx cdk bootstrap aws://<account id>/us-east-1 --profile <profile> -c stage=<stage>`.
+The stage is needed because the CDK runs the app even for a bootstrap. The
+beta account is already bootstrapped.
+
+The `prod` stage follows the same steps with its own profile and
+`-c stage=prod`, before launch and not sooner.
+
+## Before the app can sign in
+
+These need the person who owns the Apple and App Store Connect accounts.
+
+1. Turn on the Sign in with Apple capability for `com.finalapproach.app` in
    the Apple developer account.
-6. After the first deploy, set `API_HOST` in the Xcode Cloud Beta workflow to
-   the API's host name, and give the app the user pool id and client id.
-7. Add an IAM role that GitHub Actions can assume through OIDC, limited to
-   this repository, and then add the deploy workflow. No AWS keys are stored
-   in GitHub.
-
-The `prod` stage follows the same steps with `fa-prod` and `-c stage=prod`,
-before launch and not sooner.
+2. Set `API_HOST` in the Xcode Cloud Beta workflow to the beta API host in
+   the table above.
 
 ## Still to come
 
 - The rest of the app side. That is Sign in with Apple, the engine that runs
   the sync steps, telling the backend when a photo or the account is deleted,
   and the screens for signing in.
-- A deploy workflow, once the first deploy by hand has worked.
+- A deploy workflow. It needs an IAM role that GitHub Actions can assume
+  through OIDC, limited to this repository, so no AWS keys are stored in
+  GitHub.
 - CloudFront in front of the images, when other users can see photos.
 - Telling Apple to revoke the user's tokens when an account is deleted, which
   App Store review asks for. It needs a key from the Apple developer account.
