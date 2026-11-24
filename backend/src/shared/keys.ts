@@ -56,6 +56,25 @@ export const votingIndex = {
   open: 'OPEN',
 } as const;
 
+/**
+ * The index that finds the graded photos shown at one spot, best first.
+ *
+ * A post carries `spotKey` only while its owner shows it at a spot, and
+ * `finalScore` only once its grade is final. An index holds a record only
+ * when the record has both of the index's keys. So a photo still being
+ * voted on is never listed, and a photo taken off its spot drops out by
+ * itself. Deleting the post or the account removes it like any record.
+ */
+export const spotIndex = {
+  name: 'Spot',
+  partitionKey: 'spotKey',
+  sortKey: 'finalScore',
+} as const;
+
+export function spotKey(spotID: string): string {
+  return `SPOT#${spotID}`;
+}
+
 /** The folder that holds every image a user uploaded. */
 export function userFolder(userID: string): string {
   return `users/${userID}/`;

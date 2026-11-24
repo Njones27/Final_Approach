@@ -22,7 +22,7 @@ approved the run. A change to `backend/` reaches beta when it reaches
 | Stack | Holds |
 | --- | --- |
 | `FinalApproach-<stage>-Alerts` | The topic that alarms and the budget tell, and the month's budget |
-| `FinalApproach-<stage>-Storage` | The DynamoDB table of records with its index of posts open for votes, the S3 bucket of images, and the sweeper function |
+| `FinalApproach-<stage>-Storage` | The DynamoDB table of records with its index of posts open for votes and its index of photos shown at spots, the S3 bucket of images, and the sweeper function |
 | `FinalApproach-<stage>-Identity` | The Cognito user pool and the four functions that check Sign in with Apple |
 | `FinalApproach-<stage>-Api` | The HTTP API, the functions behind its routes, and the closer that runs on a schedule |
 | `FinalApproach-<stage>-Deploy` | The role that lets GitHub Actions deploy the stage. The owner deploys it by hand |
@@ -34,8 +34,9 @@ between stages, and every limit that may need tuning, is data in
 ## Routes
 
 Every route needs a signed in user. A user reaches only their own data. The
-voting routes are the one exception, and they show another user's photo with
-nothing else about it.
+voting routes and a spot's page are the exceptions. The voting routes show
+another user's photo with nothing else about it. A spot's page shows a graded
+photo with what its owner chose to show there.
 
 | Route | What it does |
 | --- | --- |
@@ -46,20 +47,24 @@ nothing else about it.
 | `GET /posts` | Lists the user's own posts, each with its voting window, how many votes are in, and its score once the grade is final |
 | `GET /votes/queue` | Hands the user some photos to vote on, each as a random id and a link to the image |
 | `PUT /votes/{postID}` | Counts the user's vote on one post, a whole number of stars from 1 to 5 |
+| `PUT /posts/{photoID}/spot` | Shows one of the user's posted photos at a listed spot, with its aircraft type and airline |
+| `DELETE /posts/{photoID}/spot` | Takes the photo off its spot |
 | `GET /spots` | Lists the spots the app shows, grouped by airport. The list is the same for every user |
+| `GET /spots/{spotID}/photos` | Lists the graded photos shown at one spot, best first |
 | `DELETE /account` | Deletes every image and record the user has, and their sign in |
 
 A refusal carries a `message`. It also carries a `code` when the app acts on
 it, because two refusals can share a status. The codes are `notSignedIn`,
 `photoDeleted`, `accountDeleted`, `photoNotSaved`, `imageHasLocation`,
-`alreadyVoted`, `votingClosed`, and `ownPost`. The app reads the code and
-never the message.
+`alreadyVoted`, `votingClosed`, `ownPost`, `notPosted`, and `unknownSpot`.
+The app reads the code and never the message.
 
 A photo record is the app's own saved photo, kept as it is and returned only
 to its owner. The backend does not read inside it yet. It can hold where the
-photo was taken. A later route that shows a photo to another user must build
-its answer from named fields and leave the location out of an undisclosed
-photo. It must never send this record as it is.
+photo was taken. A route that shows a photo to another user builds its
+answer from named fields and never sends this record. A spot's page, under
+Spots below, is the one route that says where a photo was taken, and only
+for a photo whose owner put it there.
 
 ## Posting
 
@@ -73,7 +78,8 @@ first record another user can reach, so it is built to give nothing away.
 - A post holds the photo's id, a random id of its own, when it was posted,
   and when its voting window ends. It holds no location, no name, and
   nothing from the photo record. A voter will know a post only by its
-  random id, which does not name the owner.
+  random id, which does not name the owner. The owner can later show the
+  post at a spot, which is a separate step described under Spots.
 - A post is made only for a photo whose record and image have both arrived.
   The app syncs first and posts second. `photoNotSaved` says to do that.
 - The image is checked before every post, in
@@ -188,6 +194,47 @@ are chosen by hand at launch, so there is no route that adds one.
   spot by it.
 - `GET /spots` answers with `airports`, each with its `spots`. The answer
   is built from named fields and says nothing about any user or photo.
+
+A spot's page shows graded photos taken there. The owner decided on
+2026-11-24 that a photo shows with its grade, its aircraft type, and its
+airline, and with no photographer and no registration.
+
+- A photo is on a spot's page only because its owner put it there. Posting
+  alone never does it. `PUT /posts/{photoID}/spot` takes a `spotID`, an
+  `aircraftType`, and an `airline`, and keeps those three things and nothing
+  else that is sent. The app sends it only for a photo whose owner disclosed
+  its place. An undisclosed photo is never sent, so it is on no page.
+- The spot must be listed, or the answer is `unknownSpot`. The photo must be
+  posted, or the answer is `notPosted`. The two lines of text are trimmed,
+  and each is plain text of up to 80 characters (`shownTextMaxLength`).
+- `DELETE /posts/{photoID}/spot` takes the photo off its spot and removes
+  everything that was shown. The app sends it when the owner marks the
+  photo undisclosed. Sending the first route again replaces what was shown.
+- The owner's `GET /posts` says where each photo is shown, under `shownAt`,
+  so the app can keep the backend in line with the owner's choice.
+- A photo appears only once its grade is final. The post carries `spotKey`
+  while it is shown and `finalScore` once it is graded, and the `Spot` index
+  holds a record only when it has both. So nothing has to move a photo onto
+  the page or off it. Deleting the photo or the account removes it like any
+  record.
+- `GET /spots/{spotID}/photos` reads that index backwards, so the best
+  photo is first, and hands out up to 30 (`photosPerSpot`). Each photo is
+  the post's random id, a link to the image, the score, and the type and
+  airline when the owner gave them. The owner's id and the photo's id are
+  used to sign the link and are not sent as fields.
+- The Spots function may read that one index and sign links to images. It
+  cannot read the table of every user's records, and it writes nothing.
+
+Known limits.
+
+- The link to an image has the owner's id and the photo's id in its path,
+  as it does for voting. Both are random ids. On spot pages they can show
+  that two photos have the same owner, and nothing about who that is.
+  CloudFront in front of the images removes this.
+- A registration is never shown, because the backend does not hold the
+  list of blocked registrations yet. The type and airline are the owner's
+  own text, and the app must leave them out for a blocked aircraft.
+- A spot's page holds its 30 best photos and has no second page.
 
 ## Sign in
 
@@ -571,12 +618,11 @@ change to those values in a deploy must be copied into the stage's file.
 ## Still to come
 
 - The first real spots in the list, which the owner supplies.
-- Photos on a spot's page. A graded photo will show there with its grade,
-  tier, aircraft type, and airline, as the owner decided on 2026-11-24. It
-  shows no photographer and no registration. Only a photo whose owner
-  disclosed its place and posted it knowing it would be shown there
-  appears.
-- The Spots screen in the app reading this list.
+- The app's side of spots. The Spots screen reads the list and each spot's
+  photos, and the app shows a disclosed photo at its spot and takes it off
+  when the owner marks it undisclosed. A photo posted before this existed
+  was posted with the promise that nobody sees where it was taken, so the
+  app must ask before it shows one of those.
 - Reputation, which gives a voter whose votes land near the final grades
   more weight. It needs a way to find a post's votes when the post closes.
 - A filter that keeps a photo with no aircraft out of the voting queue. It

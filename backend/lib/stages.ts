@@ -92,6 +92,10 @@ export interface StageSettings {
    * the end of its window with fewer stays open until it has them.
    */
   readonly minVotesToFinalize: number;
+  /** How many graded photos one spot's page holds, best first. */
+  readonly photosPerSpot: number;
+  /** The longest an aircraft type or an airline shown at a spot may be. */
+  readonly shownTextMaxLength: number;
   /** How many photos one answer of the voting queue holds. */
   readonly votingQueueSize: number;
   /** How many open posts one request reads to fill the queue. */
@@ -141,6 +145,8 @@ const shared = {
   votingWindowHours: 72,
   voteScaleMax: 5,
   minVotesToFinalize: 5,
+  photosPerSpot: 30,
+  shownTextMaxLength: 80,
   votingQueueSize: 10,
   votingQueueReadLimit: 50,
   closerMinutes: 15,

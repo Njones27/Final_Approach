@@ -5,6 +5,7 @@ export interface EventParts {
   readonly claims?: Record<string, string> | null;
   readonly body?: string;
   readonly photoID?: string;
+  readonly spotID?: string;
   readonly query?: Record<string, string>;
   readonly isBase64Encoded?: boolean;
 }
@@ -18,7 +19,12 @@ export function apiEvent(parts: EventParts): ApiEvent {
     routeKey: parts.routeKey,
     body: parts.body,
     isBase64Encoded: parts.isBase64Encoded ?? false,
-    pathParameters: parts.photoID === undefined ? undefined : { photoID: parts.photoID },
+    pathParameters:
+      parts.photoID !== undefined
+        ? { photoID: parts.photoID }
+        : parts.spotID !== undefined
+          ? { spotID: parts.spotID }
+          : undefined,
     queryStringParameters: parts.query,
     requestContext: { authorizer: claims ? { jwt: { claims, scopes: [] } } : undefined },
   } as unknown as ApiEvent;

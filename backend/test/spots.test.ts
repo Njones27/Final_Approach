@@ -9,8 +9,10 @@ import {
   type Airport,
   type Spot,
 } from '../src/spots/catalog.ts';
+import { makeAwsSpotPhotoStore, spotPhotoOf } from '../src/spots/awsStore.ts';
 import { makeSpotsHandler } from '../src/spots/handler.ts';
-import { apiEvent } from './support.ts';
+import type { SpotPhoto, SpotPhotoStore } from '../src/spots/store.ts';
+import { apiEvent, fakeClient } from './support.ts';
 
 const spot = (changes: Partial<Spot> = {}): Spot => ({
   id: 'xyz-east-fence',
@@ -114,8 +116,29 @@ describe('the list of spots', () => {
   });
 });
 
+/** A store of spot photos kept in memory, which remembers what was asked. */
+function memoryPhotos(photos: Record<string, SpotPhoto[]> = {}) {
+  const asked: { spotID: string; limit: number }[] = [];
+  const store: SpotPhotoStore = {
+    async photosAt(spotID, limit) {
+      asked.push({ spotID, limit });
+      return (photos[spotID] ?? []).slice(0, limit);
+    },
+    async imageLink(photo) {
+      return `https://images.example.test/${photo.postID}?signed`;
+    },
+  };
+  return { store, asked };
+}
+
+const handlerFor = (airports: Airport[], photos: Record<string, SpotPhoto[]> = {}) => {
+  const memory = memoryPhotos(photos);
+  const handler = makeSpotsHandler({ airports, store: memory.store, photosPerSpot: 2, imageLinkSeconds: 900 });
+  return { handler, asked: memory.asked };
+};
+
 describe('the spots route', () => {
-  const handler = makeSpotsHandler({ airports: [airport()] });
+  const { handler } = handlerFor([airport()]);
 
   test('a signed in user gets every airport with its spots', async () => {
     const result = await handler(apiEvent({ routeKey: 'GET /spots' }));
@@ -146,14 +169,12 @@ describe('the spots route', () => {
 
   test('only the named fields of a listing are sent', async () => {
     const extra = { ...spot(), curatorNote: 'Checked by phone.' } as Spot;
-    const result = await makeSpotsHandler({ airports: [airport({ spots: [extra] })] })(
-      apiEvent({ routeKey: 'GET /spots' }),
-    );
+    const result = await handlerFor([airport({ spots: [extra] })]).handler(apiEvent({ routeKey: 'GET /spots' }));
     assert.ok(!(result.body ?? '').includes('curatorNote'));
   });
 
   test('an empty list is an answer and not a fault', async () => {
-    const result = await makeSpotsHandler({ airports: [] })(apiEvent({ routeKey: 'GET /spots' }));
+    const result = await handlerFor([]).handler(apiEvent({ routeKey: 'GET /spots' }));
     assert.equal(result.statusCode, 200);
     assert.deepEqual(JSON.parse(result.body ?? ''), { airports: [] });
   });
@@ -167,5 +188,135 @@ describe('the spots route', () => {
   test('any other route is not found', async () => {
     const result = await handler(apiEvent({ routeKey: 'PUT /spots' }));
     assert.equal(result.statusCode, 404);
+  });
+});
+
+describe('the photos on a spot’s page', () => {
+  const best: SpotPhoto = {
+    postID: 'post-best',
+    ownerID: 'owner-1',
+    photoID: 'photo-1',
+    score: 91,
+    aircraftType: 'Boeing 737-800',
+    airline: 'Southwest',
+  };
+  const plain: SpotPhoto = { postID: 'post-plain', ownerID: 'owner-2', photoID: 'photo-2', score: 64 };
+  const third: SpotPhoto = { postID: 'post-third', ownerID: 'owner-3', photoID: 'photo-3', score: 40 };
+  const page = (spotID: string) => apiEvent({ routeKey: 'GET /spots/{spotID}/photos', spotID });
+  const bodyOf = (result: { body?: string | undefined }) => JSON.parse(result.body ?? '{}');
+
+  test('each photo is its image, its grade, and what its owner chose to show', async () => {
+    const { handler } = handlerFor([airport()], { 'xyz-east-fence': [best, plain] });
+    const result = await handler(page('xyz-east-fence'));
+    assert.equal(result.statusCode, 200);
+    assert.deepEqual(bodyOf(result), {
+      photos: [
+        {
+          id: 'post-best',
+          imageURL: 'https://images.example.test/post-best?signed',
+          score: 91,
+          aircraftType: 'Boeing 737-800',
+          airline: 'Southwest',
+        },
+        { id: 'post-plain', imageURL: 'https://images.example.test/post-plain?signed', score: 64 },
+      ],
+      imageLinkExpiresInSeconds: 900,
+    });
+  });
+
+  test('the answer names no owner and no photo id', async () => {
+    const { handler } = handlerFor([airport()], { 'xyz-east-fence': [best, plain] });
+    const body = (await handler(page('xyz-east-fence'))).body ?? '';
+    for (const hidden of ['owner-1', 'owner-2', 'photo-1', 'photo-2', 'ownerID', 'photoID']) {
+      assert.ok(!body.includes(hidden), hidden);
+    }
+  });
+
+  test('a page holds no more photos than the stage allows', async () => {
+    const { handler, asked } = handlerFor([airport()], { 'xyz-east-fence': [best, plain, third] });
+    const photos = bodyOf(await handler(page('xyz-east-fence'))).photos;
+    assert.equal(photos.length, 2);
+    assert.deepEqual(asked, [{ spotID: 'xyz-east-fence', limit: 2 }]);
+  });
+
+  test('a spot with no graded photos has an empty page', async () => {
+    const { handler } = handlerFor([airport()]);
+    assert.deepEqual(bodyOf(await handler(page('xyz-east-fence'))).photos, []);
+  });
+
+  test('a spot that is not listed is not found, and nothing is read for it', async () => {
+    const { handler, asked } = handlerFor([airport()], { 'made-up': [best] });
+    const result = await handler(page('made-up'));
+    assert.equal(result.statusCode, 404);
+    assert.equal(bodyOf(result).code, 'unknownSpot');
+    assert.deepEqual(asked, []);
+  });
+
+  test('a caller who is not signed in is turned away', async () => {
+    const { handler } = handlerFor([airport()], { 'xyz-east-fence': [best] });
+    const result = await handler(apiEvent({ routeKey: 'GET /spots/{spotID}/photos', spotID: 'xyz-east-fence', claims: null }));
+    assert.equal(result.statusCode, 401);
+  });
+});
+
+describe('reading a spot’s photos from the table', () => {
+  const item = {
+    pk: 'USER#owner-1',
+    sk: 'POST#photo-1',
+    photoID: 'photo-1',
+    postID: 'post-best',
+    spotKey: 'SPOT#xyz-east-fence',
+    spotID: 'xyz-east-fence',
+    finalScore: 91,
+    aircraftType: 'Boeing 737-800',
+    airline: 'Southwest',
+  };
+
+  test('the index is read for one spot, best first, up to the limit', async () => {
+    const dynamo = fakeClient({ QueryCommand: [{ Items: [item] }] });
+    const store = makeAwsSpotPhotoStore({
+      dynamo,
+      s3: {} as never,
+      tableName: 'records',
+      bucketName: 'images',
+      imageLinkSeconds: 900,
+    });
+    const photos = await store.photosAt('xyz-east-fence', 30);
+    assert.deepEqual(dynamo.sent, [
+      {
+        name: 'QueryCommand',
+        input: {
+          TableName: 'records',
+          IndexName: 'Spot',
+          KeyConditionExpression: '#spot = :spot',
+          ExpressionAttributeNames: { '#spot': 'spotKey' },
+          ExpressionAttributeValues: { ':spot': 'SPOT#xyz-east-fence' },
+          ScanIndexForward: false,
+          Limit: 30,
+        },
+      },
+    ]);
+    assert.deepEqual(photos, [
+      {
+        postID: 'post-best',
+        ownerID: 'owner-1',
+        photoID: 'photo-1',
+        score: 91,
+        aircraftType: 'Boeing 737-800',
+        airline: 'Southwest',
+      },
+    ]);
+  });
+
+  test('a record that is not a graded post is left out', () => {
+    assert.equal(spotPhotoOf({ ...item, finalScore: undefined }), undefined);
+    assert.equal(spotPhotoOf({ ...item, pk: 'OTHER#1' }), undefined);
+    assert.equal(spotPhotoOf({ ...item, postID: 7 }), undefined);
+    assert.deepEqual(spotPhotoOf({ ...item, aircraftType: undefined, airline: 3 }), {
+      postID: 'post-best',
+      ownerID: 'owner-1',
+      photoID: 'photo-1',
+      score: 91,
+    });
   });
 });

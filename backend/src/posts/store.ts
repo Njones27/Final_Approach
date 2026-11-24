@@ -11,10 +11,24 @@ export interface Post {
   readonly closesAt: string;
 }
 
+/**
+ * What a post shows on a spot's page, by its owner's choice. These are the
+ * only things about a photo, beside its image and grade, that another user
+ * is ever sent. There is no name, no registration, and no position.
+ */
+export interface SpotShowing {
+  /** The listed spot the photo was taken at. */
+  readonly spotID: string;
+  readonly aircraftType?: string;
+  readonly airline?: string;
+}
+
 /** A post as it is kept, with the votes counted on it so far. */
 export interface StoredPost extends Post, Tally {
   /** The grade the votes gave, written down once voting has closed. */
   readonly finalScore?: number;
+  /** Where the owner shows the photo. It is absent for a photo shown nowhere. */
+  readonly shownAt?: SpotShowing;
 }
 
 export interface PostPage {
@@ -42,4 +56,11 @@ export interface PostStore {
   list(userID: string, after?: string): Promise<PostPage>;
   /** The photo's image as it is stored, or nothing when none has arrived. */
   imageBytes(userID: string, photoID: string): Promise<Uint8Array | undefined>;
+  /**
+   * Shows a posted photo at a spot, in place of anything it showed before.
+   * A photo that is not posted is turned away.
+   */
+  showAtSpot(userID: string, photoID: string, showing: SpotShowing): Promise<'shown' | 'notPosted'>;
+  /** Takes a photo off its spot. A photo shown nowhere is left as it is. */
+  hideFromSpots(userID: string, photoID: string): Promise<void>;
 }

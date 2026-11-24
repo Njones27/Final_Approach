@@ -12,7 +12,7 @@ import { LambdaDestination } from 'aws-cdk-lib/aws-s3-notifications';
 import type { ITopic } from 'aws-cdk-lib/aws-sns';
 import type { Construct } from 'constructs';
 import { expiryAttribute } from '../src/account/awsStore.ts';
-import { votingIndex } from '../src/shared/keys.ts';
+import { spotIndex, votingIndex } from '../src/shared/keys.ts';
 import { allow, backendFunction, userImages } from './functions.ts';
 import type { StageSettings } from './stages.ts';
 
@@ -51,6 +51,15 @@ export class StorageStack extends Stack {
       indexName: votingIndex.name,
       partitionKey: { name: votingIndex.partitionKey, type: AttributeType.STRING },
       sortKey: { name: votingIndex.sortKey, type: AttributeType.STRING },
+      projectionType: ProjectionType.ALL,
+    });
+
+    // The graded photos shown at each spot, best first. A post is in it
+    // only while its owner shows it at a spot and its grade is final.
+    this.table.addGlobalSecondaryIndex({
+      indexName: spotIndex.name,
+      partitionKey: { name: spotIndex.partitionKey, type: AttributeType.STRING },
+      sortKey: { name: spotIndex.sortKey, type: AttributeType.NUMBER },
       projectionType: ProjectionType.ALL,
     });
 

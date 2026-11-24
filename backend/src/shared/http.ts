@@ -59,7 +59,9 @@ export type ProblemCode =
   | 'imageHasLocation'
   | 'alreadyVoted'
   | 'votingClosed'
-  | 'ownPost';
+  | 'ownPost'
+  | 'notPosted'
+  | 'unknownSpot';
 
 /**
  * An error the app can show or act on. The message never echoes stored
