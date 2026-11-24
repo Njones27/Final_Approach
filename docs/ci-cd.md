@@ -133,7 +133,8 @@ No AWS keys are stored in GitHub. The job asks GitHub for a short lived token
 that names the repository and branch it runs for, and trades it for one hour
 of access to the beta account. The role it takes on is the
 `FinalApproach-beta-Deploy` stack. That role accepts a token only from the
-`main` branch of this repository, so a pull request or a fork cannot deploy.
+`main` branch of this repository, named by its name and its id, so a pull
+request or a fork cannot deploy.
 
 The workflow reads the role from the repository variable
 `BETA_DEPLOY_ROLE_ARN`, so the account's id is not written in the repo. The
