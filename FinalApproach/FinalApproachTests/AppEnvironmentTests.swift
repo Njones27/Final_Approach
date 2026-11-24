@@ -15,4 +15,12 @@ struct AppEnvironmentTests {
         #expect(AppEnvironment(rawValue: "prod") == .prod)
         #expect(AppEnvironment(rawValue: "staging") == nil)
     }
+
+    @Test func anAppClientIDIsLettersAndDigitsOnly() {
+        #expect(AppEnvironment.clientID(from: "1gcjpq4tk9nbt575ki8bqkn8d6") == "1gcjpq4tk9nbt575ki8bqkn8d6")
+        #expect(AppEnvironment.clientID(from: "") == nil)
+        #expect(AppEnvironment.clientID(from: "client id") == nil)
+        #expect(AppEnvironment.clientID(from: "client-id") == nil)
+        #expect(AppEnvironment.clientID(from: "$(AUTH_CLIENT_ID)") == nil)
+    }
 }

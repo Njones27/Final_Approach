@@ -16,15 +16,33 @@ enum AppEnvironment: String {
     }()
 
     /// The backend host for this build, or nil while no backend exists.
-    static let apiHost: String? = {
-        let raw = Bundle.main.object(forInfoDictionaryKey: "APIHost") as? String
-        guard let raw, !raw.isEmpty else { return nil }
-        return raw
-    }()
+    static let apiHost: String? = setting("APIHost")
 
     /// The address of the backend's API for this build, or nil while the
     /// build has no backend.
     static let apiBaseURL: URL? = apiHost.flatMap { baseURL(forHost: $0) }
+
+    /// The address the app signs in at, or nil while the build has no
+    /// backend.
+    static let authBaseURL: URL? = setting("AuthHost").flatMap { baseURL(forHost: $0) }
+
+    /// The id the user pool gave the app, or nil while the build has no
+    /// backend. It ships inside the app and is not a secret.
+    static let authClientID: String? = setting("AuthClientID").flatMap { clientID(from: $0) }
+
+    /// One value from the build settings, or nil when it is empty.
+    private nonisolated static func setting(_ key: String) -> String? {
+        let raw = Bundle.main.object(forInfoDictionaryKey: key) as? String
+        guard let raw, !raw.isEmpty else { return nil }
+        return raw
+    }
+
+    /// The app client id when the text is one. A user pool makes its ids
+    /// from letters and digits, so anything else is a mistyped setting.
+    nonisolated static func clientID(from text: String) -> String? {
+        let isPlain = text.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) }
+        return !text.isEmpty && isPlain ? text : nil
+    }
 
     /// The HTTPS address for a bare host name. A value that is not a plain
     /// host name gives nil, so a mistyped setting cannot point the app at an
