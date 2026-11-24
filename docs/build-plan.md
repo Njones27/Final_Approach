@@ -174,6 +174,33 @@ provider key stays on the backend, and results are cached by place and minute.
 The license terms for storing and showing results must be checked before
 launch.
 
+What runs on the phone today, with no backend:
+
+- The text in a picked photo is read with Vision, and `RegistrationReader` in
+  the core package finds a registration in it. Each country's format is data
+  in `SampleData.registrationFormats`. A format written with a hyphen needs
+  the hyphen, so a word such as DELTA is not read as the German D-ELTA.
+- The Add screen offers the registration it read under Suggested, and a tap
+  fills it in. It is not filled in by itself, because a wing or a winglet can
+  hide the end of a registration and the part that shows still reads as a
+  valid one. The user can change every field.
+- A photo with no saved location can be tagged with a listed spot. The tag
+  places the photo on the Spots map and gives the flight lookup a place.
+- `FlightRanker` ranks the aircraft near a photo by distance, height, and the
+  direction the camera pointed, and keeps the best three. Its weights are
+  placeholders in `SampleData.flightRankingRules`. A registration that matches
+  a ranked flight confirms it and fills in the type, airline, flight, and
+  route with no tap, since two sources agree.
+- The app itself has no flight data yet. `SampleFlightDataProvider` is for
+  previews and tests only, because a real photo matched against sample
+  aircraft would be given the wrong identity.
+- A registration on the block list is never suggested, and a photo logged
+  with one keeps it hidden. The list is empty until the backend supplies it.
+
+Still to come in this milestone: the backend lookup, the public registry
+lookup for a reading with no flight data, the per-camera clock correction,
+tagging a batch at once, and suggesting nearby airports for a tag.
+
 ## Milestones
 
 1. **Foundation.** Xcode project, core package, CI workflows, setup pages.

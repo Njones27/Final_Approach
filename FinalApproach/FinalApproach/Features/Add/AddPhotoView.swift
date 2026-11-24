@@ -5,9 +5,14 @@ import SwiftUI
 /// Logs a photo picked from the library. It shows what was read from the
 /// photo, takes the aircraft details, and lets the user keep the location
 /// private. Logging the photo also scores its technical check, saves it on
-/// the device, and links it to the nearest listed spot. Automatic
-/// identification replaces the typed details in the identification
-/// milestone.
+/// the device, and links it to the nearest listed spot.
+///
+/// The screen suggests the aircraft from the registration read off the
+/// photo and from what was flying there. It fills the fields by itself only
+/// when both agree. A registration that was only read is offered for the
+/// user to tap, because part of it may be hidden in the photo. The user can
+/// change every field. A photo with no saved location can be tagged with a
+/// listed spot.
 struct AddPhotoView: View {
     let photo: ImportedPhoto
 
@@ -18,6 +23,18 @@ struct AddPhotoView: View {
     @State private var registration = ""
     @State private var airline = ""
     @State private var showsSpot = true
+    @State private var identification = Identification.none
+    /// The flight the details came from, picked by the user or confirmed by
+    /// the registration.
+    @State private var chosenFlightID: String?
+    /// The details the app last filled in from a flight. A field that still
+    /// holds one of them was not typed by the user, so another flight may
+    /// replace or clear it.
+    @State private var filledType: String?
+    @State private var filledRegistration: String?
+    @State private var filledAirline: String?
+    /// The spot the user tagged, for a photo that carries no location.
+    @State private var taggedSpotID: String?
 
     /// A photo can be logged once it has an aircraft type.
     private var canLog: Bool {
@@ -32,10 +49,18 @@ struct AddPhotoView: View {
                         .aspectRatio(3 / 2, contentMode: .fit)
 
                     VStack(alignment: .leading, spacing: 24) {
+                        if !identification.isEmpty {
+                            suggestions
+                                .transition(.opacity)
+                        }
                         aircraftFields
                         photoFacts
-                        if photo.metadata.coordinate != nil {
+                        if photo.metadata.coordinate == nil {
+                            locationTag
+                        }
+                        if place != nil {
                             locationSwitch
+                                .transition(.opacity)
                         }
                     }
                     .padding(.horizontal, 20)
@@ -70,6 +95,10 @@ struct AddPhotoView: View {
         .onAppear {
             showsSpot = privacySetting.showsSpotByDefault
         }
+        // Tagging a spot gives the flight lookup a place, so it runs again.
+        .task(id: taggedSpotID) {
+            await identify()
+        }
     }
 
     // MARK: Sections
@@ -88,6 +117,41 @@ struct AddPhotoView: View {
         }
     }
 
+    /// How many registrations read off the photo to offer.
+    private static let readingLimit = 3
+
+    /// What the app worked out about the aircraft. Tapping a row fills the
+    /// fields from it.
+    private var suggestions: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            SectionHeading("Suggested")
+            ForEach(identification.readings.prefix(Self.readingLimit)) { reading in
+                SuggestionRow(
+                    systemImage: "text.viewfinder",
+                    title: reading.registration,
+                    detail: "Read off the aircraft. Check it, as part may be hidden. Registered in \(reading.country).",
+                    isChosen: trimmed(registration).uppercased() == reading.registration
+                ) {
+                    withAnimation(Motion.press) {
+                        registration = reading.registration
+                    }
+                }
+                .accessibilityHint("Fills in the registration")
+            }
+            ForEach(identification.flights) { flight in
+                FlightRow(
+                    flight: flight,
+                    isChosen: flight.id == chosenFlightID,
+                    isConfirmed: flight.id == identification.confirmedFlight?.id
+                ) {
+                    withAnimation(Motion.press) {
+                        apply(flight.sighting, replacingTypedDetails: true)
+                    }
+                }
+            }
+        }
+    }
+
     private var photoFacts: some View {
         VStack(alignment: .leading, spacing: 14) {
             SectionHeading("Read from the photo")
@@ -97,17 +161,42 @@ struct AddPhotoView: View {
                 detail: captureTimeText == nil ? "The photo does not carry one." : "When it was taken"
             )
             FactRow(
-                systemImage: photo.metadata.coordinate == nil ? "location.slash" : "location",
+                systemImage: place == nil ? "location.slash" : "location",
                 title: locationText,
-                detail: photo.metadata.coordinate == nil
-                    ? "The photo does not carry one."
-                    : "Where it was taken"
+                detail: locationDetail
             )
             FactRow(
                 systemImage: "camera",
                 title: cameraText ?? "No camera settings",
                 detail: cameraText == nil ? "The photo does not carry any." : "Camera and settings"
             )
+        }
+    }
+
+    /// Lets the user say where a photo with no saved location was taken.
+    private var locationTag: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Where was this taken?")
+                    .font(.body)
+                    .foregroundStyle(Theme.ink)
+                Text("Pick the spot you shot from.")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.secondaryText)
+            }
+            Spacer(minLength: 0)
+            Picker("Spot", selection: $taggedSpotID) {
+                Text("Not tagged").tag(String?.none)
+                ForEach(model.airports) { airport in
+                    Section(airport.displayName) {
+                        ForEach(airport.spots) { spot in
+                            Text(spot.name).tag(String?.some(spot.id))
+                        }
+                    }
+                }
+            }
+            .pickerStyle(.menu)
+            .tint(Theme.ink)
         }
     }
 
@@ -132,15 +221,33 @@ struct AddPhotoView: View {
 
     // MARK: Text
 
+    /// The spot the user tagged, when the photo carries no location.
+    private var taggedSpot: Spot? {
+        guard photo.metadata.coordinate == nil else { return nil }
+        return taggedSpotID.flatMap { model.spot(id: $0) }
+    }
+
+    /// Where the photo was taken, from the file or from the tagged spot.
+    private var place: Coordinate? {
+        photo.metadata.coordinate ?? taggedSpot?.coordinate
+    }
+
     /// The listed spot the photo was taken near, when there is one.
     private var nearestSpot: Spot? {
-        photo.metadata.coordinate.flatMap { model.nearestSpot(to: $0) }
+        if let taggedSpot { return taggedSpot }
+        return place.flatMap { model.nearestSpot(to: $0) }
     }
 
     private var locationText: String {
-        guard photo.metadata.coordinate != nil else { return "No location" }
+        if let taggedSpot { return "Tagged at \(taggedSpot.name)" }
+        guard place != nil else { return "No location" }
         guard let nearestSpot else { return "Location saved" }
         return "Near \(nearestSpot.name)"
+    }
+
+    private var locationDetail: String {
+        if taggedSpot != nil { return "Where you said it was taken" }
+        return place == nil ? "The photo does not carry one." : "Where it was taken"
     }
 
     private var captureTimeText: String? {
@@ -164,24 +271,84 @@ struct AddPhotoView: View {
         text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    // MARK: Identification
+
+    /// Works out the aircraft and fills in what the user has not typed.
+    private func identify() async {
+        let result = await model.identification(for: photo, at: place)
+        withAnimation(Motion.swap) {
+            identification = result
+            if let chosenFlightID, !result.flights.contains(where: { $0.id == chosenFlightID }) {
+                self.chosenFlightID = nil
+            }
+        }
+        // Only a flight that the registration confirms is filled in
+        // without a tap. A registration that was only read may be cut
+        // short by a wing or a winglet, so the user picks it.
+        if let confirmed = result.confirmedFlight {
+            apply(confirmed.sighting, replacingTypedDetails: false)
+        }
+    }
+
+    /// Fills the fields from a flight. A suggestion made by the app never
+    /// writes over what the user typed. A flight the user tapped does.
+    ///
+    /// A detail the flight does not carry clears a field that still holds
+    /// what an earlier flight filled in, so one aircraft's details are
+    /// never logged with another's flight.
+    private func apply(_ sighting: FlightSighting, replacingTypedDetails: Bool) {
+        aircraftType = filled(
+            aircraftType, from: sighting.aircraftType, lastFilled: filledType, replacing: replacingTypedDetails
+        )
+        registration = filled(
+            registration, from: sighting.registration, lastFilled: filledRegistration, replacing: replacingTypedDetails
+        )
+        airline = filled(
+            airline, from: sighting.airline, lastFilled: filledAirline, replacing: replacingTypedDetails
+        )
+        filledType = sighting.aircraftType
+        filledRegistration = sighting.registration
+        filledAirline = sighting.airline
+        chosenFlightID = sighting.id
+    }
+
+    /// What one field should hold after a flight is applied.
+    private func filled(_ current: String, from value: String?, lastFilled: String?, replacing: Bool) -> String {
+        if let value {
+            return replacing || trimmed(current).isEmpty ? value : current
+        }
+        // The flight does not know this detail. What an earlier flight
+        // filled in goes, and what the user typed stays.
+        return current == lastFilled ? "" : current
+    }
+
+    /// The flight and route of the chosen flight, such as "flight AS331
+    /// from SEA to ATL", or an empty string when none is chosen.
+    private var chosenActivity: String {
+        identification.flights.first { $0.id == chosenFlightID }?.sighting.activity ?? ""
+    }
+
     // MARK: Logging
 
     private func log() {
         guard canLog else { return }
         let check = model.technicalCheck(for: photo.measurements, camera: photo.metadata.camera)
+        let typedRegistration = trimmed(registration).uppercased()
         let spotted = SpottedPhoto(
             id: photo.id,
             imageName: nil,
             aircraftType: trimmed(aircraftType),
-            registration: trimmed(registration).uppercased(),
+            registration: typedRegistration,
+            // A blocked registration is kept with the photo and never shown.
+            isRegistrationBlocked: model.isBlocked(registration: typedRegistration),
             airline: trimmed(airline),
-            activity: "",
+            activity: chosenActivity,
             camera: photo.metadata.camera,
             capturedAt: photo.metadata.capturedAt,
             loggedAt: Date.now,
-            captureCoordinate: photo.metadata.coordinate,
+            captureCoordinate: place,
             spotID: nearestSpot?.id,
-            isLocationUndisclosed: photo.metadata.coordinate != nil && !showsSpot,
+            isLocationUndisclosed: place != nil && !showsSpot,
             status: .logged,
             findings: check.findings,
             fixes: check.fixes,
@@ -243,9 +410,93 @@ private struct FactRow: View {
     }
 }
 
+/// One suggestion the user can tap to fill the fields, with a check mark
+/// when it is the one in use.
+private struct SuggestionRow: View {
+    let systemImage: String
+    let title: String
+    let detail: String
+    let isChosen: Bool
+    let choose: () -> Void
+
+    var body: some View {
+        Button(action: choose) {
+            HStack(alignment: .center, spacing: 14) {
+                Image(systemName: systemImage)
+                    .font(.body)
+                    .foregroundStyle(Theme.ink)
+                    .frame(width: 28)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.body)
+                        .foregroundStyle(Theme.ink)
+                    Text(detail)
+                        .font(.footnote)
+                        .foregroundStyle(Theme.secondaryText)
+                        .multilineTextAlignment(.leading)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "checkmark")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(Theme.ink)
+                    .opacity(isChosen ? 1 : 0)
+                    .accessibilityHidden(true)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(TilePressStyle())
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isChosen ? .isSelected : [])
+    }
+}
+
+/// One aircraft that was flying near the photo. Tapping it fills the
+/// fields from it.
+private struct FlightRow: View {
+    let flight: RankedFlight
+    let isChosen: Bool
+    /// True when the registration read off the photo matches this flight.
+    let isConfirmed: Bool
+    let choose: () -> Void
+
+    /// The flight and its route with a capital, such as "Flight DAL1482".
+    private var flightText: String {
+        let activity = flight.sighting.activity
+        return activity.prefix(1).uppercased() + activity.dropFirst()
+    }
+
+    /// The aircraft type, or the flight when the provider gave only a
+    /// callsign.
+    private var title: String {
+        flight.sighting.aircraftType ?? flightText
+    }
+
+    private var detail: String {
+        let distance = Measurement(value: flight.distance, unit: UnitLength.meters)
+            .formatted(.measurement(width: .abbreviated, usage: .road))
+        // The flight is already the title when there is no type.
+        let activity: String? = flight.sighting.aircraftType == nil ? nil : flight.sighting.activity
+        let parts = [flight.sighting.airline, activity, "\(distance) away"].compactMap { $0 }
+        let line = parts.joined(separator: ", ")
+        return isConfirmed ? "Matches the registration. \(line)" : line
+    }
+
+    var body: some View {
+        SuggestionRow(
+            systemImage: "airplane",
+            title: title,
+            detail: detail,
+            isChosen: isChosen,
+            choose: choose
+        )
+        .accessibilityHint("Fills in the aircraft details")
+    }
+}
+
 #Preview("Full metadata") {
     AddPhotoView(photo: SampleData.importedPhoto)
-        .environment(SampleData.model())
+        .environment(SampleData.model(flightData: SampleFlightDataProvider(sightings: SampleData.flights)))
 }
 
 #Preview("No metadata") {
