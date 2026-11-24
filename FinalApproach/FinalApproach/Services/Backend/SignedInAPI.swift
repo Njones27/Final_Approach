@@ -49,6 +49,12 @@ struct SignedInAPI {
             return .photoNotSaved
         case (_, "imageHasLocation"):
             return .imageHasLocation
+        case (_, "alreadyVoted"):
+            return .alreadyVoted
+        case (_, "votingClosed"):
+            return .votingClosed
+        case (_, "ownPost"):
+            return .ownPost
         case (500..., _):
             return .unavailable(status: status)
         default:

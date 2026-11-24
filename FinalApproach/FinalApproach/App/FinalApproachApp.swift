@@ -8,6 +8,9 @@ struct FinalApproachApp: App {
     /// Syncs the user's photos with the backend once someone is signed in.
     /// A build with no backend never signs in, so it never syncs.
     private let sync: SyncCoordinator
+    /// Takes votes on photos other people posted. A build with no backend
+    /// keeps the sample set on the Vote screen.
+    private let voting: VotingModel
 
     init() {
         let model = SampleData.model(store: FilePhotoStore.standard)
@@ -15,11 +18,12 @@ struct FinalApproachApp: App {
         sync.follow(model)
         self.model = model
         self.sync = sync
+        voting = VotingModel.forThisBuild(session: sync.session)
     }
 
     var body: some Scene {
         WindowGroup {
-            RootView(model: model, sync: sync)
+            RootView(model: model, sync: sync, voting: voting)
         }
     }
 }

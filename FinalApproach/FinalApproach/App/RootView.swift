@@ -13,6 +13,7 @@ private enum AppTab: Int, Hashable {
 struct RootView: View {
     @State private var model: CollectionModel
     @State private var sync: SyncCoordinator
+    @State private var voting: VotingModel
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage(AppearanceSetting.storageKey) private var appearance = AppearanceSetting.system
     @State private var selectedTab = AppTab.collection
@@ -21,9 +22,10 @@ struct RootView: View {
     @State private var arrivals: [AppTab: TabArrival] = [:]
     @State private var tabChanges = 0
 
-    init(model: CollectionModel, sync: SyncCoordinator) {
+    init(model: CollectionModel, sync: SyncCoordinator, voting: VotingModel) {
         _model = State(initialValue: model)
         _sync = State(initialValue: sync)
+        _voting = State(initialValue: voting)
     }
 
     var body: some View {
@@ -48,6 +50,7 @@ struct RootView: View {
         .tint(Theme.ink)
         .environment(model)
         .environment(sync)
+        .environment(voting)
         .preferredColorScheme(appearance.colorScheme)
         // The photos are brought into line with the backend each time the
         // app opens or comes back to the front.
@@ -79,5 +82,6 @@ struct RootView: View {
 }
 
 #Preview {
-    RootView(model: SampleData.model(), sync: .preview())
+    let sync = SyncCoordinator.preview()
+    RootView(model: SampleData.model(), sync: sync, voting: .preview(session: sync.session))
 }

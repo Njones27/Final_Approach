@@ -186,7 +186,9 @@ What the app does now, and what is still to come in milestone 8.
   when the check has ideas, and the check never stands in the way. A posted
   photo shows how many votes are in, and its grade once the votes set it.
   `docs/backend.md` has the details under Posting in the app.
-- The voting screen with its five stars is still to come.
+- The Vote screen shows photos other people posted and takes a vote in
+  stars. The voter picks stars and then casts the vote, because a vote
+  cannot be changed. The screen shows the photo and nothing else.
 
 ## Identification
 
