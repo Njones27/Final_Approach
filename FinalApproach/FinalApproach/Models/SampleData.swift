@@ -420,6 +420,17 @@ enum SampleData {
         VoteCandidate(id: "vote-b737", imageName: "SampleB737", aircraftType: "Boeing 737 MAX 8"),
     ]
 
+    /// The sample vote set as photos other users posted, for previews of
+    /// the Vote screen as a signed in user sees it.
+    static func votePosts() -> [SampleVoteBackend.Post] {
+        voteQueue.compactMap { candidate in
+            guard let image = UIImage(named: candidate.imageName)?.jpegData(compressionQuality: 0.8) else {
+                return nil
+            }
+            return SampleVoteBackend.Post(id: candidate.id, image: image)
+        }
+    }
+
     // MARK: Spots
 
     static let airports: [Airport] = [

@@ -328,6 +328,35 @@ because the backend posts only a photo whose record and image it holds.
 - Deleting a photo or the account forgets its standing on the device. The
   backend removes the post with the photo.
 
+## Voting in the app
+
+The Vote screen shows photos other people posted, one at a time, and takes
+a vote in stars.
+
+- `VoteBackend`, in `Services/Backend/`, is the protocol for the two vote
+  routes and for fetching an image from its link. `HTTPVoteBackend` is the
+  real one and `SampleVoteBackend` keeps votes in memory for previews and
+  tests. The image is fetched with no token, because the link carries its
+  own permission. Nothing fetched is kept on the device.
+- `VotingModel`, in `Models/`, runs the screen. It asks for the queue, shows
+  one photo, casts the vote, and moves on. All it holds about a photo is the
+  post's random id and the image, so the screen has nothing else to show.
+- A vote takes two taps. The user picks stars and then presses Cast vote,
+  because a vote cannot be changed once it is cast.
+- The top of the scale comes from the backend with the queue, so it can
+  change with no release. The screen ignores a scale it has no room for.
+- A photo the user skips gets no vote. The backend may hand it out again,
+  and the model does not show it twice on one visit.
+- A vote the backend cannot count, such as a second vote or a vote on a
+  closed post, moves on to the next photo. A vote that did not reach the
+  backend keeps the photo on the screen for another try.
+- A link to an image works for a few minutes. A post whose link ran out is
+  dropped, and the queue is asked for again, which gives new links. The
+  queue is asked for at most twice in one go.
+- A signed out user is asked to sign in. Signing out, or a different user
+  signing in, starts the screen over.
+- A build with no backend keeps the sample set on the same screen.
+
 ## Alarms and the budget
 
 Each stage tells its owner when something is wrong. Everything goes to one
@@ -515,8 +544,6 @@ change to those values in a deploy must be copied into the stage's file.
 
 ## Still to come
 
-- The voting screen with its five stars. Posting from the photo screen and
-  the grade in the collection are built, under Posting in the app above.
 - Reputation, which gives a voter whose votes land near the final grades
   more weight. It needs a way to find a post's votes when the post closes.
 - A filter that keeps a photo with no aircraft out of the voting queue. It

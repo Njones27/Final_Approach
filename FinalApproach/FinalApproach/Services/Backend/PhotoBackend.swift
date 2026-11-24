@@ -44,6 +44,12 @@ enum PhotoBackendError: Error, Equatable {
     /// The image has a location written inside it, so the backend will not
     /// show it to other users.
     case imageHasLocation
+    /// The user has already voted on this post. A vote cannot be changed.
+    case alreadyVoted
+    /// Voting on this post has closed, or the post is gone.
+    case votingClosed
+    /// The post is the user's own photo, which they cannot vote on.
+    case ownPost
     /// The backend refused the request. The message is the backend's own.
     case refused(status: Int, message: String)
     /// The backend failed, and the request may work later.
