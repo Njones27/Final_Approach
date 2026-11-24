@@ -9,6 +9,7 @@ struct PhotoDetailView: View {
     @Environment(CollectionModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var isConfirmingDelete = false
+    @State private var isEditingDetails = false
 
     var body: some View {
         Group {
@@ -24,7 +25,6 @@ struct PhotoDetailView: View {
         }
         .background(Theme.ground)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarVisibility(.hidden, for: .tabBar)
     }
 
     private func content(for photo: SpottedPhoto) -> some View {
@@ -56,11 +56,18 @@ struct PhotoDetailView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 ShareLink(
                     item: model.image(for: photo),
-                    preview: SharePreview(photo.aircraftType, image: model.image(for: photo))
+                    preview: SharePreview(photo.typeTitle, image: model.image(for: photo))
                 )
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu("More actions", systemImage: "ellipsis") {
+                    // A sample photo ships with the app and is not saved,
+                    // so only a photo the user logged can be changed.
+                    if !photo.isSample {
+                        Button("Edit aircraft details", systemImage: "pencil") {
+                            isEditingDetails = true
+                        }
+                    }
                     Button("Delete photo", systemImage: "trash", role: .destructive) {
                         isConfirmingDelete = true
                     }
@@ -79,15 +86,26 @@ struct PhotoDetailView: View {
         } message: {
             Text("The photo and its grade are removed from your collection.")
         }
+        .sheet(isPresented: $isEditingDetails) {
+            EditDetailsView(photo: photo)
+        }
     }
 
     // MARK: Header
 
     private func header(for photo: SpottedPhoto) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(photo.aircraftType)
+            Text(photo.typeTitle)
                 .font(.title.weight(.bold))
                 .foregroundStyle(Theme.ink)
+            if !photo.isTypeKnown, !photo.isSample {
+                Button("Add the aircraft") {
+                    isEditingDetails = true
+                }
+                .font(.subheadline)
+                .tint(Theme.ink)
+                .underline()
+            }
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 if let registration = photo.visibleRegistration {
                     Text(registration)
@@ -214,10 +232,7 @@ struct PhotoDetailView: View {
                     SectionHeading("To lift this shot")
                         .padding(.bottom, 4)
                     ForEach(fixes) { fix in
-                        NavigationLink(value: PhotoRoute.technicalCheck(photo.id)) {
-                            FixRow(fix: fix)
-                        }
-                        .buttonStyle(.plain)
+                        FixRow(fix: fix)
                         Rectangle()
                             .fill(Theme.hairline)
                             .frame(height: 1)
@@ -231,13 +246,13 @@ struct PhotoDetailView: View {
                         .padding(.top, 14)
                 }
 
-                if fixes.isEmpty {
-                    NavigationLink(value: PhotoRoute.technicalCheck(photo.id)) {
-                        Text("See the technical check")
-                    }
-                    .buttonStyle(.secondary)
-                    .padding(.top, 18)
+                // The rows above are for reading. This one button is the
+                // way into the full check.
+                NavigationLink(value: PhotoRoute.technicalCheck(photo.id)) {
+                    Text("See the technical check")
                 }
+                .buttonStyle(.secondary)
+                .padding(.top, 18)
             }
         }
     }
@@ -390,13 +405,9 @@ private struct FixRow: View {
                 .font(.condensed(24, relativeTo: .title3))
                 .foregroundStyle(Theme.gain)
                 .accessibilityLabel("Worth \(fix.points) points")
-            Image(systemName: "chevron.right")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(Theme.chevron)
-                .accessibilityHidden(true)
         }
         .frame(minHeight: 62)
-        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
     }
 }
 

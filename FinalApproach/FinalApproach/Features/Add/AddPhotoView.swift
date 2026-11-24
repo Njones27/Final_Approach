@@ -11,8 +11,9 @@ import SwiftUI
 /// photo and from what was flying there. It fills the fields by itself only
 /// when both agree. A registration that was only read is offered for the
 /// user to tap, because part of it may be hidden in the photo. The user can
-/// change every field. A photo with no saved location can be tagged with a
-/// listed spot.
+/// change every field, and may leave them all empty for an aircraft they
+/// cannot name. A photo with no saved location can be placed with a pin on
+/// a map.
 struct AddPhotoView: View {
     let photo: ImportedPhoto
 
@@ -33,13 +34,9 @@ struct AddPhotoView: View {
     @State private var filledType: String?
     @State private var filledRegistration: String?
     @State private var filledAirline: String?
-    /// The spot the user tagged, for a photo that carries no location.
-    @State private var taggedSpotID: String?
-
-    /// A photo can be logged once it has an aircraft type.
-    private var canLog: Bool {
-        !trimmed(aircraftType).isEmpty
-    }
+    /// Where the user pinned the photo, for one that carries no location.
+    @State private var pinnedPlace: Coordinate?
+    @State private var isPickingPlace = false
 
     var body: some View {
         NavigationStack {
@@ -74,9 +71,6 @@ struct AddPhotoView: View {
                     log()
                 }
                 .buttonStyle(.primary)
-                .opacity(canLog ? 1 : 0.4)
-                .animation(Motion.press, value: canLog)
-                .disabled(!canLog)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
                 .background(Theme.ground)
@@ -95,9 +89,22 @@ struct AddPhotoView: View {
         .onAppear {
             showsSpot = privacySetting.showsSpotByDefault
         }
-        // Tagging a spot gives the flight lookup a place, so it runs again.
-        .task(id: taggedSpotID) {
+        // A pin gives the flight lookup a place, so it runs again.
+        .task(id: pinnedPlace) {
             await identify()
+        }
+        .sheet(isPresented: $isPickingPlace) {
+            PlacePickerView(
+                // The map opens on the pin, or where the user's last photo
+                // was taken, since photos are often logged a few at a time.
+                // The sample photos are not the user's, so they do not count.
+                start: pinnedPlace ?? model.locatedPhotos.first { !$0.isSample }?.ownerCaptureCoordinate,
+                hasPin: pinnedPlace != nil
+            ) { place in
+                withAnimation(Motion.swap) {
+                    pinnedPlace = place
+                }
+            }
         }
     }
 
@@ -105,7 +112,12 @@ struct AddPhotoView: View {
 
     private var aircraftFields: some View {
         VStack(alignment: .leading, spacing: 16) {
-            SectionHeading("Aircraft")
+            VStack(alignment: .leading, spacing: 4) {
+                SectionHeading("Aircraft")
+                Text("Leave these empty if you do not know the aircraft. You can add them later.")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.secondaryText)
+            }
             DetailField(label: "Type", prompt: "Boeing 737-800", text: $aircraftType)
             DetailField(
                 label: "Registration",
@@ -175,29 +187,30 @@ struct AddPhotoView: View {
 
     /// Lets the user say where a photo with no saved location was taken.
     private var locationTag: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Where was this taken?")
+        Button {
+            isPickingPlace = true
+        } label: {
+            HStack(alignment: .center, spacing: 14) {
+                Image(systemName: "mappin.and.ellipse")
                     .font(.body)
                     .foregroundStyle(Theme.ink)
-                Text("Pick the spot you shot from.")
-                    .font(.footnote)
-                    .foregroundStyle(Theme.secondaryText)
-            }
-            Spacer(minLength: 0)
-            Picker("Spot", selection: $taggedSpotID) {
-                Text("Not tagged").tag(String?.none)
-                ForEach(model.airports) { airport in
-                    Section(airport.displayName) {
-                        ForEach(airport.spots) { spot in
-                            Text(spot.name).tag(String?.some(spot.id))
-                        }
-                    }
+                    .frame(width: 28)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(pinnedPlace == nil ? "Where was this taken?" : "Move the pin")
+                        .font(.body)
+                        .foregroundStyle(Theme.ink)
+                    Text(pinnedPlace == nil ? "Drop a pin on the map." : "Change or remove where this was taken.")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.secondaryText)
                 }
+                Spacer(minLength: 0)
             }
-            .pickerStyle(.menu)
-            .tint(Theme.ink)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(TilePressStyle())
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Opens a map")
     }
 
     private var locationSwitch: some View {
@@ -221,32 +234,31 @@ struct AddPhotoView: View {
 
     // MARK: Text
 
-    /// The spot the user tagged, when the photo carries no location.
-    private var taggedSpot: Spot? {
-        guard photo.metadata.coordinate == nil else { return nil }
-        return taggedSpotID.flatMap { model.spot(id: $0) }
+    /// The pin the user dropped, when the photo carries no location.
+    private var pin: Coordinate? {
+        photo.metadata.coordinate == nil ? pinnedPlace : nil
     }
 
-    /// Where the photo was taken, from the file or from the tagged spot.
+    /// Where the photo was taken, from the file or from the pin.
     private var place: Coordinate? {
-        photo.metadata.coordinate ?? taggedSpot?.coordinate
+        photo.metadata.coordinate ?? pin
     }
 
     /// The listed spot the photo was taken near, when there is one.
     private var nearestSpot: Spot? {
-        if let taggedSpot { return taggedSpot }
-        return place.flatMap { model.nearestSpot(to: $0) }
+        place.flatMap { model.nearestSpot(to: $0) }
     }
 
     private var locationText: String {
-        if let taggedSpot { return "Tagged at \(taggedSpot.name)" }
         guard place != nil else { return "No location" }
-        guard let nearestSpot else { return "Location saved" }
-        return "Near \(nearestSpot.name)"
+        if pin != nil {
+            return nearestSpot.map { "Pinned near \($0.name)" } ?? "Pinned on the map"
+        }
+        return nearestSpot.map { "Near \($0.name)" } ?? "Location saved"
     }
 
     private var locationDetail: String {
-        if taggedSpot != nil { return "Where you said it was taken" }
+        if pin != nil { return "Where you said it was taken" }
         return place == nil ? "The photo does not carry one." : "Where it was taken"
     }
 
@@ -331,7 +343,6 @@ struct AddPhotoView: View {
     // MARK: Logging
 
     private func log() {
-        guard canLog else { return }
         let check = model.technicalCheck(for: photo.measurements, camera: photo.metadata.camera)
         let typedRegistration = trimmed(registration).uppercased()
         let spotted = SpottedPhoto(
@@ -356,31 +367,6 @@ struct AddPhotoView: View {
         )
         model.add(spotted, image: photo.image)
         dismiss()
-    }
-}
-
-/// A labeled text field with a hairline under it.
-private struct DetailField: View {
-    let label: String
-    let prompt: String
-    @Binding var text: String
-    var capitalization: TextInputAutocapitalization = .words
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(label)
-                .font(.footnote)
-                .foregroundStyle(Theme.secondaryText)
-            TextField(label, text: $text, prompt: Text(prompt))
-                .font(.body)
-                .foregroundStyle(Theme.ink)
-                .textInputAutocapitalization(capitalization)
-                .autocorrectionDisabled()
-                .frame(minHeight: 28)
-            Rectangle()
-                .fill(Theme.hairline)
-                .frame(height: 1)
-        }
     }
 }
 

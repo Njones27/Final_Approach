@@ -35,7 +35,6 @@ struct SpotPhotosView: View {
         }
         .background(Theme.ground)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarVisibility(.hidden, for: .tabBar)
     }
 }
 

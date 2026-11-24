@@ -108,6 +108,54 @@ struct SpottedPhoto: Identifiable, Equatable, Codable {
         self.isAircraftFound = isAircraftFound
     }
 
+    /// What stands in for the type of an aircraft the user could not name.
+    static let unknownAircraftName = "Unknown aircraft"
+
+    /// False for a photo logged without an aircraft type.
+    var isTypeKnown: Bool {
+        !aircraftType.isEmpty
+    }
+
+    /// The aircraft type to show. A photo logged without one says so.
+    var typeTitle: String {
+        isTypeKnown ? aircraftType : Self.unknownAircraftName
+    }
+
+    /// The same photo with new aircraft details. Passing nil for the
+    /// registration keeps the stored one, which is how a blocked
+    /// registration survives an edit that never showed it.
+    func replacingDetails(
+        aircraftType: String,
+        registration: String?,
+        isRegistrationBlocked: Bool?,
+        airline: String
+    ) -> SpottedPhoto {
+        SpottedPhoto(
+            id: id,
+            imageName: imageName,
+            aircraftType: aircraftType,
+            registration: registration ?? self.registration,
+            isRegistrationBlocked: isRegistrationBlocked ?? self.isRegistrationBlocked,
+            airline: airline,
+            activity: activity,
+            camera: camera,
+            capturedAt: capturedAt,
+            loggedAt: loggedAt,
+            captureCoordinate: captureCoordinate,
+            spotID: spotID,
+            isLocationUndisclosed: isLocationUndisclosed,
+            status: status,
+            findings: findings,
+            fixes: fixes,
+            isAircraftFound: isAircraftFound
+        )
+    }
+
+    /// True when the photo holds a registration that must stay hidden.
+    var hasBlockedRegistration: Bool {
+        isRegistrationBlocked && !registration.isEmpty
+    }
+
     /// The registration to show, or nil when there is none or the aircraft
     /// is on a block list such as FAA LADD. The stored value is private so no
     /// screen can show a blocked registration by accident.
@@ -166,7 +214,14 @@ struct SpottedPhoto: Identifiable, Equatable, Codable {
 
     /// A description of the image for VoiceOver.
     var imageDescription: String {
-        let subject = airline.isEmpty ? aircraftType : "\(airline) \(aircraftType)"
+        // An aircraft with no type is "Unknown aircraft", or "Delta Air
+        // Lines aircraft" when the airline is known.
+        let subject: String
+        if airline.isEmpty {
+            subject = typeTitle
+        } else {
+            subject = isTypeKnown ? "\(airline) \(aircraftType)" : "\(airline) aircraft"
+        }
         return activity.isEmpty ? subject : "\(subject), \(activity)"
     }
 }
