@@ -23,6 +23,30 @@ enum SyncProblem: Equatable {
     case unavailable
 }
 
+/// What the Profile screen says about the user's photos and the backend.
+enum SyncStatus: Equatable {
+    case notYet
+    case syncing
+    case upToDate
+    /// Some photos could not be sent or fetched and are tried again.
+    case someWaiting
+    case couldNotSync
+    case signInEnded
+    case accountDeleted
+
+    var text: String {
+        switch self {
+        case .notYet: "Not synced yet"
+        case .syncing: "Syncing"
+        case .upToDate: "Up to date"
+        case .someWaiting: "Some photos are waiting"
+        case .couldNotSync: "Could not sync"
+        case .signInEnded: "Sign in again"
+        case .accountDeleted: "This account was deleted"
+        }
+    }
+}
+
 /// Decides when a sync runs, and carries a delete of the account through to
 /// the backend.
 ///
@@ -65,6 +89,39 @@ final class SyncCoordinator {
 
     /// True when a sync could run now.
     var canSync: Bool { engine != nil && session.isSignedIn }
+
+    /// Where the user's photos stand with the backend, for the Profile
+    /// screen.
+    var status: SyncStatus {
+        if isSyncing { return .syncing }
+        switch lastProblem {
+        case .signInEnded?: return .signInEnded
+        case .accountDeleted?: return .accountDeleted
+        case .unavailable?: return .couldNotSync
+        case nil: break
+        }
+        guard let lastReport else { return .notYet }
+        return lastReport.isClean ? .upToDate : .someWaiting
+    }
+
+    // MARK: Signing in and out
+
+    /// Signs in with the identity token from Sign in with Apple, and then
+    /// syncs. The photos already on the device are sent to the account.
+    func signIn(identityToken: String, on model: CollectionModel) async throws {
+        try await session.signIn(identityToken: identityToken)
+        lastReport = nil
+        lastProblem = nil
+        await sync(on: model)
+    }
+
+    /// Signs out. The photos stay on the device, and nothing more is sent.
+    func signOut() async {
+        waiting?.cancel()
+        await session.signOut()
+        lastReport = nil
+        lastProblem = nil
+    }
 
     // MARK: When a sync runs
 
@@ -232,11 +289,40 @@ extension SyncCoordinator {
         return SyncCoordinator(session: session, backend: backend, pacing: SyncPacing())
     }
 
-    /// A coordinator with no backend, for previews. No one can sign in.
-    static func preview() -> SyncCoordinator {
-        SyncCoordinator(
-            session: AccountSession(identity: nil, store: MemorySessionStore()),
-            backend: nil,
+    /// Who a preview shows.
+    enum PreviewAccount {
+        /// A build with no backend, where signing in is not offered.
+        case noBackend
+        case signedOut
+        case signedIn
+        case deletingAccount
+    }
+
+    /// A coordinator on sample services, for previews. Nothing it does
+    /// leaves the device.
+    static func preview(_ account: PreviewAccount = .noBackend) -> SyncCoordinator {
+        let saved: StoredSession?
+        switch account {
+        case .noBackend, .signedOut:
+            saved = nil
+        case .signedIn, .deletingAccount:
+            saved = StoredSession(
+                userID: "sample-user",
+                tokens: SessionTokens(
+                    accessToken: "sample-access",
+                    refreshToken: "sample-refresh",
+                    accessTokenExpiresAt: .distantFuture
+                ),
+                isAccountDeleteOwed: account == .deletingAccount
+            )
+        }
+        let hasBackend = account != .noBackend
+        return SyncCoordinator(
+            session: AccountSession(
+                identity: hasBackend ? SampleIdentityService() : nil,
+                store: MemorySessionStore(saved)
+            ),
+            backend: hasBackend ? SamplePhotoBackend() : nil,
             pacing: SyncPacing()
         )
     }

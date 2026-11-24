@@ -32,6 +32,12 @@ struct ProfileView: View {
                     }
                 }
 
+                // Signing in needs a backend, so a build with none leaves
+                // the section out.
+                if sync.session.canSignIn {
+                    AccountSection()
+                }
+
                 // Shows which backend this build targets, so a beta build is
                 // never mistaken for a production one.
                 Section("Build") {
@@ -145,5 +151,5 @@ private struct StatView: View {
 #Preview {
     ProfileView()
         .environment(SampleData.model())
-        .environment(SyncCoordinator.preview())
+        .environment(SyncCoordinator.preview(.signedOut))
 }

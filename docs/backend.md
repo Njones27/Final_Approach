@@ -93,8 +93,8 @@ than once.
 
 ## Sync in the app
 
-The app's side is being built in steps. The pieces below are in place. They
-run once someone is signed in, which waits for the sign in screen.
+The pieces below make up the app's side. They run once someone is signed
+in, from the Account section of the Profile screen.
 
 - The rules are pure and live in the core package, in `PhotoSync.swift`.
   `SyncPlan.actions` takes what the device holds, what the backend listed,
@@ -123,6 +123,10 @@ run once someone is signed in, which waits for the sign in screen.
   edits, or deletes a photo. Changes made together go in one sync. A sync
   asked for while one runs makes that one run once more. The wait after a
   change is data in `SyncPacing`.
+- `AccountSection`, in `Features/Profile/`, shows Apple's sign in button,
+  the state of the last sync, and a way to sign out. A build with no backend
+  leaves it out. Signing in sends the photos already on the device to the
+  account. Signing out leaves them on the device and sends nothing more.
 
 The rules a sync follows.
 
@@ -252,7 +256,13 @@ so it is only ever deployed by hand.
 ## Before the app can sign in
 
 One thing needs the person who owns the Apple developer account, which is to
-turn on the Sign in with Apple capability for `com.finalapproach.app`.
+turn on the Sign in with Apple capability for `com.finalapproach.app`, under
+Certificates, Identifiers & Profiles, Identifiers.
+
+The app asks for the capability in `FinalApproach/Config/FinalApproach.entitlements`,
+which `App.xcconfig` names. An archive is signed for an App ID, so a build
+for TestFlight fails to sign while the App ID does not have the capability.
+A simulator build is not affected.
 
 The app finds the beta backend by itself. The values in the table above are
 in `FinalApproach/Config/Stages/beta.xcconfig`, and a beta build from Xcode
@@ -261,8 +271,9 @@ values in a deploy must be copied into that file.
 
 ## Still to come
 
-- The rest of the app side. That is the entitlement and the screen that
-  shows Apple's sign in sheet, with a way to sign out.
+- A first real sign in on an iPhone, from a TestFlight build against beta.
+  Everything up to here is tested against stand ins for Apple and the
+  backend.
 - CloudFront in front of the images, when other users can see photos.
 - Telling Apple to revoke the user's tokens when an account is deleted, which
   App Store review asks for. It needs a key from the Apple developer account.

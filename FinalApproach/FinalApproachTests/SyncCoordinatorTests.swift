@@ -362,6 +362,94 @@ struct SyncCoordinatorTests {
         #expect(account.isSignedIn)
     }
 
+    // MARK: Signing in and out
+
+    @Test func signingInSendsThePhotosAlreadyOnTheDevice() async throws {
+        let account = session()
+        let sync = coordinator(account)
+        let phone = SampleData.model()
+        phone.add(loggedPhoto())
+        #expect(sync.status == .notYet)
+
+        try await sync.signIn(identityToken: appleToken(), on: phone)
+
+        #expect(account.state == .signedIn(userID: "apple-user-1"))
+        #expect(backend.inner.photos["imported-1"] == loggedPhoto())
+        #expect(sync.status == .upToDate)
+    }
+
+    @Test func aSignInAppleOrTheBackendRefusedChangesNothing() async throws {
+        let account = session()
+        let sync = coordinator(account)
+        let phone = SampleData.model()
+        phone.add(loggedPhoto())
+        identity.failure = .tokenRefused
+
+        await #expect(throws: IdentityError.tokenRefused) {
+            try await sync.signIn(identityToken: appleToken(), on: phone)
+        }
+
+        #expect(account.state == .signedOut)
+        #expect(backend.listCount == 0)
+        #expect(ownPhotoIDs(phone) == ["imported-1"])
+    }
+
+    @Test func signingOutKeepsThePhotosAndStopsSending() async throws {
+        let account = try await signedIn()
+        let sync = coordinator(account)
+        let phone = SampleData.model()
+        sync.follow(phone)
+        phone.add(loggedPhoto("imported-1"))
+        await sync.changeSyncFinished()
+
+        await sync.signOut()
+        phone.add(loggedPhoto("imported-2"))
+        await sync.changeSyncFinished()
+        await sync.appBecameActive(on: phone)
+
+        #expect(account.state == .signedOut)
+        #expect(ownPhotoIDs(phone) == ["imported-1", "imported-2"])
+        #expect(backend.inner.photos.keys.sorted() == ["imported-1"])
+        #expect(sync.status == .notYet)
+    }
+
+    @Test func theStatusSaysWhereThePhotosStand() async throws {
+        let account = try await signedIn()
+        let sync = coordinator(account)
+        let phone = SampleData.model()
+        phone.add(loggedPhoto())
+        #expect(sync.status == .notYet)
+
+        var during: SyncStatus?
+        backend.duringNextListing = { during = sync.status }
+        backend.saveFailure = .unavailable(status: 503)
+        await sync.sync(on: phone)
+        #expect(during == .syncing)
+        #expect(sync.status == .someWaiting)
+
+        backend.saveFailure = nil
+        backend.listFailure = .unavailable(status: 503)
+        await sync.sync(on: phone)
+        #expect(sync.status == .couldNotSync)
+
+        backend.listFailure = nil
+        await sync.sync(on: phone)
+        #expect(sync.status == .upToDate)
+
+        try await backend.inner.deleteAccount()
+        await sync.sync(on: phone)
+        #expect(sync.status == .accountDeleted)
+    }
+
+    @Test func everyStatusHasWords() {
+        let all: [SyncStatus] = [
+            .notYet, .syncing, .upToDate, .someWaiting, .couldNotSync, .signInEnded, .accountDeleted,
+        ]
+        let words = Set(all.map { $0.text })
+        #expect(words.count == all.count)
+        #expect(!words.contains(""))
+    }
+
     // MARK: Whose photos they are
 
     @Test func aDeleteOwedToOneUserWaitsForThatUser() async throws {

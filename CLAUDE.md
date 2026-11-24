@@ -26,7 +26,8 @@ for decisions and milestones before starting a feature.
 - `FinalApproach/FinalApproachTests/` holds app unit tests (Swift Testing).
 - `FinalApproach/Config/App.xcconfig` holds environment build settings.
   `FinalApproach/Config/Stages/` holds one file per stage with that stage's
-  backend.
+  backend. `FinalApproach/Config/FinalApproach.entitlements` holds what the
+  app may ask the system for.
 - `FinalApproach/ci_scripts/` holds Xcode Cloud scripts.
 - `Packages/FinalApproachCore/` is a local Swift package with pure domain
   logic such as tiers, grade blending, and voting rules.
@@ -83,7 +84,9 @@ on this Mac.
 ## Interface conventions
 
 - Take every color from `Theme` in `Design/Theme.swift`. Do not write a color
-  literal in a screen, and do not branch on the color scheme.
+  literal in a screen, and do not branch on the color scheme. The one
+  exception is `Design/AppleSignInButton.swift`, because Apple draws its
+  button in black or white only.
 - Use the system font for interface text. Use `Font.condensed` only for grade
   numbers, registrations, and counts.
 - Use the system tab bar, toolbars, and sheets so they keep Liquid Glass. The
