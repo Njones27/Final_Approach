@@ -86,6 +86,25 @@ export interface StageSettings {
   readonly requestsPerSecond: number;
   readonly requestBurst: number;
   readonly logRetentionDays: number;
+  /** The length of one alarm period. An alarm goes off on the count in one period. */
+  readonly alarmPeriodMinutes: number;
+  /** Failed runs of one function in a period that set its alarm off. */
+  readonly functionErrorsToAlarm: number;
+  /**
+   * Refused sign ups in a period that set the alarm off. A refused sign up
+   * counts as a failed run, and anyone can send one, so one is not news.
+   */
+  readonly signUpRefusalsToAlarm: number;
+  /** Answers of 500 and above from the API in a period that set its alarm off. */
+  readonly serverErrorsToAlarm: number;
+  /** What the stage's account may cost in a month, in US dollars, before the owner is told. */
+  readonly monthlyBudgetUSD: number;
+  /**
+   * The shares of the budget, in percent of money already spent, at which
+   * the owner is told. The owner is also told when the month is on course
+   * to go over.
+   */
+  readonly budgetAlertPercents: readonly number[];
   /**
    * Where GitHub Actions may deploy this stage from. A stage without it has
    * no role for GitHub to use, so it can only be deployed by hand.
@@ -106,6 +125,11 @@ const shared = {
   requestsPerSecond: 50,
   requestBurst: 100,
   logRetentionDays: 30,
+  alarmPeriodMinutes: 5,
+  functionErrorsToAlarm: 1,
+  signUpRefusalsToAlarm: 20,
+  serverErrorsToAlarm: 1,
+  budgetAlertPercents: [50, 100],
 } as const;
 
 /** This repository on GitHub. */
@@ -121,6 +145,7 @@ export const stages: Record<StageName, StageSettings> = {
     ...shared,
     name: 'beta',
     keepDataOnStackDelete: false,
+    monthlyBudgetUSD: 10,
     // Every change that reaches main goes to beta with nobody asked.
     deployFrom: { ...repository, branch: 'main' },
   },
@@ -128,6 +153,7 @@ export const stages: Record<StageName, StageSettings> = {
     ...shared,
     name: 'prod',
     keepDataOnStackDelete: true,
+    monthlyBudgetUSD: 20,
     // A deploy to prod waits for the approval that the `prod` environment
     // on GitHub asks for, so prod trusts that environment and not a branch.
     deployFrom: { ...repository, environment: 'prod' },

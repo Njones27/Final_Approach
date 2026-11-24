@@ -21,6 +21,7 @@ approved the run. A change to `backend/` reaches beta when it reaches
 
 | Stack | Holds |
 | --- | --- |
+| `FinalApproach-<stage>-Alerts` | The topic that alarms and the budget tell, and the month's budget |
 | `FinalApproach-<stage>-Storage` | The DynamoDB table of records, the S3 bucket of images, and the sweeper function |
 | `FinalApproach-<stage>-Identity` | The Cognito user pool and the four functions that check Sign in with Apple |
 | `FinalApproach-<stage>-Api` | The HTTP API and the functions behind its routes |
@@ -178,6 +179,53 @@ sign in ends by itself within the hour. If the same person signs in there
 again later, those photos are sent to the new account. Closing this needs
 the backend to remember a deleted account, which it does not do today.
 
+## Alarms and the budget
+
+Each stage tells its owner when something is wrong. Everything goes to one
+topic in the stage's `Alerts` stack, and the owner gets it as an email.
+
+| Alarm | Goes off when |
+| --- | --- |
+| Each function but the sign up check, six in all | The function fails once in five minutes |
+| The sign up check, `PreSignUp` | It fails 20 times in five minutes |
+| The API | It answers with a server error once in five minutes |
+| The budget | The month has cost half of the budget, all of it, or is on course to go over |
+
+- The sign up check refuses a sign up by failing, and anyone can send a bad
+  sign up. So one refusal is not news, and many at once may be someone
+  trying the door.
+- Every function is made by `backendFunction` in `backend/lib/functions.ts`,
+  which adds the alarm. A function added later is watched with nothing more
+  to write.
+- A period with no traffic is quiet and sets nothing off.
+- The budget is 10 US dollars a month for beta and 20 for prod. An idle
+  stage costs close to nothing, so either message means something changed.
+- Every number here is data in `backend/lib/stages.ts`.
+
+An alarm's message names the function. Its log group, in CloudWatch, says
+what failed.
+
+### Getting the messages, set up once for each account
+
+The topic has no subscriber in the code. The owner's address is private and
+this repository is public, so the owner subscribes by hand. Run this once
+with `fa_beta` and once with `fa_prod`, with the address in place of the
+last line's placeholder.
+
+```sh
+profile=fa_beta
+stage=beta
+topic="$(aws cloudformation describe-stacks --stack-name "FinalApproach-${stage}-Alerts" \
+  --profile "$profile" --region us-east-1 \
+  --query "Stacks[0].Outputs[?OutputKey=='AlertsTopicArn'].OutputValue" --output text)"
+aws sns subscribe --topic-arn "$topic" --protocol email \
+  --profile "$profile" --region us-east-1 \
+  --notification-endpoint ADDRESS
+```
+
+AWS then sends an email with a link, and the messages start once the link
+is opened. Until then an alarm still goes off, and nobody is told.
+
 ## Build and test
 
 ```sh
@@ -194,8 +242,8 @@ four commands on every pull request.
 
 ## Deploying from GitHub
 
-`.github/workflows/backend-deploy.yml` deploys the Storage, Identity, and Api
-stacks when a push to `main` changes `backend/`. Beta goes first. Prod
+`.github/workflows/backend-deploy.yml` deploys the Alerts, Storage, Identity,
+and Api stacks when a push to `main` changes `backend/`. Beta goes first. Prod
 follows in the same run after the owner approves it. The owner can also start
 a run by hand from the Actions tab. It stores no AWS keys. `docs/ci-cd.md`
 describes the jobs and how they sign in.
@@ -324,4 +372,3 @@ change to those values in a deploy must be copied into the stage's file.
 - CloudFront in front of the images, when other users can see photos.
 - Telling Apple to revoke the user's tokens when an account is deleted, which
   App Store review asks for. It needs a key from the Apple developer account.
-- Alarms and a budget alert.

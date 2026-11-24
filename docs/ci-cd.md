@@ -187,7 +187,7 @@ one job for each stage, and both jobs run the same steps, which are in
 `.github/actions/deploy-backend/action.yml`.
 
 1. **Checks.** The backend type check, tests, and template build.
-2. **Deploy to beta.** Shows what will change, deploys the three backend
+2. **Deploy to beta.** Shows what will change, deploys the four backend
    stacks to the beta account, and checks that the API turns away a request
    with no sign in.
 3. **Deploy to prod.** Waits for the owner to approve the run, then does the
