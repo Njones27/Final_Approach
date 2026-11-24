@@ -12,7 +12,7 @@ check that works on Linux. This is the same split the WalkWorthy repo uses.
 | Archive, external TestFlight, App Store | Xcode Cloud, Release workflow | Version tag such as `v1.0.0` |
 | Backend type check, tests, and template build (`backend/`) | GitHub Actions, Linux | Every pull request and push to `main` |
 | Backend deploy to beta | GitHub Actions, Linux | Push to `main` that changes `backend/`, or by hand from the Actions tab |
-| Backend deploy to prod | By hand from the owner's Mac | Before launch and not sooner. See `docs/backend.md` |
+| Backend deploy to prod | GitHub Actions, Linux | After the beta deploy of the same run passes, and only once the owner approves it |
 
 ## Environments
 
@@ -132,35 +132,59 @@ Conventions, carried over from WalkWorthy:
   reports.
 - Secrets live only in App Store Connect and GitHub, never in the repo.
 
-### Deploying the backend to beta
+### Deploying the backend
 
 `.github/workflows/backend-deploy.yml` runs when a push to `main` changes
-`backend/`, and the owner can start it by hand from the Actions tab. It runs
-the backend checks, shows what will change, deploys the three backend stacks
-to the beta account, and then checks that the API turns away a request with
-no sign in. Deploys run one at a time.
+`backend/`, and the owner can start it by hand from the Actions tab. It has
+one job for each stage, and both jobs run the same steps, which are in
+`.github/actions/deploy-backend/action.yml`.
 
-No AWS keys are stored in GitHub. The job asks GitHub for a short lived token
-that names the repository and branch it runs for, and trades it for one hour
-of access to the beta account. The role it takes on is the
-`FinalApproach-beta-Deploy` stack. That role accepts a token only from the
-`main` branch of this repository, named by its name and its id, so a pull
-request or a fork cannot deploy.
+1. **Checks.** The backend type check, tests, and template build.
+2. **Deploy to beta.** Shows what will change, deploys the three backend
+   stacks to the beta account, and checks that the API turns away a request
+   with no sign in.
+3. **Deploy to prod.** Waits for the owner to approve the run, then does the
+   same in the prod account. It runs only after beta passed.
 
-The workflow reads the role from the repository variable
-`BETA_DEPLOY_ROLE_ARN`, so the account's id is not written in the repo. The
-one time setup is in `docs/backend.md`.
+The prod job names the GitHub environment `prod`. That environment has the
+owner as a required reviewer, so GitHub holds the job and sends the owner a
+request to review it. Approving it deploys prod, and rejecting it or leaving
+it alone deploys nothing. Before it deploys, the job checks that `main` does
+not hold a newer backend than the run does, so approving an old run cannot
+take prod back. A run started by hand stops after beta unless prod is chosen.
+
+Each stage deploys one at a time. Each has its own queue, so a prod deploy
+that waits for approval never holds up beta.
+
+No AWS keys are stored in GitHub. A job asks GitHub for a short lived token
+that says where it runs, and trades it for one hour of access to the stage's
+account. The role it takes on is the stage's `Deploy` stack.
+
+- The beta role accepts a token only from the `main` branch of this
+  repository, named by its name and its id.
+- The prod role accepts a token only from a job in the `prod` environment of
+  this repository. GitHub starts such a job only from `main` and only after
+  the approval, because the environment's settings say so.
+
+A pull request or a fork cannot deploy either stage.
+
+The workflow reads the roles from the repository variables
+`BETA_DEPLOY_ROLE_ARN` and `PROD_DEPLOY_ROLE_ARN`, so no account id is
+written in the repo. The prod job is left out of every run until
+`PROD_DEPLOY_ROLE_ARN` is set. The one time setup is in `docs/backend.md`.
 
 Anyone who can push to `main` can change what runs in the beta account, so
-keep `main` protected. There is no workflow that deploys prod.
+keep `main` protected. Prod also needs the approval. The settings of the
+`prod` environment are part of what keeps prod safe, so do not remove its
+reviewer or its limit to `main`.
 
 ## AWS accounts
 
 There is one AWS account for each stage. On the owner's Mac the beta account
-is the AWS CLI profile `fa_beta`. Every workload goes to beta first, and the
-prod account stays empty until shortly before public launch.
+is the AWS CLI profile `fa_beta`. Every workload goes to beta first. The prod account stays
+empty until the owner sets up its deploy role and approves a first deploy.
 
 The `beta` stage of the backend is deployed in `us-east-1`. The CDK app takes
 the stage from `-c stage=<name>` and the account from the profile in use.
-GitHub Actions deploys beta when a backend change reaches `main`. Prod is
-deployed by hand from the owner's Mac. The steps are in `docs/backend.md`.
+GitHub Actions deploys beta when a backend change reaches `main`, and prod
+after the owner approves the same run. The steps are in `docs/backend.md`.

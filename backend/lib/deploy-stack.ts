@@ -1,7 +1,7 @@
 import { CfnOutput, DefaultStackSynthesizer, Duration, Stack, type StackProps } from 'aws-cdk-lib';
 import { CfnOIDCProvider, FederatedPrincipal, PolicyStatement, Role } from 'aws-cdk-lib/aws-iam';
 import type { Construct } from 'constructs';
-import { deploySubject, type DeploySource, type StageSettings } from './stages.ts';
+import { deploySourceInWords, deploySubject, type DeploySource, type StageSettings } from './stages.ts';
 
 /** Where GitHub Actions gets the token that says which repository and branch a job runs for. */
 export const githubTokenHost = 'token.actions.githubusercontent.com';
@@ -20,10 +20,11 @@ export interface DeployStackProps extends StackProps {
 /**
  * Lets GitHub Actions deploy this stage with no AWS keys stored in GitHub.
  *
- * A job proves which repository and branch it runs for with a short lived
- * token from GitHub. The role here takes that token only from the one
- * branch named in the stage settings, and can do one thing, which is to
- * take on the roles the CDK bootstrap made for deploying.
+ * A job proves which repository it runs for, and which branch or GitHub
+ * environment, with a short lived token from GitHub. The role here takes
+ * that token only from the one place named in the stage settings, and can
+ * do one thing, which is to take on the roles the CDK bootstrap made for
+ * deploying.
  *
  * This stack is deployed by hand by the account's owner. The deploy
  * workflow leaves it alone, so a change to who may deploy never deploys
@@ -43,13 +44,14 @@ export class DeployStack extends Stack {
 
     this.role = new Role(this, 'GitHubDeploy', {
       roleName: `FinalApproach-${stage.name}-GitHubDeploy`,
-      description: `Lets GitHub Actions deploy the ${stage.name} stage from ${source.owner}/${source.repository}, branch ${source.branch}.`,
+      description: `Lets GitHub Actions deploy the ${stage.name} stage from ${deploySourceInWords(source)}.`,
       maxSessionDuration: Duration.hours(1),
       assumedBy: new FederatedPrincipal(
         github.attrArn,
         {
           // Both must match exactly. A pull request, a fork, and any other
-          // branch each get a different subject, so none of them gets in.
+          // branch or environment each get a different subject, so none of
+          // them gets in.
           StringEquals: {
             [`${githubTokenHost}:aud`]: githubTokenAudience,
             [`${githubTokenHost}:sub`]: deploySubject(source),

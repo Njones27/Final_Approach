@@ -1,0 +1,91 @@
+name: Deploy the backend
+description: >-
+  Deploys one stage of the backend to its AWS account, and then checks that
+  the API turns away a request with no sign in. The job that uses it checks
+  the repository out first, and gives itself the id-token permission.
+
+# The steps are here, and not in the workflow, so beta and prod are deployed
+# by exactly the same steps. See docs/backend.md.
+
+inputs:
+  stage:
+    description: The stage to deploy, which is beta or prod.
+    required: true
+  role:
+    description: The role in the stage's AWS account that the job takes on.
+    required: true
+  role-variable:
+    description: The name of the repository variable that holds the role, for the message when it is not set.
+    required: true
+  region:
+    description: The AWS region the stage is deployed in.
+    required: false
+    default: us-east-1
+
+runs:
+  using: composite
+  steps:
+    - name: The stage and its deploy role are set
+      shell: bash
+      env:
+        STAGE: ${{ inputs.stage }}
+        DEPLOY_ROLE: ${{ inputs.role }}
+        ROLE_VARIABLE: ${{ inputs.role-variable }}
+      run: |
+        case "${STAGE}" in
+          beta | prod) ;;
+          *)
+            echo "::error::The stage must be beta or prod, and it is '${STAGE}'."
+            exit 1
+            ;;
+        esac
+        if [ -z "${DEPLOY_ROLE}" ]; then
+          echo "::error::Set the repository variable ${ROLE_VARIABLE} to the role from the FinalApproach-${STAGE}-Deploy stack. See docs/backend.md."
+          exit 1
+        fi
+        # The deploy role stack is left out on purpose. The account's owner
+        # deploys it by hand, so a change to who may deploy never deploys itself.
+        echo "STACKS=FinalApproach-${STAGE}-Storage FinalApproach-${STAGE}-Identity FinalApproach-${STAGE}-Api" >> "${GITHUB_ENV}"
+
+    - name: Install
+      shell: bash
+      working-directory: backend
+      run: npm ci
+
+    - name: Sign in to the ${{ inputs.stage }} account
+      uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+      with:
+        role-to-assume: ${{ inputs.role }}
+        role-session-name: github-deploy-${{ inputs.stage }}-${{ github.run_id }}
+        aws-region: ${{ inputs.region }}
+
+    - name: Show what will change
+      shell: bash
+      working-directory: backend
+      env:
+        STAGE: ${{ inputs.stage }}
+      # STACKS is a list of names, so it is split on purpose.
+      run: npx cdk diff ${STACKS} -c "stage=${STAGE}"
+
+    - name: Deploy
+      shell: bash
+      working-directory: backend
+      env:
+        STAGE: ${{ inputs.stage }}
+      run: |
+        npx cdk deploy ${STACKS} -c "stage=${STAGE}" \
+          --require-approval never \
+          --outputs-file "${RUNNER_TEMP}/outputs-${STAGE}.json"
+
+    - name: The API turns away a request with no sign in
+      shell: bash
+      env:
+        STAGE: ${{ inputs.stage }}
+      run: |
+        api_url="$(node -e 'const outputs = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); process.stdout.write(outputs[process.argv[2]].ApiURL)' "${RUNNER_TEMP}/outputs-${STAGE}.json" "FinalApproach-${STAGE}-Api")"
+        status="$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 30 "${api_url%/}/photos")"
+        if [ "${status}" != "401" ]; then
+          echo "::error::Expected 401 from GET /photos with no sign in, got ${status}."
+          exit 1
+        fi
+        echo "GET /photos with no sign in answered 401."

@@ -225,10 +225,9 @@ describe('deploying from GitHub', () => {
   const [role] = Object.values(deploy.findResources('AWS::IAM::Role'));
   const trust = role?.['Properties'].AssumeRolePolicyDocument.Statement;
 
-  test('only beta can be deployed by GitHub, so prod is deployed by hand', () => {
+  test('each stage has its own deploy stack', () => {
     assert.equal(stack.stackName, 'FinalApproach-beta-Deploy');
-    assert.equal(prod.stacks.deploy, undefined);
-    assert.equal(stages.prod.deployFrom, undefined);
+    assert.equal(prod.stacks.deploy?.stackName, 'FinalApproach-prod-Deploy');
   });
 
   test('the account takes tokens from GitHub that were made for AWS', () => {
@@ -262,10 +261,49 @@ describe('deploying from GitHub', () => {
   });
 
   test('the subject names the owner and the repository by name and by id', () => {
-    assert.equal(
-      deploySubject({ owner: 'Owner', ownerID: 12, repository: 'Repo', repositoryID: 34, branch: 'release' }),
-      'repo:Owner@12/Repo@34:ref:refs/heads/release',
-    );
+    const repository = { owner: 'Owner', ownerID: 12, repository: 'Repo', repositoryID: 34 };
+    assert.equal(deploySubject({ ...repository, branch: 'release' }), 'repo:Owner@12/Repo@34:ref:refs/heads/release');
+    assert.equal(deploySubject({ ...repository, environment: 'live' }), 'repo:Owner@12/Repo@34:environment:live');
+  });
+
+  test('the prod role takes a token only from the prod environment of this repository', () => {
+    assert.ok(prod.stacks.deploy, 'prod has a deploy stack');
+    const prodDeploy = Template.fromStack(prod.stacks.deploy);
+    prodDeploy.resourceCountIs('AWS::IAM::Role', 1);
+    const [prodRole] = Object.values(prodDeploy.findResources('AWS::IAM::Role'));
+    assert.equal(prodRole?.['Properties'].RoleName, 'FinalApproach-prod-GitHubDeploy');
+    const prodTrust = prodRole?.['Properties'].AssumeRolePolicyDocument.Statement;
+    assert.equal(prodTrust.length, 1);
+    assert.equal(prodTrust[0].Action, 'sts:AssumeRoleWithWebIdentity');
+    // A job gets this subject only by naming the prod environment, and
+    // GitHub starts such a job only after the approval that environment
+    // asks for. A push to main alone gets the beta subject, which is not
+    // this one.
+    assert.deepEqual(prodTrust[0].Condition, {
+      StringEquals: {
+        'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com',
+        'token.actions.githubusercontent.com:sub':
+          'repo:Njones27@153565100/Final_Approach@1468200614:environment:prod',
+      },
+    });
+  });
+
+  test('no stage takes the token of another stage', () => {
+    const subjects = Object.values(stages).map((stage) => stage.deployFrom && deploySubject(stage.deployFrom));
+    assert.equal(new Set(subjects).size, subjects.length);
+    for (const subject of subjects) assert.doesNotMatch(subject ?? '*', /\*/);
+  });
+
+  test('the prod role is as narrow as the beta role', () => {
+    assert.ok(prod.stacks.deploy);
+    const prodDeploy = Template.fromStack(prod.stacks.deploy);
+    const allowed = statements(prodDeploy);
+    assert.equal(allowed.length, 1);
+    assert.equal(allowed[0]?.Action, 'sts:AssumeRole');
+    const resources = [allowed[0]?.Resource].flat().map((resource) => JSON.stringify(resource));
+    assert.equal(resources.length, 3);
+    for (const resource of resources) assert.doesNotMatch(resource, /\*/);
+    assert.deepEqual(Object.keys(prodDeploy.findOutputs('*')), ['DeployRoleArn']);
   });
 
   test('the role can only take on the roles the CDK bootstrap made for a deploy', () => {

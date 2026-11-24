@@ -12,8 +12,9 @@ tested with no AWS account.
 
 These values ship inside the app, so they are not secrets. The beta stage
 was first deployed on 2026-11-24 from the commit that added the backend. A
-change to `backend/` reaches beta when it reaches `main`, once the deploy
-workflow is set up as described below.
+change to `backend/` reaches beta when it reaches `main`. It reaches prod
+when the owner approves the same run, once prod is set up as described
+below.
 
 ## What it holds
 
@@ -22,7 +23,7 @@ workflow is set up as described below.
 | `FinalApproach-<stage>-Storage` | The DynamoDB table of records, the S3 bucket of images, and the sweeper function |
 | `FinalApproach-<stage>-Identity` | The Cognito user pool and the four functions that check Sign in with Apple |
 | `FinalApproach-<stage>-Api` | The HTTP API and the functions behind its routes |
-| `FinalApproach-beta-Deploy` | The role that lets GitHub Actions deploy. Only beta has one |
+| `FinalApproach-<stage>-Deploy` | The role that lets GitHub Actions deploy the stage. The owner deploys it by hand |
 
 The stage is `beta` or `prod`. Each stage is its own AWS account. What differs
 between stages, and every limit that may need tuning, is data in
@@ -190,14 +191,18 @@ The tests use Node's own test runner and run the TypeScript files directly,
 so there is no build step. Node 22 is needed. GitHub Actions runs the same
 four commands on every pull request.
 
-## Deploying beta from GitHub
+## Deploying from GitHub
 
 `.github/workflows/backend-deploy.yml` deploys the Storage, Identity, and Api
-stacks to beta when a push to `main` changes `backend/`. The owner can also
-start it by hand from the Actions tab. It stores no AWS keys. `docs/ci-cd.md`
-describes how it signs in.
+stacks when a push to `main` changes `backend/`. Beta goes first. Prod
+follows in the same run after the owner approves it. The owner can also start
+a run by hand from the Actions tab. It stores no AWS keys. `docs/ci-cd.md`
+describes the jobs and how they sign in.
 
-It needs two things set up once, by the person who owns the AWS account.
+### Beta, set up once
+
+Beta needs two things set up once, by the person who owns the AWS account.
+Both are done.
 
 1. Deploy the role it uses, with
    `npx cdk deploy FinalApproach-beta-Deploy --profile fa_beta -c stage=beta`.
@@ -210,22 +215,60 @@ It needs two things set up once, by the person who owns the AWS account.
    Variables. It is a variable and not a secret, because it only names the
    role.
 
-The role can do one thing, which is to take on the roles the CDK bootstrap
+### Prod, set up once
+
+Prod is deployed by the same workflow, after an approval. Until the steps
+below are done, the prod job is left out of every run and the prod account
+stays empty. Do them in this order, because the prod role trusts every job
+that names the `prod` environment, and only the environment's settings keep
+other branches out and ask for the approval.
+
+1. On GitHub, open Settings, Environments, and make an environment named
+   `prod`. Turn on Required reviewers and add the owner. Leave Prevent self
+   review off, because the owner is the only reviewer. Under Deployment
+   branches and tags choose Selected branches and tags, and add `main`.
+2. Sign in to the prod account with `aws login --profile fa_prod` and set
+   `AWS_REGION=us-east-1`.
+3. Bootstrap the account once, with
+   `npx cdk bootstrap aws://<account id>/us-east-1 --profile fa_prod -c stage=prod`.
+4. Deploy the role, with
+   `npx cdk deploy FinalApproach-prod-Deploy --profile fa_prod -c stage=prod`.
+   It makes the account trust GitHub's tokens, and makes one role,
+   `FinalApproach-prod-GitHubDeploy`.
+5. Save the stack's `DeployRoleArn` output as the repository variable
+   `PROD_DEPLOY_ROLE_ARN`. From then on every run goes on to prod and waits
+   for the approval.
+6. Start the first deploy from the Actions tab. Choose Backend deploy, Run
+   workflow, and the stage `prod`. Approve it when GitHub asks. The deploy
+   step prints the API URL, the user pool id, and the app client id.
+7. Put those three values in the table at the top of this page and in a new
+   `FinalApproach/Config/Stages/prod.xcconfig`, shaped like `beta.xcconfig`.
+
+### What the roles can do
+
+Each role can do one thing, which is to take on the roles the CDK bootstrap
 made for deploying. Those end in CloudFormation's own role, which the
 bootstrap gives full access to the account. So a change that reaches `main`
 can change anything in the beta account. That is the usual trade for
-deploying on a merge, and it is the reason only beta has a role.
+deploying on a merge. The same change can reach the prod account only after
+the owner approves the run, which is why prod has the approval and beta does
+not.
 
-The workflow never deploys the Deploy stack. A change to who may deploy is
-made by hand, with the command in step 1.
+The workflow never deploys a Deploy stack. A change to who may deploy is
+made by hand, with the command that first deployed the stack.
 
-The stage settings name the owner, the repository, and the branch, in
-`deployFrom` in `backend/lib/stages.ts`. A stage without it gets no role.
-GitHub writes the owner and the repository into its token by name and by id,
-as in `repo:Njones27@153565100/Final_Approach@1468200614:ref:refs/heads/main`,
-and the role matches that text exactly. The ids never change, so a repository
+The stage settings name the owner and the repository, and then a branch or a
+GitHub environment, in `deployFrom` in `backend/lib/stages.ts`. A stage
+without it gets no role. GitHub writes the owner and the repository into its
+token by name and by id, as in
+`repo:Njones27@153565100/Final_Approach@1468200614:ref:refs/heads/main` for
+beta and
+`repo:Njones27@153565100/Final_Approach@1468200614:environment:prod` for
+prod, and each role matches its text exactly. A job that names an environment
+gets the second form, which does not say which branch it runs for. That is
+why the `prod` environment itself must allow only `main`. The ids never change, so a repository
 that later takes the same name cannot deploy. If the sign in step of the
-workflow is turned away, the beta account's CloudTrail event for
+workflow is turned away, the account's CloudTrail event for
 `AssumeRoleWithWebIdentity` shows the subject GitHub sent, under
 `userIdentity.userName`.
 
@@ -249,9 +292,9 @@ A new account is bootstrapped once before its first deploy, with
 The stage is needed because the CDK runs the app even for a bootstrap. The
 beta account is already bootstrapped.
 
-The `prod` stage follows the same steps with its own profile and
-`-c stage=prod`, before launch and not sooner. Prod has no role for GitHub,
-so it is only ever deployed by hand.
+The `prod` stage follows the same steps with its own profile, `fa_prod`, and
+`-c stage=prod`. A deploy by hand is for the first setup and for emergencies.
+The usual way to prod is the workflow, after an approval.
 
 ## Before the app can sign in
 
