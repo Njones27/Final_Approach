@@ -1,6 +1,7 @@
 import type { Environment } from 'aws-cdk-lib';
 import type { Construct } from 'constructs';
 import { ApiStack } from './api-stack.ts';
+import { DeployStack } from './deploy-stack.ts';
 import { IdentityStack } from './identity-stack.ts';
 import type { StageSettings } from './stages.ts';
 import { StorageStack } from './storage-stack.ts';
@@ -9,6 +10,8 @@ export interface Backend {
   readonly storage: StorageStack;
   readonly identity: IdentityStack;
   readonly api: ApiStack;
+  /** Only in a stage that GitHub Actions may deploy. */
+  readonly deploy?: DeployStack;
 }
 
 /**
@@ -33,5 +36,8 @@ export function buildBackend(scope: Construct, stage: StageSettings, env?: Envir
     users: identity.users,
     appClient: identity.appClient,
   });
-  return { storage, identity, api };
+  const deploy = stage.deployFrom
+    ? new DeployStack(scope, name('Deploy'), { ...shared, stage, source: stage.deployFrom })
+    : undefined;
+  return { storage, identity, api, ...(deploy ? { deploy } : {}) };
 }

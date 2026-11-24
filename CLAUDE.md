@@ -109,6 +109,8 @@ on this Mac.
 ## CI/CD
 
 GitHub Actions runs the core package tests, the `ci_scripts` checks, and the
-backend checks on every pull request. Xcode Cloud builds the app on merges to
-`main`. Details and the environment mechanism are in `docs/ci-cd.md`. Pin
-every GitHub Action by full commit SHA with the release in a trailing comment.
+backend checks on every pull request. It deploys the backend to beta when a
+change to `backend/` reaches `main`. Prod is never deployed from a workflow.
+Xcode Cloud builds the app on merges to `main`. Details and the environment
+mechanism are in `docs/ci-cd.md`. Pin every GitHub Action by full commit SHA
+with the release in a trailing comment.

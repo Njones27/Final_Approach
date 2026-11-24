@@ -2,8 +2,8 @@ name: Backend checks
 
 # Shared gate for pull requests and pushes to main (ci.yml). Uses no secrets
 # and no AWS account. It type checks the backend, runs its tests, and builds
-# the CloudFormation templates, which bundles every function. Deploying is a
-# separate workflow that does not exist yet. See docs/backend.md.
+# the CloudFormation templates, which bundles every function. Deploying is
+# backend-deploy.yml, which runs these checks first. See docs/backend.md.
 on:
   workflow_call:
 

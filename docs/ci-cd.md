@@ -11,7 +11,8 @@ check that works on Linux. This is the same split the WalkWorthy repo uses.
 | Archive and internal TestFlight | Xcode Cloud, Beta workflow | Merge to `main` |
 | Archive, external TestFlight, App Store | Xcode Cloud, Release workflow | Version tag such as `v1.0.0` |
 | Backend type check, tests, and template build (`backend/`) | GitHub Actions, Linux | Every pull request and push to `main` |
-| Backend deploys | By hand from the owner's Mac for now | See `docs/backend.md`. A GitHub Actions workflow comes later |
+| Backend deploy to beta | GitHub Actions, Linux | Push to `main` that changes `backend/`, or by hand from the Actions tab |
+| Backend deploy to prod | By hand from the owner's Mac | Before launch and not sooner. See `docs/backend.md` |
 
 ## Environments
 
@@ -101,6 +102,8 @@ The Apple Developer Program includes 25 Xcode Cloud compute hours a month.
 `.github/workflows/ci.yml` runs on every pull request and on pushes to `main`.
 It calls two reusable workflows. `.github/workflows/core-checks.yml` has two
 jobs, and `.github/workflows/backend-checks.yml` has one.
+`.github/workflows/backend-deploy.yml` is separate and deploys the backend to
+beta. It is described below.
 
 - **Core package tests** builds and tests `Packages/FinalApproachCore` in the
   official `swift` container image.
@@ -118,6 +121,27 @@ Conventions, carried over from WalkWorthy:
   reports.
 - Secrets live only in App Store Connect and GitHub, never in the repo.
 
+### Deploying the backend to beta
+
+`.github/workflows/backend-deploy.yml` runs when a push to `main` changes
+`backend/`, and the owner can start it by hand from the Actions tab. It runs
+the backend checks, shows what will change, deploys the three backend stacks
+to the beta account, and then checks that the API turns away a request with
+no sign in. Deploys run one at a time.
+
+No AWS keys are stored in GitHub. The job asks GitHub for a short lived token
+that names the repository and branch it runs for, and trades it for one hour
+of access to the beta account. The role it takes on is the
+`FinalApproach-beta-Deploy` stack. That role accepts a token only from the
+`main` branch of this repository, so a pull request or a fork cannot deploy.
+
+The workflow reads the role from the repository variable
+`BETA_DEPLOY_ROLE_ARN`, so the account's id is not written in the repo. The
+one time setup is in `docs/backend.md`.
+
+Anyone who can push to `main` can change what runs in the beta account, so
+keep `main` protected. There is no workflow that deploys prod.
+
 ## AWS accounts
 
 There is one AWS account for each stage. On the owner's Mac the beta account
@@ -126,6 +150,5 @@ prod account stays empty until shortly before public launch.
 
 The `beta` stage of the backend is deployed in `us-east-1`. The CDK app takes
 the stage from `-c stage=<name>` and the account from the profile in use.
-Deploys are by hand from the owner's Mac for now. Later, GitHub Actions will
-deploy by assuming an IAM role through OIDC, so no AWS keys are stored in
-GitHub. The steps are in `docs/backend.md`.
+GitHub Actions deploys beta when a backend change reaches `main`. Prod is
+deployed by hand from the owner's Mac. The steps are in `docs/backend.md`.

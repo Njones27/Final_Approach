@@ -12,7 +12,8 @@ tested with no AWS account.
 
 These values ship inside the app, so they are not secrets. The beta stage
 was first deployed on 2026-11-24 from the commit that added the backend. A
-change to `backend/` reaches beta only when it is deployed again.
+change to `backend/` reaches beta when it reaches `main`, once the deploy
+workflow is set up as described below.
 
 ## What it holds
 
@@ -21,6 +22,7 @@ change to `backend/` reaches beta only when it is deployed again.
 | `FinalApproach-<stage>-Storage` | The DynamoDB table of records, the S3 bucket of images, and the sweeper function |
 | `FinalApproach-<stage>-Identity` | The Cognito user pool and the four functions that check Sign in with Apple |
 | `FinalApproach-<stage>-Api` | The HTTP API and the functions behind its routes |
+| `FinalApproach-beta-Deploy` | The role that lets GitHub Actions deploy. Only beta has one |
 
 The stage is `beta` or `prod`. Each stage is its own AWS account. What differs
 between stages, and every limit that may need tuning, is data in
@@ -143,6 +145,38 @@ The tests use Node's own test runner and run the TypeScript files directly,
 so there is no build step. Node 22 is needed. GitHub Actions runs the same
 four commands on every pull request.
 
+## Deploying beta from GitHub
+
+`.github/workflows/backend-deploy.yml` deploys the Storage, Identity, and Api
+stacks to beta when a push to `main` changes `backend/`. The owner can also
+start it by hand from the Actions tab. It stores no AWS keys. `docs/ci-cd.md`
+describes how it signs in.
+
+It needs two things set up once, by the person who owns the AWS account.
+
+1. Deploy the role it uses, with
+   `npx cdk deploy FinalApproach-beta-Deploy --profile fa_beta -c stage=beta`.
+   The stack makes the account trust GitHub's tokens, and makes one role,
+   `FinalApproach-beta-GitHubDeploy`. If the account already trusts GitHub's
+   tokens for another project, the deploy stops and changes nothing, and the
+   stack must use the existing provider.
+2. Save the stack's `DeployRoleArn` output as the repository variable
+   `BETA_DEPLOY_ROLE_ARN`, under Settings, Secrets and variables, Actions,
+   Variables. It is a variable and not a secret, because it only names the
+   role.
+
+The role can do one thing, which is to take on the roles the CDK bootstrap
+made for deploying. Those end in CloudFormation's own role, which the
+bootstrap gives full access to the account. So a change that reaches `main`
+can change anything in the beta account. That is the usual trade for
+deploying on a merge, and it is the reason only beta has a role.
+
+The workflow never deploys the Deploy stack. A change to who may deploy is
+made by hand, with the command in step 1.
+
+The stage settings name the repository and the branch, in `deployFrom` in
+`backend/lib/stages.ts`. A stage without it gets no role.
+
 ## Deploying by hand
 
 A deploy needs the person who owns the AWS account. There is one AWS account
@@ -164,7 +198,8 @@ The stage is needed because the CDK runs the app even for a bootstrap. The
 beta account is already bootstrapped.
 
 The `prod` stage follows the same steps with its own profile and
-`-c stage=prod`, before launch and not sooner.
+`-c stage=prod`, before launch and not sooner. Prod has no role for GitHub,
+so it is only ever deployed by hand.
 
 ## Before the app can sign in
 
@@ -180,9 +215,6 @@ These need the person who owns the Apple and App Store Connect accounts.
 - The rest of the app side. That is Sign in with Apple, running a sync when
   the app opens and after a change, deleting the account on the backend when
   the user deletes it in the app, and the screens for signing in.
-- A deploy workflow. It needs an IAM role that GitHub Actions can assume
-  through OIDC, limited to this repository, so no AWS keys are stored in
-  GitHub.
 - CloudFront in front of the images, when other users can see photos.
 - Telling Apple to revoke the user's tokens when an account is deleted, which
   App Store review asks for. It needs a key from the Apple developer account.

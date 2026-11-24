@@ -1,6 +1,13 @@
 /** The stages the backend can be deployed as. Each one is its own AWS account. */
 export type StageName = 'beta' | 'prod';
 
+/** The one place a deploy by GitHub Actions may come from. */
+export interface DeploySource {
+  /** The repository as GitHub writes it, owner first, with its capital letters. */
+  readonly repository: string;
+  readonly branch: string;
+}
+
 /**
  * Everything that differs between stages, and every limit that may need
  * tuning. Limits live here as data so none is buried in a handler.
@@ -29,6 +36,11 @@ export interface StageSettings {
   readonly requestsPerSecond: number;
   readonly requestBurst: number;
   readonly logRetentionDays: number;
+  /**
+   * Where GitHub Actions may deploy this stage from. A stage without it has
+   * no role for GitHub to use, so it can only be deployed by hand.
+   */
+  readonly deployFrom?: DeploySource;
 }
 
 const shared = {
@@ -47,7 +59,12 @@ const shared = {
 } as const;
 
 export const stages: Record<StageName, StageSettings> = {
-  beta: { ...shared, name: 'beta', keepDataOnStackDelete: false },
+  beta: {
+    ...shared,
+    name: 'beta',
+    keepDataOnStackDelete: false,
+    deployFrom: { repository: 'Njones27/Final_Approach', branch: 'main' },
+  },
   prod: { ...shared, name: 'prod', keepDataOnStackDelete: true },
 };
 

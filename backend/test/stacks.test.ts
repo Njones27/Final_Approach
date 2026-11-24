@@ -212,6 +212,65 @@ describe('what the functions may do', () => {
   });
 });
 
+describe('deploying from GitHub', () => {
+  const stack = beta.stacks.deploy;
+  assert.ok(stack, 'beta has a deploy stack');
+  const deploy = Template.fromStack(stack);
+  const [role] = Object.values(deploy.findResources('AWS::IAM::Role'));
+  const trust = role?.['Properties'].AssumeRolePolicyDocument.Statement;
+
+  test('only beta can be deployed by GitHub, so prod is deployed by hand', () => {
+    assert.equal(stack.stackName, 'FinalApproach-beta-Deploy');
+    assert.equal(prod.stacks.deploy, undefined);
+    assert.equal(stages.prod.deployFrom, undefined);
+  });
+
+  test('the account takes tokens from GitHub that were made for AWS', () => {
+    deploy.resourceCountIs('AWS::IAM::OIDCProvider', 1);
+    deploy.hasResourceProperties('AWS::IAM::OIDCProvider', {
+      Url: 'https://token.actions.githubusercontent.com',
+      ClientIdList: ['sts.amazonaws.com'],
+    });
+  });
+
+  test('the role takes a token only from the main branch of this repository', () => {
+    deploy.resourceCountIs('AWS::IAM::Role', 1);
+    assert.equal(role?.['Properties'].RoleName, 'FinalApproach-beta-GitHubDeploy');
+    assert.equal(trust.length, 1);
+    const [statement] = trust;
+    assert.equal(statement.Effect, 'Allow');
+    assert.equal(statement.Action, 'sts:AssumeRoleWithWebIdentity');
+    assert.deepEqual(Object.keys(statement.Principal), ['Federated']);
+    // An exact match on both, with no wildcard, so no pull request, fork,
+    // tag, or other branch can use the role.
+    assert.deepEqual(statement.Condition, {
+      StringEquals: {
+        'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com',
+        'token.actions.githubusercontent.com:sub': 'repo:Njones27/Final_Approach:ref:refs/heads/main',
+      },
+    });
+  });
+
+  test('the role can only take on the roles the CDK bootstrap made for a deploy', () => {
+    const allowed = statements(deploy);
+    assert.equal(allowed.length, 1);
+    assert.equal(allowed[0]?.Action, 'sts:AssumeRole');
+    const resources = [allowed[0]?.Resource].flat().map((resource) => JSON.stringify(resource));
+    assert.equal(resources.length, 3);
+    for (const name of ['deploy-role', 'file-publishing-role', 'lookup-role']) {
+      assert.ok(resources.some((resource) => resource.includes(`:role/cdk-hnb659fds-${name}-`)), name);
+    }
+    for (const resource of resources) assert.doesNotMatch(resource, /\*/);
+    assert.equal(role?.['Properties'].ManagedPolicyArns, undefined);
+    assert.equal(role?.['Properties'].MaxSessionDuration, 3600);
+  });
+
+  test('the role is the only thing the stack hands out', () => {
+    deploy.resourceCountIs('AWS::IAM::Policy', 1);
+    assert.deepEqual(Object.keys(deploy.findOutputs('*')), ['DeployRoleArn']);
+  });
+});
+
 describe('stages', () => {
   test('only beta and prod exist', () => {
     assert.deepEqual(Object.keys(stages), ['beta', 'prod']);
