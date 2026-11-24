@@ -12,6 +12,7 @@ import Testing
         airline: String = "Alaska Airlines",
         registration: String = "N823AK",
         score: Double? = nil,
+        reading: Double? = nil,
         day: Double
     ) -> SlotShot {
         SlotShot(
@@ -20,6 +21,7 @@ import Testing
             airline: airline,
             registration: registration,
             score: score,
+            technicalReading: reading,
             loggedAt: Date(timeIntervalSince1970: day * 86_400)
         )
     }
@@ -97,6 +99,40 @@ import Testing
         #expect(entry?.bestScore == nil)
         #expect(entry?.tier == .logged)
         #expect(entry?.photoIDs == ["one", "three", "two"])
+    }
+
+    @Test func aSlotWithNoGradeIsHeldByTheBestTechnicalReadingAndHasNoTier() throws {
+        let shots = [
+            shot("first", reading: 60, day: 1),
+            shot("better", reading: 82, day: 2),
+            shot("worse", reading: 40, day: 3),
+            shot("unread", day: 4),
+        ]
+        let entry = try #require(
+            CollectionBook.entries(for: shots, kind: .aircraftType, thresholds: thresholds).first
+        )
+        #expect(entry.bestPhotoID == "better")
+        #expect(entry.photoIDs == ["better", "first", "worse", "unread"])
+        #expect(entry.bestScore == nil)
+        #expect(entry.bestTechnicalReading == 82)
+        // A reading of 82 would be gold as a grade. The tier comes from votes alone.
+        #expect(entry.tier == .logged)
+    }
+
+    @Test func aGradeTakesTheSlotFromAnyTechnicalReading() throws {
+        let shots = [
+            shot("read", reading: 95, day: 1),
+            shot("graded", score: 52, reading: 30, day: 2),
+            shot("later", reading: 99, day: 3),
+        ]
+        let entry = try #require(
+            CollectionBook.entries(for: shots, kind: .aircraftType, thresholds: thresholds).first
+        )
+        #expect(entry.bestPhotoID == "graded")
+        #expect(entry.photoIDs == ["graded", "later", "read"])
+        #expect(entry.bestScore == 52)
+        #expect(entry.bestTechnicalReading == nil)
+        #expect(entry.tier == .bronze)
     }
 
     @Test func slotsFollowTheOrderPhotosWereLoggedAndNotTheOrderGiven() {

@@ -162,20 +162,21 @@ struct PhotoDetailView: View {
         }
     }
 
-    /// What the technical check decided for a photo that has no grade yet.
-    /// The check is the gate before voting, so the verdict leads.
+    /// What the technical check read in a photo that has no grade yet. The
+    /// check is advice, so it never says a photo failed or is held back.
     private func checkVerdict(for photo: SpottedPhoto) -> some View {
         let technical = model.technicalScore(for: photo)
         let passed = model.checkReport(for: photo).isPassed
         return VStack(alignment: .leading, spacing: 3) {
             if let technical {
-                Text(passed ? "Technical check passed" : "Technical check needs work")
+                Text("Technical reading \(technical.scoreText)")
                     .font(.headline)
+                    .monospacedDigit()
                     .foregroundStyle(Theme.ink)
                 Text(
                     passed
-                        ? "It scored \(technical.scoreText). Votes decide the rest of the grade."
-                        : "It scored \(technical.scoreText). The fixes below would lift it."
+                        ? "Only you see this. Votes alone will set the grade."
+                        : "Only you see this. The ideas below could lift it, and votes alone will set the grade."
                 )
                 .font(.footnote)
                 .monospacedDigit()
@@ -209,7 +210,7 @@ struct PhotoDetailView: View {
     @ViewBuilder
     private func technicalLine(for photo: SpottedPhoto) -> some View {
         if let technical = model.technicalScore(for: photo) {
-            Text("Technical check \(technical.scoreText)")
+            Text("Technical reading \(technical.scoreText), seen only by you")
                 .font(.footnote)
                 .monospacedDigit()
                 .foregroundStyle(Theme.secondaryText)
@@ -404,7 +405,7 @@ private struct FixRow: View {
             Text("+\(fix.points)")
                 .font(.condensed(24, relativeTo: .title3))
                 .foregroundStyle(Theme.gain)
-                .accessibilityLabel("Worth \(fix.points) points")
+                .accessibilityLabel("Worth \(fix.points) points of the technical reading")
         }
         .frame(minHeight: 62)
         .accessibilityElement(children: .combine)

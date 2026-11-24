@@ -85,6 +85,13 @@ struct CollectionTile: View {
                         .font(.condensed(isHero ? 44 : 26, relativeTo: .title))
                         .foregroundStyle(Theme.onPhoto)
                 }
+            } else if let reading = model.provisionalScore(for: photo) {
+                // The technical reading stands in until the votes are in.
+                // It is dimmed and has no tier mark, because the tier comes
+                // from votes alone.
+                Text(reading.scoreText)
+                    .font(.condensed(isHero ? 44 : 26, relativeTo: .title))
+                    .foregroundStyle(Theme.onPhoto.opacity(0.6))
             }
         }
     }
@@ -110,14 +117,22 @@ struct CollectionTile: View {
         switch photo.status {
         case .logged:
             parts.append("not graded yet")
+            parts.append(contentsOf: readingText)
         case let .voting(_, hoursLeft):
             parts.append("voting, \(hoursLeft) hours left")
+            parts.append(contentsOf: readingText)
         case .graded:
             if let score = model.finalScore(for: photo) {
                 parts.append("\(model.tier(for: photo).displayName), grade \(score.scoreText)")
             }
         }
         return parts.joined(separator: ", ")
+    }
+
+    /// The technical reading in words, for a photo with no grade yet.
+    private var readingText: [String] {
+        guard let reading = model.provisionalScore(for: photo) else { return [] }
+        return ["technical reading \(reading.scoreText)"]
     }
 }
 

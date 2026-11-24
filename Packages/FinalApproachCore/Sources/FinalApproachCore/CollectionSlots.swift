@@ -11,6 +11,10 @@ public struct SlotShot: Equatable, Sendable {
     public let registration: String
     /// The photo's final grade, or nil until it has one.
     public let score: Double?
+    /// The photo's technical reading, or nil when the check did not run. It
+    /// is private to the owner and ranks a shot only while no shot in the
+    /// slot has a grade.
+    public let technicalReading: Double?
     public let loggedAt: Date
 
     public init(
@@ -19,6 +23,7 @@ public struct SlotShot: Equatable, Sendable {
         airline: String,
         registration: String,
         score: Double?,
+        technicalReading: Double? = nil,
         loggedAt: Date
     ) {
         self.photoID = photoID
@@ -26,6 +31,7 @@ public struct SlotShot: Equatable, Sendable {
         self.airline = airline
         self.registration = registration
         self.score = score
+        self.technicalReading = technicalReading
         self.loggedAt = loggedAt
     }
 
@@ -54,6 +60,9 @@ public struct CollectionEntry: Equatable, Identifiable, Sendable {
     public let bestPhotoID: String
     /// The best photo's final grade, or nil when no photo here is graded.
     public let bestScore: Double?
+    /// The best photo's technical reading, when it has no grade yet. The
+    /// tier never comes from it.
+    public let bestTechnicalReading: Double?
     public let tier: Tier
     /// Every photo in the slot, best first.
     public let photoIDs: [String]
@@ -87,7 +96,9 @@ public enum CollectionBook {
     /// filled.
     ///
     /// A later photo takes a slot only when it grades strictly higher, and
-    /// any graded photo beats an ungraded one.
+    /// any graded photo beats an ungraded one. Among photos with no grade,
+    /// a later one takes the slot only with a strictly higher technical
+    /// reading.
     public static func entries(
         for shots: [SlotShot],
         kind: SlotKind,
@@ -106,7 +117,7 @@ public enum CollectionBook {
             let slotKey = key(for: name, kind: kind)
             guard !slotKey.isEmpty else { continue }
             if var slot = slots[slotKey] {
-                if SlotUpgrade.shouldReplace(currentScore: slot.best.score, newScore: shot.score) {
+                if SlotUpgrade.shouldReplace(current: slot.best, new: shot) {
                     slot.best = shot
                     slot.upgradedAt = shot.loggedAt
                 }
@@ -132,6 +143,7 @@ public enum CollectionBook {
                 title: slot.title,
                 bestPhotoID: slot.best.photoID,
                 bestScore: slot.best.score,
+                bestTechnicalReading: slot.best.score == nil ? slot.best.technicalReading : nil,
                 tier: slot.best.score.map { thresholds.tier(forScore: $0) } ?? .logged,
                 photoIDs: bestFirst(slot.shots, best: slot.best).map(\.photoID),
                 firstLoggedAt: slot.firstLoggedAt,
@@ -150,7 +162,8 @@ public enum CollectionBook {
     }
 
     /// The slot's best photo, then the graded ones from the highest grade
-    /// down, then the ungraded ones from the newest back.
+    /// down, then the ungraded ones from the highest technical reading
+    /// down, and last the ones with neither from the newest back.
     private static func bestFirst(_ shots: [SlotShot], best: SlotShot) -> [SlotShot] {
         let rest = shots
             .filter { $0.photoID != best.photoID }
@@ -159,7 +172,14 @@ public enum CollectionBook {
                 case let (.some(a), .some(b)) where a != b: a > b
                 case (.some, nil): true
                 case (nil, .some): false
-                default: first.loggedAt > second.loggedAt
+                case (.some, .some): first.loggedAt > second.loggedAt
+                case (nil, nil):
+                    switch (first.technicalReading, second.technicalReading) {
+                    case let (.some(a), .some(b)) where a != b: a > b
+                    case (.some, nil): true
+                    case (nil, .some): false
+                    default: first.loggedAt > second.loggedAt
+                    }
                 }
             }
         return [best] + rest

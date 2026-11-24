@@ -8,10 +8,13 @@ import UIKit
 struct CollectionModelTests {
     let model = SampleData.model()
 
-    @Test func blendsTheTechnicalCheckAndVotesIntoAWholeNumberGrade() throws {
+    @Test func theVotesAloneSetAWholeNumberGrade() throws {
         let photo = try #require(model.photo(id: "b737-n823ak"))
+        // A 4.32 average on the 1 to 5 scale is 83. The technical reading
+        // of 78 takes no part in it.
         #expect(model.technicalScore(for: photo) == 78)
         #expect(model.finalScore(for: photo) == 83)
+        #expect(model.provisionalScore(for: photo) == nil)
     }
 
     @Test func everySampleGradeMatchesTheDesign() throws {
@@ -162,7 +165,7 @@ struct CollectionModelTests {
         #expect(check.findings.count == 3)
         #expect(check.fixes.map(\.title) == ["Check focus and shutter speed", "Lower the exposure"])
         #expect(check.fixes.map(\.detail) == ["The aircraft is soft.", "Bright parts of the aircraft lose detail."])
-        #expect(check.fixes.map(\.points) == [5, 4])
+        #expect(check.fixes.map(\.points) == [17, 15])
     }
 
     @Test func aPhotoWithNothingMeasuredHasNoCheck() {
@@ -176,6 +179,9 @@ struct CollectionModelTests {
         model.add(photo)
         #expect(model.technicalScore(for: photo)?.rounded() == 59)
         #expect(model.finalScore(for: photo) == nil)
+        // The reading stands in for the grade in the owner's own collection.
+        #expect(model.provisionalScore(for: photo) == 59)
+        #expect(model.tier(for: photo) == .logged)
         // 1/2000 s freezes an aircraft, so the shutter is not blamed.
         #expect(photo.fixes.first?.title == "Check focus and haze")
         #expect(photo.fixes.first?.detail == "The aircraft is soft at 1/2000 s.")

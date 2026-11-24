@@ -207,7 +207,7 @@ enum SampleData {
             capturedAt: PhotoMetadataReader.captureDate(fromExif: "2026:07:04 19:18:20"),
             captureCoordinate: Coordinate(latitude: 33.6497, longitude: -84.4058),
             spotID: "atl-cargo-ramp",
-            status: .graded(voteAverage: 4.55, voteCount: 18),
+            status: .graded(voteAverage: 4.52, voteCount: 18),
             findings: vc25Findings,
             fixes: stockFixes(for: vc25Findings)
         ),
@@ -222,7 +222,7 @@ enum SampleData {
             capturedAt: PhotoMetadataReader.captureDate(fromExif: "2026:05:17 20:33:01"),
             captureCoordinate: Coordinate(latitude: 33.6221, longitude: -84.3998),
             spotID: "atl-south-approach",
-            status: .graded(voteAverage: 4.4, voteCount: 12),
+            status: .graded(voteAverage: 4.32, voteCount: 12),
             findings: [
                 finding(.horizon, 60, "It tilts 1.8° to the left. Rotate the crop to fix it."),
                 finding(.sharpness, 70, "The nose is a little soft. Try 1/60 s or faster."),
@@ -257,7 +257,7 @@ enum SampleData {
             camera: e175Camera,
             capturedAt: PhotoMetadataReader.captureDate(fromExif: "2026:05:17 20:31:21"),
             spotID: "atl-north-deck",
-            status: .graded(voteAverage: 3.8, voteCount: 9),
+            status: .graded(voteAverage: 3.84, voteCount: 9),
             findings: e175Findings,
             fixes: stockFixes(for: e175Findings)
         ),
@@ -271,7 +271,7 @@ enum SampleData {
             camera: f22Camera,
             capturedAt: PhotoMetadataReader.captureDate(fromExif: "2026:08:16 16:59:25"),
             isLocationUndisclosed: true,
-            status: .graded(voteAverage: 3.55, voteCount: 7),
+            status: .graded(voteAverage: 3.64, voteCount: 7),
             findings: f22Findings,
             fixes: stockFixes(for: f22Findings)
         ),
@@ -285,7 +285,7 @@ enum SampleData {
             camera: fa18Camera,
             capturedAt: PhotoMetadataReader.captureDate(fromExif: "2026:06:20 14:59:48"),
             spotID: "atl-south-approach",
-            status: .graded(voteAverage: 3.2, voteCount: 6),
+            status: .graded(voteAverage: 3.32, voteCount: 6),
             findings: fa18Findings,
             fixes: stockFixes(for: fa18Findings)
         ),

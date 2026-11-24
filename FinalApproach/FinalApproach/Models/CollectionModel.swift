@@ -67,14 +67,14 @@ final class CollectionModel {
     let airports: [Airport]
 
     let thresholds: TierThresholds
-    /// The lowest technical check score that counts as passed.
+    /// The lowest score at which a check has nothing to suggest. The check
+    /// is advice to the photographer, so this never keeps a photo back.
     let passingCheckScore: Double
     /// The values that turn a photo's measurements into check scores.
     let checkRules: CheckRules
     /// The score a check is expected to reach once its fix is made. It sets
-    /// how many points a fix is worth.
+    /// how many points of the technical reading a fix is worth.
     let fixTargetScore: Double
-    let gradeWeights: GradeWeights
     let votingRules: VotingRules
     /// How close, in meters, a photo must be to a spot to count as taken
     /// from it.
@@ -106,7 +106,6 @@ final class CollectionModel {
         passingCheckScore: Double,
         checkRules: CheckRules,
         fixTargetScore: Double,
-        gradeWeights: GradeWeights = .launch,
         votingRules: VotingRules = .launch,
         spotMatchRadius: Double,
         storedImageQuality: Double,
@@ -147,7 +146,6 @@ final class CollectionModel {
         self.passingCheckScore = passingCheckScore
         self.checkRules = checkRules
         self.fixTargetScore = fixTargetScore
-        self.gradeWeights = gradeWeights
         self.votingRules = votingRules
         if store != nil, usableStore == nil {
             storageProblem = .couldNotOpen
@@ -190,9 +188,9 @@ final class CollectionModel {
             guard let advice = outcomes.first(where: { $0.result.kind == result.kind })?.advice else {
                 return nil
             }
-            // The technical check is only part of the grade, so a fix is
-            // worth its gain in the check times that share.
-            let gain = report.overallGain(raising: result.kind, to: fixTargetScore) * gradeWeights.ai
+            // A fix is worth its gain in the technical reading. It is not
+            // worth points of the grade, which the votes alone set.
+            let gain = report.overallGain(raising: result.kind, to: fixTargetScore)
             return SuggestedFix(
                 kind: result.kind,
                 title: advice.title,
@@ -203,24 +201,28 @@ final class CollectionModel {
         return (findings, fixes)
     }
 
-    /// The technical check score, or nil when the check has not run.
+    /// The technical reading, or nil when the check has not run. It is
+    /// advice for the photographer. No other user sees it, and it takes no
+    /// part in the grade.
     func technicalScore(for photo: SpottedPhoto) -> Double? {
         checkReport(for: photo).overallScore()
     }
 
     /// The final grade as a whole number, or nil until voting has closed.
+    /// The votes alone set it, so a photo is never marked down for style.
     func finalScore(for photo: SpottedPhoto) -> Double? {
-        guard case let .graded(voteAverage, _) = photo.status,
-              let technical = technicalScore(for: photo)
-        else { return nil }
+        guard case let .graded(voteAverage, _) = photo.status else { return nil }
         // The tier is set from the rounded grade, so the number on screen and
         // the tier beside it always agree.
-        return FinalGrade.score(
-            aiScore: technical,
-            voteAverage: voteAverage,
-            weights: gradeWeights,
-            rules: votingRules
-        )?.rounded()
+        return FinalGrade.score(voteAverage: voteAverage, rules: votingRules)?.rounded()
+    }
+
+    /// The technical reading as a whole number, for a photo that has no
+    /// grade yet. The owner's collection shows it as a private stand-in
+    /// until the votes are in. It is nil once the photo is graded.
+    func provisionalScore(for photo: SpottedPhoto) -> Double? {
+        guard finalScore(for: photo) == nil else { return nil }
+        return technicalScore(for: photo)?.rounded()
     }
 
     /// The tier a photo holds. A photo with no final grade is `logged`.
@@ -525,7 +527,11 @@ final class CollectionModel {
     /// The slots of one collection view, in name order. Each slot keeps the
     /// user's best shot of one type, airline, or registration.
     func slots(_ kind: SlotKind) -> [CollectionEntry] {
-        let shots = photos.map { $0.slotShot(score: finalScore(for: $0)) }
+        // A photo with no grade is ranked by its technical reading, so the
+        // slots work before anyone has voted. A grade always outranks one.
+        let shots = photos.map {
+            $0.slotShot(score: finalScore(for: $0), technicalReading: technicalScore(for: $0)?.rounded())
+        }
         return CollectionBook.entries(for: shots, kind: kind, thresholds: thresholds)
             .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
     }
