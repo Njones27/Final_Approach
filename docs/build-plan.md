@@ -182,8 +182,11 @@ What the app does now, and what is still to come in milestone 8.
 - A photo with no grade shows its technical reading, dimmed and with no
   tier, on its tile in the owner's collection. A slot ranks ungraded shots
   by that reading, and a graded shot always outranks one.
-- Posting, and the choice to post anyway, are still to come, since a photo
-  is not shared with anyone before then. The voting screen follows.
+- The photo screen posts a photo for votes. The button reads Post anyway
+  when the check has ideas, and the check never stands in the way. A posted
+  photo shows how many votes are in, and its grade once the votes set it.
+  `docs/backend.md` has the details under Posting in the app.
+- The voting screen with its five stars is still to come.
 
 ## Identification
 

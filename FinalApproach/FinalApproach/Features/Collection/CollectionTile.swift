@@ -66,8 +66,8 @@ struct CollectionTile: View {
                         }
                     }
                 }
-                if case let .voting(_, hoursLeft) = photo.status {
-                    badge("Voting, \(hoursLeft) h left")
+                if case let .voting(_, _, hoursLeft) = model.progress(for: photo) {
+                    badge(hoursLeft > 0 ? "Voting, \(hoursLeft) h left" : "Voting")
                 }
                 if shotCount > 1 {
                     badge("\(shotCount) shots")
@@ -114,17 +114,15 @@ struct CollectionTile: View {
         if let registration = photo.visibleRegistration {
             parts.append(registration)
         }
-        switch photo.status {
+        switch model.progress(for: photo) {
         case .logged:
             parts.append("not graded yet")
             parts.append(contentsOf: readingText)
-        case let .voting(_, hoursLeft):
-            parts.append("voting, \(hoursLeft) hours left")
+        case let .voting(_, _, hoursLeft):
+            parts.append(hoursLeft > 0 ? "voting, \(hoursLeft) hours left" : "voting")
             parts.append(contentsOf: readingText)
-        case .graded:
-            if let score = model.finalScore(for: photo) {
-                parts.append("\(model.tier(for: photo).displayName), grade \(score.scoreText)")
-            }
+        case let .graded(score, _):
+            parts.append("\(model.tier(for: photo).displayName), grade \(score.scoreText)")
         }
         return parts.joined(separator: ", ")
     }
