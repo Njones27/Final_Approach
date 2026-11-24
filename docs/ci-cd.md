@@ -13,6 +13,7 @@ check that works on Linux. This is the same split the WalkWorthy repo uses.
 | Backend type check, tests, and template build (`backend/`) | GitHub Actions, Linux | Every pull request and push to `main` |
 | Backend deploy to beta | GitHub Actions, Linux | Push to `main` that changes `backend/`, or by hand from the Actions tab |
 | Backend deploy to prod | GitHub Actions, Linux | After the beta deploy of the same run passes, and only once the owner approves it |
+| Prod holds this backend | GitHub Actions, Linux | Every pull request. It stops an app change while prod is behind `main` |
 
 ## Environments
 
@@ -27,10 +28,10 @@ Xcode needs no setup to find beta.
 
 Two things follow from it.
 
-- A merge that changes the app and the backend sends the app to TestFlight
-  at once, while the prod backend waits for the approval. Approve that run
-  before testing the new build on the phone, or the app may call a backend
-  that is older than it.
+- A merge that changes the app sends it to TestFlight at once, while a
+  backend change waits for the approval before it reaches prod. So the
+  backend goes first. The check named Prod holds this backend, described
+  under GitHub Actions below, stops an app change until prod has caught up.
 - What is saved from the phone is saved in the prod account. Deleting the
   account in Profile removes it.
 
@@ -128,7 +129,8 @@ The Apple Developer Program includes 25 Xcode Cloud compute hours a month.
 
 `.github/workflows/ci.yml` runs on every pull request and on pushes to `main`.
 It calls two reusable workflows. `.github/workflows/core-checks.yml` has two
-jobs, and `.github/workflows/backend-checks.yml` has one.
+jobs, and `.github/workflows/backend-checks.yml` has one. It also has one job
+of its own, which runs on pull requests only.
 `.github/workflows/backend-deploy.yml` is separate and deploys the backend to
 beta. It is described below.
 
@@ -139,6 +141,35 @@ beta. It is described below.
 - **Backend tests and templates** type checks `backend/`, runs its tests, and
   builds the templates for both stages in the official `node` container image.
   It needs no AWS account.
+- **Prod holds this backend** keeps the app from getting ahead of prod. It
+  is described next.
+
+### Prod before the app
+
+An app change reaches TestFlight as soon as it merges, and that build talks
+to prod. A backend change reaches prod only after the owner approves it. The
+check named Prod holds this backend keeps the two in order. Its rules are in
+`.github/scripts/prod-holds-backend.sh`, and the job runs that script's own
+behavior checks first.
+
+- A pull request that changes nothing in `FinalApproach/` or `Packages/`
+  starts no app build, so it always passes.
+- A pull request may not change the app and `backend/` together. The
+  backend change goes in its own pull request first.
+- A pull request that changes the app passes only when `backend/` on `main`
+  is the same as in the commit prod was last deployed from. The job asks
+  GitHub for the newest deploy to the `prod` environment that passed.
+
+When the check stops an app change, approve the waiting Backend deploy run,
+or start one with the stage `prod`. After prod has passed, run the failed
+check again from the pull request, with Re-run failed jobs.
+
+The check is a rule only once `main` requires it. Under Settings, Branches,
+add a rule for `main` that requires status checks to pass, choose Prod holds
+this backend, and turn on Require branches to be up to date before merging.
+The last setting matters, because the check reads `main` as it was when the
+check ran. Without the rule the check still shows red, and a merge is still
+possible.
 
 Conventions, carried over from WalkWorthy:
 

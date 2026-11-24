@@ -21,3 +21,34 @@ jobs:
 
   backend:
     uses: ./.github/workflows/backend-checks.yml
+
+  # An app change reaches TestFlight, which talks to prod, as soon as it
+  # merges. This holds it back until prod has the backend that is on main.
+  # See docs/ci-cd.md.
+  prod-first:
+    name: Prod holds this backend
+    # A push to main has already merged, so there is nothing left to hold.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Lets the job read which commit prod was last deployed from.
+      deployments: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # The result of the merge and the commit of main under it.
+          fetch-depth: 2
+
+      # shellcheck ships with the hosted Ubuntu runner image.
+      - name: Lint the scripts
+        run: shellcheck .github/scripts/*.sh
+
+      - name: The check behaves as described
+        run: .github/scripts/prod-holds-backend.test.sh
+
+      - name: An app change waits for prod
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/prod-holds-backend.sh HEAD^1 HEAD
