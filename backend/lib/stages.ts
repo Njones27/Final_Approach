@@ -1,11 +1,31 @@
 /** The stages the backend can be deployed as. Each one is its own AWS account. */
 export type StageName = 'beta' | 'prod';
 
-/** The one place a deploy by GitHub Actions may come from. */
+/**
+ * The one place a deploy by GitHub Actions may come from.
+ *
+ * GitHub names the owner and the repository in its token by name and by
+ * id. The ids never change and are never given to anyone else, so a
+ * renamed or deleted repository whose name is taken by someone else still
+ * cannot deploy. All four are public. `GET /repos/<owner>/<repository>` on
+ * GitHub's API returns them.
+ */
 export interface DeploySource {
-  /** The repository as GitHub writes it, owner first, with its capital letters. */
+  /** The owner's name as GitHub writes it, with its capital letters. */
+  readonly owner: string;
+  readonly ownerID: number;
+  /** The repository's name as GitHub writes it, with its capital letters. */
   readonly repository: string;
+  readonly repositoryID: number;
   readonly branch: string;
+}
+
+/**
+ * The subject GitHub writes into the token of a job that runs for a push to
+ * the source's branch. The role matches it exactly.
+ */
+export function deploySubject(source: DeploySource): string {
+  return `repo:${source.owner}@${source.ownerID}/${source.repository}@${source.repositoryID}:ref:refs/heads/${source.branch}`;
 }
 
 /**
@@ -63,7 +83,13 @@ export const stages: Record<StageName, StageSettings> = {
     ...shared,
     name: 'beta',
     keepDataOnStackDelete: false,
-    deployFrom: { repository: 'Njones27/Final_Approach', branch: 'main' },
+    deployFrom: {
+      owner: 'Njones27',
+      ownerID: 153565100,
+      repository: 'Final_Approach',
+      repositoryID: 1468200614,
+      branch: 'main',
+    },
   },
   prod: { ...shared, name: 'prod', keepDataOnStackDelete: true },
 };

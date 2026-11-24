@@ -3,7 +3,13 @@ import { describe, test } from 'node:test';
 import { App } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { buildBackend } from '../lib/backend.ts';
-import { deletedAccountMarkerSeconds, isStageName, stages, type StageName } from '../lib/stages.ts';
+import {
+  deletedAccountMarkerSeconds,
+  deploySubject,
+  isStageName,
+  stages,
+  type StageName,
+} from '../lib/stages.ts';
 
 /** The templates for one stage. The function code is not bundled, which keeps this quick. */
 function templates(stageName: StageName) {
@@ -246,9 +252,20 @@ describe('deploying from GitHub', () => {
     assert.deepEqual(statement.Condition, {
       StringEquals: {
         'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com',
-        'token.actions.githubusercontent.com:sub': 'repo:Njones27/Final_Approach:ref:refs/heads/main',
+        // Exactly what GitHub sent on the first run, as the beta account's
+        // own log recorded it. The numbers are the ids of the owner and of
+        // the repository.
+        'token.actions.githubusercontent.com:sub':
+          'repo:Njones27@153565100/Final_Approach@1468200614:ref:refs/heads/main',
       },
     });
+  });
+
+  test('the subject names the owner and the repository by name and by id', () => {
+    assert.equal(
+      deploySubject({ owner: 'Owner', ownerID: 12, repository: 'Repo', repositoryID: 34, branch: 'release' }),
+      'repo:Owner@12/Repo@34:ref:refs/heads/release',
+    );
   });
 
   test('the role can only take on the roles the CDK bootstrap made for a deploy', () => {

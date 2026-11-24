@@ -174,8 +174,15 @@ deploying on a merge, and it is the reason only beta has a role.
 The workflow never deploys the Deploy stack. A change to who may deploy is
 made by hand, with the command in step 1.
 
-The stage settings name the repository and the branch, in `deployFrom` in
-`backend/lib/stages.ts`. A stage without it gets no role.
+The stage settings name the owner, the repository, and the branch, in
+`deployFrom` in `backend/lib/stages.ts`. A stage without it gets no role.
+GitHub writes the owner and the repository into its token by name and by id,
+as in `repo:Njones27@153565100/Final_Approach@1468200614:ref:refs/heads/main`,
+and the role matches that text exactly. The ids never change, so a repository
+that later takes the same name cannot deploy. If the sign in step of the
+workflow is turned away, the beta account's CloudTrail event for
+`AssumeRoleWithWebIdentity` shows the subject GitHub sent, under
+`userIdentity.userName`.
 
 ## Deploying by hand
 

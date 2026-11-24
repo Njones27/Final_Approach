@@ -1,7 +1,7 @@
 import { CfnOutput, DefaultStackSynthesizer, Duration, Stack, type StackProps } from 'aws-cdk-lib';
 import { CfnOIDCProvider, FederatedPrincipal, PolicyStatement, Role } from 'aws-cdk-lib/aws-iam';
 import type { Construct } from 'constructs';
-import type { DeploySource, StageSettings } from './stages.ts';
+import { deploySubject, type DeploySource, type StageSettings } from './stages.ts';
 
 /** Where GitHub Actions gets the token that says which repository and branch a job runs for. */
 export const githubTokenHost = 'token.actions.githubusercontent.com';
@@ -43,7 +43,7 @@ export class DeployStack extends Stack {
 
     this.role = new Role(this, 'GitHubDeploy', {
       roleName: `FinalApproach-${stage.name}-GitHubDeploy`,
-      description: `Lets GitHub Actions deploy the ${stage.name} stage from ${source.repository}, branch ${source.branch}.`,
+      description: `Lets GitHub Actions deploy the ${stage.name} stage from ${source.owner}/${source.repository}, branch ${source.branch}.`,
       maxSessionDuration: Duration.hours(1),
       assumedBy: new FederatedPrincipal(
         github.attrArn,
@@ -52,7 +52,7 @@ export class DeployStack extends Stack {
           // branch each get a different subject, so none of them gets in.
           StringEquals: {
             [`${githubTokenHost}:aud`]: githubTokenAudience,
-            [`${githubTokenHost}:sub`]: `repo:${source.repository}:ref:refs/heads/${source.branch}`,
+            [`${githubTokenHost}:sub`]: deploySubject(source),
           },
         },
         'sts:AssumeRoleWithWebIdentity',
