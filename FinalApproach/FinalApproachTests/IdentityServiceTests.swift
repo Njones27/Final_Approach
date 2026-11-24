@@ -172,11 +172,11 @@ struct CognitoIdentityServiceTests {
 
         #expect(first != second)
         #expect(first.count >= 40)
-        #expect(first.contains(where: \.isLowercase))
-        #expect(first.contains(where: \.isUppercase))
-        #expect(first.contains(where: \.isNumber))
+        #expect(first.contains(where: { $0.isLowercase }))
+        #expect(first.contains(where: { $0.isUppercase }))
+        #expect(first.contains(where: { $0.isNumber }))
         #expect(first.contains("!"))
-        #expect(first.allSatisfy(\.isASCII))
+        #expect(first.allSatisfy { $0.isASCII })
     }
 
     // MARK: Refreshing

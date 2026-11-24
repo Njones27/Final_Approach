@@ -26,9 +26,12 @@ struct AccountSessionTests {
     }
 
     private func session(
-        store: MemorySessionStore = MemorySessionStore(),
+        store: MemorySessionStore? = nil,
         withBackend: Bool = true
     ) -> AccountSession {
+        // A default argument is made outside the main actor, so the store is
+        // made here.
+        let store = store ?? MemorySessionStore()
         let clock = self.clock
         identity.now = { clock.now }
         return AccountSession(
