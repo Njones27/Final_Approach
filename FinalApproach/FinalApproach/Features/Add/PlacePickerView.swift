@@ -59,6 +59,11 @@ struct PlacePickerView: View {
                 // of the map is the middle of what the user can see.
                 VStack(spacing: 0) {
                     map(read: proxy)
+                        // The map stops at the title bar and does not draw
+                        // under it, so the title never sits on the map's
+                        // labels. A backing on the bar is not enough, since
+                        // the bar loses it when the search closes.
+                        .clipped()
                     confirmBar(read: proxy)
                 }
             }
@@ -66,9 +71,6 @@ struct PlacePickerView: View {
             // The title is short, so it still fits beside "Remove pin".
             .navigationTitle("Location")
             .navigationBarTitleDisplayMode(.inline)
-            // The map runs under the bar. The bar keeps its backing, so the
-            // title never sits straight on the map's labels.
-            .toolbarBackgroundVisibility(.visible, for: .navigationBar)
             .searchable(text: $searchText, prompt: "Search for an airport or a place")
             .onSubmit(of: .search) {
                 Task {
