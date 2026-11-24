@@ -1,5 +1,7 @@
 import { CfnOutput, Duration, Stack, type StackProps } from 'aws-cdk-lib';
 import { HttpApi, HttpMethod, HttpStage } from 'aws-cdk-lib/aws-apigatewayv2';
+import { Rule, Schedule } from 'aws-cdk-lib/aws-events';
+import { LambdaFunction } from 'aws-cdk-lib/aws-events-targets';
 import { HttpUserPoolAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import type { IUserPool, IUserPoolClient } from 'aws-cdk-lib/aws-cognito';
@@ -8,6 +10,7 @@ import type { IBucket } from 'aws-cdk-lib/aws-s3';
 import type { ITopic } from 'aws-cdk-lib/aws-sns';
 import type { Construct } from 'constructs';
 import { alarmPeriod, countAlarm } from './alarms.ts';
+import { votingIndex } from '../src/shared/keys.ts';
 import { allow, backendFunction, userImages } from './functions.ts';
 import { deletedAccountMarkerSeconds, type StageSettings } from './stages.ts';
 
@@ -31,6 +34,11 @@ export class ApiStack extends Stack {
     super(scope, id, props);
     const { stage, table, images, users, alerts } = props;
     const storage = { TABLE_NAME: table.tableName, BUCKET_NAME: images.bucketName };
+    const votingRules = {
+      VOTE_SCALE_MAX: String(stage.voteScaleMax),
+      MIN_VOTES: String(stage.minVotesToFinalize),
+    };
+    const openPosts = `${table.tableArn}/index/${votingIndex.name}`;
 
     const photos = backendFunction(this, 'Photos', {
       source: 'photos/index.ts',
@@ -63,6 +71,7 @@ export class ApiStack extends Stack {
         POSTS_PER_PAGE: String(stage.photosPerPage),
         MAX_IMAGE_BYTES: String(stage.maxImageBytes),
         VOTING_WINDOW_HOURS: String(stage.votingWindowHours),
+        ...votingRules,
       },
     });
     // A post is one transaction of two checks and a put, and a second post
@@ -78,6 +87,44 @@ export class ApiStack extends Stack {
     // Any other caller is told it has no access, which reads like a fault.
     // The function lists nothing.
     allow(posts, ['s3:ListBucket'], images.bucketArn);
+
+    const votes = backendFunction(this, 'Votes', {
+      source: 'votes/index.ts',
+      stage,
+      alerts,
+      environment: {
+        ...storage,
+        ...votingRules,
+        VOTING_QUEUE_SIZE: String(stage.votingQueueSize),
+        VOTING_QUEUE_READ_LIMIT: String(stage.votingQueueReadLimit),
+        IMAGE_LINK_SECONDS: String(stage.imageLinkSeconds),
+      },
+    });
+    // The queue reads the index of open posts and the voter's own votes.
+    allow(votes, ['dynamodb:Query'], openPosts);
+    // A vote is one transaction of a check, a put, and an update of the post's totals.
+    allow(
+      votes,
+      ['dynamodb:BatchGetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:ConditionCheckItem'],
+      table.tableArn,
+    );
+    // A voter reads a photo through a link this function signs.
+    allow(votes, ['s3:GetObject'], images.arnForObjects(userImages));
+
+    const closer = backendFunction(this, 'Closer', {
+      source: 'votes/closerIndex.ts',
+      stage,
+      alerts,
+      timeout: Duration.minutes(1),
+      environment: { TABLE_NAME: table.tableName, ...votingRules },
+    });
+    allow(closer, ['dynamodb:Query'], openPosts);
+    allow(closer, ['dynamodb:UpdateItem'], table.tableArn);
+    new Rule(this, 'CloseFinishedPosts', {
+      description: `Closes the posts of the ${stage.name} backend whose voting has ended.`,
+      schedule: Schedule.rate(Duration.minutes(stage.closerMinutes)),
+      targets: [new LambdaFunction(closer)],
+    });
 
     const account = backendFunction(this, 'Account', {
       source: 'account/index.ts',
@@ -128,6 +175,13 @@ export class ApiStack extends Stack {
       methods: [HttpMethod.PUT],
       integration: postRoutes,
     });
+    const voteRoutes = new HttpLambdaIntegration('VoteRoutes', votes);
+    this.api.addRoutes({ path: '/votes/queue', methods: [HttpMethod.GET], integration: voteRoutes });
+    this.api.addRoutes({
+      path: '/votes/{postID}',
+      methods: [HttpMethod.PUT],
+      integration: voteRoutes,
+    });
     this.api.addRoutes({
       path: '/account',
       methods: [HttpMethod.DELETE],
@@ -142,7 +196,7 @@ export class ApiStack extends Stack {
       watches: 'Api-server-errors',
       metric: this.api.metricServerError({ period: alarmPeriod(stage), statistic: 'Sum' }),
       threshold: stage.serverErrorsToAlarm,
-      description: `The API of the ${stage.name} backend answered with a server error. The logs of the Photos, Posts, and Account functions say why.`,
+      description: `The API of the ${stage.name} backend answered with a server error. The logs of the Photos, Posts, Votes, and Account functions say why.`,
     });
 
     new CfnOutput(this, 'ApiURL', { value: live.url });

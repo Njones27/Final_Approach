@@ -252,9 +252,9 @@ is identified by the registration read from it and by what the user types.
 The backend is a CDK app in `backend/`. It has a table of records, a bucket
 of images, a user pool that signs users in with Apple, and an HTTP API to
 save, list, and delete the signed in user's own photos, to post a photo for
-votes, and to delete the account. Posting is the first part of milestone 8.
-The voting queue, casting a vote, and the grade come next, and the app's
-side follows them. The `beta` and `prod` stages are both deployed. A backend change
+votes, to vote on other users' photos, and to delete the account. Posting,
+the voting queue, casting a vote, and the grade are the backend's part of
+milestone 8. The app's side follows them. The `beta` and `prod` stages are both deployed. A backend change
 that reaches `main` goes to beta, and then to prod once the owner approves
 the run. The app's side can sign in from the Profile screen, sync when the
 app opens and after a change, and delete the account. A build made in Xcode

@@ -160,7 +160,7 @@ describe('sign in', () => {
 });
 
 describe('the API', () => {
-  test('has exactly the six routes, and each needs a signed in user', () => {
+  test('has exactly the eight routes, and each needs a signed in user', () => {
     const routes = Object.values(beta.api.findResources('AWS::ApiGatewayV2::Route')).map(
       (route) => route['Properties'],
     );
@@ -169,8 +169,10 @@ describe('the API', () => {
       'DELETE /photos/{photoID}',
       'GET /photos',
       'GET /posts',
+      'GET /votes/queue',
       'PUT /photos/{photoID}',
       'PUT /posts/{photoID}',
+      'PUT /votes/{postID}',
     ]);
     for (const route of routes) assert.equal(route.AuthorizationType, 'JWT', route.RouteKey);
   });
@@ -186,6 +188,46 @@ describe('the API', () => {
         },
       });
       assert.ok(stages[name].votingWindowHours >= 1);
+    }
+  });
+
+  test('every function that reads the vote knows the same rules', () => {
+    for (const [stage, name] of [[beta, 'beta'], [prod, 'prod']] as const) {
+      const rules = {
+        VOTE_SCALE_MAX: String(stages[name].voteScaleMax),
+        MIN_VOTES: String(stages[name].minVotesToFinalize),
+      };
+      const functions = Object.values(stage.api.findResources('AWS::Lambda::Function'))
+        .map((fn) => fn['Properties'].Environment?.Variables ?? {})
+        .filter((variables) => 'VOTE_SCALE_MAX' in variables);
+      // Posts, Votes, and the closer.
+      assert.equal(functions.length, 3);
+      for (const variables of functions) {
+        assert.equal(variables.VOTE_SCALE_MAX, rules.VOTE_SCALE_MAX);
+        assert.equal(variables.MIN_VOTES, rules.MIN_VOTES);
+      }
+    }
+  });
+
+  test('the voting settings are amounts that make sense', () => {
+    for (const stage of Object.values(stages)) {
+      assert.ok(stage.voteScaleMax >= 2);
+      assert.ok(stage.minVotesToFinalize >= 1);
+      assert.ok(stage.votingQueueSize >= 1);
+      // The queue reads more posts than it hands out, because some are the
+      // voter's own or already voted on. One batch read holds 100 keys.
+      assert.ok(stage.votingQueueReadLimit >= stage.votingQueueSize);
+      assert.ok(stage.votingQueueReadLimit <= 100);
+    }
+  });
+
+  test('finished posts are closed on a schedule', () => {
+    for (const [stage, name] of [[beta, 'beta'], [prod, 'prod']] as const) {
+      stage.api.resourceCountIs('AWS::Events::Rule', 1);
+      stage.api.hasResourceProperties('AWS::Events::Rule', {
+        ScheduleExpression: `rate(${stages[name].closerMinutes} minutes)`,
+        State: 'ENABLED',
+      });
     }
   });
 
@@ -221,7 +263,9 @@ describe('what the functions may do', () => {
   test('the API functions take only the actions their code calls', () => {
     assert.deepEqual(actionsOf(beta.api).sort(), [
       'cognito-idp:AdminDeleteUser',
+      'dynamodb:BatchGetItem',
       'dynamodb:BatchWriteItem',
+      'dynamodb:ConditionCheckItem',
       'dynamodb:ConditionCheckItem',
       'dynamodb:ConditionCheckItem',
       'dynamodb:DeleteItem',
@@ -230,17 +274,55 @@ describe('what the functions may do', () => {
       'dynamodb:PutItem',
       'dynamodb:PutItem',
       'dynamodb:PutItem',
+      'dynamodb:PutItem',
       'dynamodb:Query',
       'dynamodb:Query',
       'dynamodb:Query',
+      'dynamodb:Query',
+      'dynamodb:Query',
+      'dynamodb:UpdateItem',
+      'dynamodb:UpdateItem',
       's3:DeleteObject',
       's3:DeleteObject',
+      's3:GetObject',
       's3:GetObject',
       's3:GetObject',
       's3:ListBucket',
       's3:ListBucket',
       's3:PutObject',
     ]);
+  });
+
+  const policyOf = (name: string) => {
+    const found = Object.entries(beta.api.findResources('AWS::IAM::Policy')).find(([id]) =>
+      id.startsWith(`${name}ServiceRole`),
+    );
+    assert.ok(found, name);
+    return found[1]['Properties'].PolicyDocument.Statement as { Action: string | string[]; Resource: unknown }[];
+  };
+
+  test('the votes function reads the index of open posts, and its other reads and writes stay on the table', () => {
+    const statements = policyOf('Votes');
+    assert.deepEqual(statements.flatMap((statement) => statement.Action).sort(), [
+      'dynamodb:BatchGetItem',
+      'dynamodb:ConditionCheckItem',
+      'dynamodb:PutItem',
+      'dynamodb:Query',
+      'dynamodb:UpdateItem',
+      's3:GetObject',
+    ]);
+    const query = statements.find((statement) => [statement.Action].flat().includes('dynamodb:Query'));
+    assert.match(JSON.stringify(query?.Resource), /\/index\/Voting/);
+  });
+
+  test('the closer reads the index of open posts and updates a post, and nothing else', () => {
+    const statements = policyOf('Closer');
+    assert.deepEqual(statements.flatMap((statement) => statement.Action).sort(), [
+      'dynamodb:Query',
+      'dynamodb:UpdateItem',
+    ]);
+    const query = statements.find((statement) => [statement.Action].flat().includes('dynamodb:Query'));
+    assert.match(JSON.stringify(query?.Resource), /\/index\/Voting/);
   });
 
   test('the posts function reads and writes records and reads images, and changes no image', () => {
@@ -270,7 +352,7 @@ describe('what the functions may do', () => {
     const imageStatements = statements(beta.api).filter((statement) =>
       [statement.Action].flat().some((action) => action.startsWith('s3:') && action !== 's3:ListBucket'),
     );
-    assert.equal(imageStatements.length, 3);
+    assert.equal(imageStatements.length, 4);
     for (const statement of imageStatements) {
       assert.match(JSON.stringify(statement.Resource), /\/users\/\*/);
     }
@@ -433,6 +515,7 @@ describe('alarms and the budget', () => {
         .sort();
       assert.deepEqual(watched, [
         'Account-errors',
+        'Closer-errors',
         'CreateAuthChallenge-errors',
         'DefineAuthChallenge-errors',
         'Photos-errors',
@@ -440,6 +523,7 @@ describe('alarms and the budget', () => {
         'PreSignUp-errors',
         'Sweeper-errors',
         'VerifyAuthChallenge-errors',
+        'Votes-errors',
       ]);
     }
   });
@@ -466,7 +550,7 @@ describe('alarms and the budget', () => {
   test('every alarm counts over one period, tells the topic, and stays quiet with no data', () => {
     for (const stage of [beta, prod]) {
       const alarms = alarmsOf(stage);
-      assert.equal(alarms.length, 9);
+      assert.equal(alarms.length, 11);
       for (const alarm of alarms) {
         assert.equal(alarm.Statistic, 'Sum');
         assert.equal(alarm.Period, 300);

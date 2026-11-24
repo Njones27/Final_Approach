@@ -71,3 +71,24 @@ export function parseImageKey(key: string): { userID: string; photoID: string } 
   if (!match || match[1] === undefined || match[2] === undefined) return undefined;
   return { userID: match[1], photoID: match[2] };
 }
+
+/**
+ * Every vote's sort key starts with this. A vote sits under its voter's
+ * partition, so deleting the voter's account removes it. It names the post
+ * by its random id and never names the post's owner.
+ */
+export const voteSortKeyPrefix = 'VOTE#';
+
+export function voteSortKey(postID: string): string {
+  return `${voteSortKeyPrefix}${postID}`;
+}
+
+/** A post id is made by the backend, as letters, numbers, and hyphens. */
+export function isUsablePostID(id: unknown): id is string {
+  return typeof id === 'string' && /^[A-Za-z0-9-]{1,80}$/.test(id);
+}
+
+/** The user a partition key belongs to. */
+export function userOfPartitionKey(pk: string): string | undefined {
+  return pk.startsWith('USER#') ? pk.slice('USER#'.length) : undefined;
+}

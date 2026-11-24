@@ -10,13 +10,15 @@ import {
   type ApiResult,
 } from '../shared/http.ts';
 import { isUsablePhotoID } from '../shared/keys.ts';
+import { standingOf, type VotingRules } from '../votes/standing.ts';
 import { checkImageForLocation } from './imageCheck.ts';
-import type { Post, PostStore } from './store.ts';
+import type { PostStore, StoredPost } from './store.ts';
 
 export interface PostHandlerSettings {
   readonly store: PostStore;
   /** How long a post stays open for votes. */
   readonly votingWindowHours: number;
+  readonly rules: VotingRules;
   readonly now: () => Date;
   /** Makes the random id a new post is known by. */
   readonly newPostID: () => string;
@@ -26,11 +28,23 @@ const photoNotSaved = (): ApiResult =>
   problem(409, 'Save the photo and its image before posting it.', 'photoNotSaved');
 
 /**
- * What the owner is told about a post. It names the photo and the voting
- * window and nothing else. The post's own id is for voters.
+ * What the owner is told about a post. The post's own id is for voters and
+ * is left out. Voting is blind, so the score is there only once it is
+ * final. Until then the owner sees how many votes are in and nothing more.
  */
-function answer(post: Post) {
-  return { photoID: post.photoID, postedAt: post.postedAt, closesAt: post.closesAt };
+function answer(post: StoredPost, now: Date, rules: VotingRules) {
+  // A score that was written down stands, even if the rules change later.
+  const standing =
+    post.finalScore === undefined
+      ? standingOf(post, now, rules)
+      : ({ status: 'final', score: post.finalScore } as const);
+  return {
+    photoID: post.photoID,
+    postedAt: post.postedAt,
+    closesAt: post.closesAt,
+    voteCount: post.voteCount,
+    ...standing,
+  };
 }
 
 /**
@@ -69,7 +83,7 @@ export function makePostsHandler(settings: PostHandlerSettings) {
       case 'photoNotSaved':
         return photoNotSaved();
       default:
-        return json(200, answer(result.post));
+        return json(200, answer(result.post, postedAt, settings.rules));
     }
   }
 
@@ -79,7 +93,12 @@ export function makePostsHandler(settings: PostHandlerSettings) {
       return problem(400, 'The page marker is not usable.');
     }
     const page = await store.list(userID, after);
-    return json(200, { posts: page.posts.map(answer), nextAfter: page.nextAfter });
+    const now = settings.now();
+    return json(200, {
+      posts: page.posts.map((post) => answer(post, now, settings.rules)),
+      minVotes: settings.rules.minVotes,
+      nextAfter: page.nextAfter,
+    });
   }
 
   return async function handler(event: ApiEvent): Promise<ApiResult> {
