@@ -1,9 +1,10 @@
 // Build settings shared by every configuration of the app target.
 //
-// Local builds use the values below. In Xcode Cloud, ci_scripts/ci_post_clone.sh
-// writes Environment.generated.xcconfig next to this file, and the optional
-// include at the bottom lets those values win. That file takes a stage's
-// backend from Stages/<stage>.xcconfig.
+// A build made in Xcode uses the values below, which name the beta backend.
+// In Xcode Cloud, ci_scripts/ci_post_clone.sh writes
+// Environment.generated.xcconfig next to this file, and the optional include
+// at the bottom lets those values win. That file takes a stage's backend from
+// Stages/<stage>.xcconfig, so a TestFlight build talks to prod.
 //
 // API_HOST and AUTH_HOST hold a bare host name with no scheme. A double slash
 // starts a comment in an xcconfig file, so a full URL would be cut off.
@@ -14,10 +15,11 @@
 // and outside the app's source folder, so it is not copied into the app.
 CODE_SIGN_ENTITLEMENTS = Config/FinalApproach.entitlements
 
-APP_ENVIRONMENT = dev
-APP_DISPLAY_NAME = Approach Dev
-API_HOST =
-AUTH_HOST =
-AUTH_CLIENT_ID =
+APP_ENVIRONMENT = beta
+APP_DISPLAY_NAME = Approach Beta
+
+// The backend a build made in Xcode talks to. This line stays above the
+// optional include, because a later line wins.
+#include "Stages/beta.xcconfig"
 
 #include? "Environment.generated.xcconfig"

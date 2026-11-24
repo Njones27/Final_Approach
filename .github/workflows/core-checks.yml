@@ -70,6 +70,19 @@ jobs:
             test "$(grep -n '^#include' "$generated" | cut -d: -f1)" -lt "$(grep -n '^APP_ENVIRONMENT' "$generated" | cut -d: -f1)"
           done
 
+      - name: A build made in Xcode takes the beta backend
+        run: |
+          config=FinalApproach/Config/App.xcconfig
+          grep -qx 'APP_ENVIRONMENT = beta' "$config"
+          grep -qx '#include "Stages/beta.xcconfig"' "$config"
+          # Nothing in this file may empty or replace the stage's values.
+          if grep -Eq '^(API_HOST|AUTH_HOST|AUTH_CLIENT_ID)' "$config"; then
+            echo "$config must take its backend from the stage file only"; exit 1
+          fi
+          # What Xcode Cloud writes must come last, so that it wins.
+          test "$(grep -n '^#include "Stages/' "$config" | cut -d: -f1)" -lt "$(grep -n '^#include? "Environment.generated.xcconfig"' "$config" | cut -d: -f1)"
+          test "$(tail -n 1 "$config")" = '#include? "Environment.generated.xcconfig"'
+
       - name: Every stage file holds bare values only
         run: |
           for file in FinalApproach/Config/Stages/*.xcconfig; do

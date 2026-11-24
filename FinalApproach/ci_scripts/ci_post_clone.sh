@@ -3,9 +3,12 @@
 #
 # Xcode Cloud post-clone script.
 # Selects the backend environment for this build. Each Xcode Cloud workflow
-# sets APP_ENVIRONMENT to "beta" or "prod" (App Store Connect > Xcode Cloud >
-# Workflow > Environment), and this script writes the matching build settings
-# to Config/Environment.generated.xcconfig, which Config/App.xcconfig includes.
+# sets APP_ENVIRONMENT (App Store Connect > Xcode Cloud > Workflow >
+# Environment), and this script writes the matching build settings to
+# Config/Environment.generated.xcconfig, which Config/App.xcconfig includes.
+# Every workflow sets "prod", because a build from Xcode Cloud goes to
+# TestFlight. "beta" is what a build made in Xcode uses with no script, and it
+# stays allowed here for pointing one cloud build at beta.
 #
 # The backend for each environment is in Config/Stages/<environment>.xcconfig.
 # An environment with no such file builds an app with no backend.

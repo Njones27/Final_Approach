@@ -311,14 +311,14 @@ for TestFlight fails to sign while the App ID does not have the capability.
 A simulator build is not affected.
 
 The app finds each backend by itself. The values in the table above are in
-`FinalApproach/Config/Stages/beta.xcconfig` and `prod.xcconfig`, and a build
-from Xcode Cloud takes its stage's values from there. `docs/ci-cd.md`
-describes how. A change to those values in a deploy must be copied into the
-stage's file.
+`FinalApproach/Config/Stages/beta.xcconfig` and `prod.xcconfig`. A build
+made in Xcode takes the beta values, and a build from Xcode Cloud, which
+goes to TestFlight, takes the prod values. `docs/ci-cd.md` describes how. A
+change to those values in a deploy must be copied into the stage's file.
 
 ## Still to come
 
-- A first real sign in on an iPhone, from a TestFlight build against beta.
+- A first real sign in on an iPhone, from a TestFlight build against prod.
   Everything up to here is tested against stand ins for Apple and the
   backend.
 - CloudFront in front of the images, when other users can see photos.
