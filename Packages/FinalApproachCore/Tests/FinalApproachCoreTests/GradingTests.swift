@@ -1,19 +1,7 @@
+import Foundation
 import Testing
 
 @testable import FinalApproachCore
-
-@Suite struct GradeWeightsTests {
-    @Test func launchWeightsAreThirtySeventy() {
-        #expect(GradeWeights.launch.ai == 0.3)
-        #expect(GradeWeights.launch.votes == 0.7)
-    }
-
-    @Test func rejectsWeightsThatDoNotSumToOne() {
-        #expect(GradeWeights(ai: 0.5, votes: 0.6) == nil)
-        #expect(GradeWeights(ai: -0.1, votes: 1.1) == nil)
-        #expect(GradeWeights(ai: 0.4, votes: 0.6) != nil)
-    }
-}
 
 @Suite struct VotingRulesTests {
     let rules = VotingRules.launch
@@ -41,22 +29,25 @@ import Testing
 }
 
 @Suite struct FinalGradeTests {
-    @Test func blendsAIAndVotesWithLaunchWeights() throws {
-        // 0.3 * 80 + 0.7 * 75 (a 4.0 average on the 1 to 5 scale)
-        let score = try #require(FinalGrade.score(aiScore: 80, voteAverage: 4))
-        #expect(abs(score - 76.5) < 1e-9)
+    @Test func theVotesAloneSetTheGrade() throws {
+        // A 4.0 average on the 1 to 5 scale is three quarters of the way up.
+        let score = try #require(FinalGrade.score(voteAverage: 4))
+        #expect(score == 75)
     }
 
     @Test func staysInsideZeroToOneHundred() throws {
-        let low = try #require(FinalGrade.score(aiScore: 0, voteAverage: 1))
-        let high = try #require(FinalGrade.score(aiScore: 100, voteAverage: 5))
-        #expect(low == 0)
-        #expect(abs(high - 100) < 1e-9)
+        #expect(try #require(FinalGrade.score(voteAverage: 1)) == 0)
+        #expect(try #require(FinalGrade.score(voteAverage: 5)) == 100)
     }
 
-    @Test func rejectsOutOfRangeInputs() {
-        #expect(FinalGrade.score(aiScore: 101, voteAverage: 3) == nil)
-        #expect(FinalGrade.score(aiScore: 50, voteAverage: 0.5) == nil)
+    @Test func rejectsAnAverageOffTheScale() {
+        #expect(FinalGrade.score(voteAverage: 0.5) == nil)
+        #expect(FinalGrade.score(voteAverage: 5.5) == nil)
+    }
+
+    @Test func followsTheScaleInTheRules() throws {
+        let tenPoint = VotingRules(scale: 1...10, windowSeconds: 60, minimumVotes: 1)
+        #expect(try #require(FinalGrade.score(voteAverage: 5.5, rules: tenPoint)) == 50)
     }
 }
 
@@ -71,6 +62,42 @@ import Testing
         #expect(SlotUpgrade.shouldReplace(currentScore: nil, newScore: 10))
         #expect(!SlotUpgrade.shouldReplace(currentScore: 10, newScore: nil))
         #expect(!SlotUpgrade.shouldReplace(currentScore: nil, newScore: nil))
+    }
+
+    private func shot(_ id: String, score: Double? = nil, reading: Double? = nil) -> SlotShot {
+        SlotShot(
+            photoID: id,
+            aircraftType: "Boeing 737 MAX 8",
+            airline: "",
+            registration: "",
+            score: score,
+            technicalReading: reading,
+            loggedAt: Date(timeIntervalSince1970: 0)
+        )
+    }
+
+    @Test func aGradeAlwaysOutranksATechnicalReading() {
+        let read = shot("read", reading: 95)
+        let graded = shot("graded", score: 40, reading: 30)
+        #expect(SlotUpgrade.shouldReplace(current: read, new: graded))
+        #expect(!SlotUpgrade.shouldReplace(current: graded, new: read))
+    }
+
+    @Test func twoGradedShotsAreRankedByGradeAndNeverByReading() {
+        let low = shot("low", score: 60, reading: 99)
+        let high = shot("high", score: 61, reading: 10)
+        #expect(SlotUpgrade.shouldReplace(current: low, new: high))
+        #expect(!SlotUpgrade.shouldReplace(current: high, new: low))
+    }
+
+    @Test func twoShotsWithNoGradeAreRankedByReading() {
+        let soft = shot("soft", reading: 55)
+        let sharp = shot("sharp", reading: 80)
+        #expect(SlotUpgrade.shouldReplace(current: soft, new: sharp))
+        #expect(!SlotUpgrade.shouldReplace(current: sharp, new: soft))
+        #expect(!SlotUpgrade.shouldReplace(current: soft, new: shot("same", reading: 55)))
+        #expect(SlotUpgrade.shouldReplace(current: shot("unread"), new: soft))
+        #expect(!SlotUpgrade.shouldReplace(current: soft, new: shot("unread")))
     }
 }
 

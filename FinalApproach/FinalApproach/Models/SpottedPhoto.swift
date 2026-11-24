@@ -20,7 +20,8 @@ struct CheckFinding: Identifiable, Equatable, Codable {
     var id: CheckKind { result.kind }
 }
 
-/// A fix that would raise the grade, with the points it is worth.
+/// A fix that would raise the technical reading, with the points of that
+/// reading it is worth. It is advice, and the grade does not depend on it.
 struct SuggestedFix: Identifiable, Equatable, Codable {
     let kind: CheckKind
     /// A verb and an object, such as "Straighten the horizon".
@@ -194,13 +195,14 @@ struct SpottedPhoto: Identifiable, Equatable, Codable {
 
     /// What this photo offers the collection. A blocked registration is
     /// left out, so it never names a slot.
-    func slotShot(score: Double?) -> SlotShot {
+    func slotShot(score: Double?, technicalReading: Double? = nil) -> SlotShot {
         SlotShot(
             photoID: id,
             aircraftType: aircraftType,
             airline: airline,
             registration: visibleRegistration ?? "",
             score: score,
+            technicalReading: technicalReading,
             loggedAt: loggedAt
         )
     }

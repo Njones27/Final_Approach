@@ -31,7 +31,7 @@ for decisions and milestones before starting a feature.
   app may ask the system for.
 - `FinalApproach/ci_scripts/` holds Xcode Cloud scripts.
 - `Packages/FinalApproachCore/` is a local Swift package with pure domain
-  logic such as tiers, grade blending, and voting rules.
+  logic such as tiers, grades, and voting rules.
 - `backend/` is the AWS backend, defined with the CDK in TypeScript. `lib/`
   holds the stacks and the stage settings, `src/` holds the Lambda functions,
   and `test/` holds their tests. Read `docs/backend.md` before changing it.

@@ -1,27 +1,3 @@
-/// How the final grade blends the AI aesthetic score with community votes.
-///
-/// The design starts at 30 percent AI and 70 percent votes. The AI share is
-/// expected to grow as a model trained on vote data improves, so the weights
-/// are data and not constants.
-public struct GradeWeights: Equatable, Codable, Sendable {
-    public let ai: Double
-    public let votes: Double
-
-    /// Returns nil unless both weights are non-negative and they sum to 1.
-    public init?(ai: Double, votes: Double) {
-        guard ai >= 0, votes >= 0, abs(ai + votes - 1) < 1e-9 else { return nil }
-        self.ai = ai
-        self.votes = votes
-    }
-
-    private init(uncheckedAI ai: Double, votes: Double) {
-        self.ai = ai
-        self.votes = votes
-    }
-
-    public static let launch = GradeWeights(uncheckedAI: 0.3, votes: 0.7)
-}
-
 /// The rules for a community voting round.
 public struct VotingRules: Equatable, Codable, Sendable {
     /// The lowest and highest vote a voter can cast.
@@ -60,23 +36,17 @@ public struct VotingRules: Equatable, Codable, Sendable {
 }
 
 public enum FinalGrade {
-    /// Blends an AI aesthetic score and a weighted vote average into a final
-    /// score from 0 to 100.
+    /// The final score from 0 to 100, which the votes alone set.
     ///
-    /// - Parameters:
-    ///   - aiScore: The AI aesthetic score, from 0 to 100.
-    ///   - voteAverage: The reputation-weighted vote average on the voting scale.
-    /// - Returns: The final score, or nil when either input is out of range.
-    public static func score(
-        aiScore: Double,
-        voteAverage: Double,
-        weights: GradeWeights = .launch,
-        rules: VotingRules = .launch
-    ) -> Double? {
-        guard (0...100).contains(aiScore),
-              let voteScore = rules.normalizedScore(voteAverage: voteAverage)
-        else { return nil }
-        return weights.ai * aiScore + weights.votes * voteScore
+    /// The technical check takes no part in it. The check is advice to the
+    /// photographer, so a photo that breaks the rules on purpose is never
+    /// marked down for it.
+    ///
+    /// - Parameter voteAverage: The reputation-weighted vote average on the
+    ///   voting scale.
+    /// - Returns: The final score, or nil when the average is off the scale.
+    public static func score(voteAverage: Double, rules: VotingRules = .launch) -> Double? {
+        rules.normalizedScore(voteAverage: voteAverage)
     }
 }
 
@@ -89,5 +59,18 @@ public enum SlotUpgrade {
         case (nil, .some): true
         case let (.some(current), .some(new)): new > current
         }
+    }
+
+    /// Whether a new shot takes a slot from the shot that holds it.
+    ///
+    /// A final grade always outranks a technical reading, because the
+    /// reading is a private stand-in until the votes are in. Two shots with
+    /// no grade are ranked by their readings, so the collection works for
+    /// photos nobody has voted on yet.
+    public static func shouldReplace(current: SlotShot, new: SlotShot) -> Bool {
+        if current.score != nil || new.score != nil {
+            return shouldReplace(currentScore: current.score, newScore: new.score)
+        }
+        return shouldReplace(currentScore: current.technicalReading, newScore: new.technicalReading)
     }
 }

@@ -135,12 +135,12 @@ their features.
     rest of a formation.
   - An aircraft that fills most of the photo is treated as a deliberate
     close-up, so reaching a side is not held against it.
-- A photo passes when no check that ran needs work. The app still calls
-  passing the gate before voting, which the Grading section below replaces.
-- A fix is worth the points the grade would gain if that check reached the
-  fix target score. That is the gain in the technical score times the
-  technical check's share of the grade. This also changes with Grading
-  below, where a fix is worth points of the technical reading only.
+- A check has nothing to suggest when its score reaches the passing score.
+  That never keeps a photo back, because the check is advice. See Grading
+  below.
+- A fix is worth the points the technical reading would gain if that check
+  reached the fix target score. It is not worth points of the grade, which
+  the votes alone set.
 - The rules in `SampleData` are provisional. They come from 40 finished
   photos measured on a Mac on 2026-11-23. That set holds no rejects, so the
   low end of each curve is a guess, and the photos were edited web exports
@@ -172,16 +172,18 @@ shutter pan or a silhouette, must never be scored lower for it.
   filter for a photo with no aircraft found is the planned answer, and it
   is not decided yet.
 
-What the app still does the old way, and what changes with milestone 8.
+What the app does now, and what is still to come in milestone 8.
 
-- The photo screen and the technical check screen word the check as a gate
-  and as a share of the grade. They become advice, and the number is named
-  as a technical reading.
-- `GradeWeights` and `FinalGrade` in the core package blend an AI score
-  with the votes. The final grade becomes the vote score alone.
+- The photo screen and the technical check screen word the check as advice,
+  and name its number a technical reading that only the photographer sees.
+- `FinalGrade` in the core package is the vote score alone. `GradeWeights`
+  is gone.
 - A fix is worth points of the technical reading, and not of the grade.
-- Posting, and the choice to post anyway, arrive with voting, since a photo
-  is not shared with anyone before then.
+- A photo with no grade shows its technical reading, dimmed and with no
+  tier, on its tile in the owner's collection. A slot ranks ungraded shots
+  by that reading, and a graded shot always outranks one.
+- Posting, and the choice to post anyway, are still to come, since a photo
+  is not shared with anyone before then. The voting screen follows.
 
 ## Identification
 

@@ -1,8 +1,9 @@
 import FinalApproachCore
 import SwiftUI
 
-/// Every technical check for one photo. The checks that need work come
-/// first, weakest first, and each one says what to fix.
+/// Every technical check for one photo. The checks with something to
+/// suggest come first, weakest first. The check is advice for the
+/// photographer. Nobody else sees it, and it takes no part in the grade.
 struct TechnicalCheckView: View {
     let photoID: String
 
@@ -36,7 +37,7 @@ struct TechnicalCheckView: View {
 
                 if !needsWork.isEmpty {
                     VStack(alignment: .leading, spacing: 16) {
-                        SectionHeading("Fix these first")
+                        SectionHeading("Could be better")
                         ForEach(Array(needsWork.enumerated()), id: \.element.id) { index, finding in
                             CheckRow(finding: finding, tint: Theme.fill(for: .bronze), order: index)
                         }
@@ -45,7 +46,7 @@ struct TechnicalCheckView: View {
 
                 if !passed.isEmpty {
                     VStack(alignment: .leading, spacing: 16) {
-                        SectionHeading("Passed")
+                        SectionHeading("Looking good")
                         ForEach(Array(passed.enumerated()), id: \.element.id) { index, finding in
                             CheckRow(finding: finding, tint: Theme.ink, order: needsWork.count + index)
                         }
@@ -74,18 +75,13 @@ struct TechnicalCheckView: View {
                     Text(overall.scoreText)
                         .font(.condensed(56, relativeTo: .largeTitle))
                         .foregroundStyle(Theme.ink)
-                        .accessibilityLabel("Technical check \(overall.scoreText) out of 100")
+                        .accessibilityLabel("Technical reading \(overall.scoreText) out of 100")
                 }
-                Text("This is \(technicalShare) percent of the grade. Votes decide the rest.")
+                Text("Your technical reading. Only you see it, and votes alone set the grade.")
                     .font(.footnote)
                     .foregroundStyle(Theme.secondaryText)
             }
         }
-    }
-
-    /// The technical check's share of the final grade, as a whole percent.
-    private var technicalShare: Int {
-        Int((model.gradeWeights.ai * 100).rounded())
     }
 
     /// A sentence that names the checks that did not run on this photo, or
