@@ -353,6 +353,13 @@ in, from the Account section of the Profile screen.
   the state of the last sync, and a way to sign out. A build with no backend
   leaves it out. Signing in sends the photos already on the device to the
   account. Signing out leaves them on the device and sends nothing more.
+- A test account signs in from the same section. Use a test account opens
+  `TestAccountSignInView`, a sheet that asks for the name and the password
+  and sends them in one request. It never makes an account. The password is
+  kept nowhere, and a failed try clears it from the sheet. The saved sign in
+  remembers that it is a test account, so Profile can say how the user
+  signed in. From there a test account syncs, posts, and votes like any
+  other user.
 
 The rules a sync follows.
 

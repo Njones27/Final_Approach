@@ -3,30 +3,36 @@ import Security
 
 /// The sign in the app keeps between launches.
 struct StoredSession: Codable, Equatable {
-    /// Apple's id for the user, which is also their name on the backend.
+    /// The user's name on the backend. It is Apple's id for the user, or the
+    /// name of a test account.
     var userID: String
     var tokens: SessionTokens
     /// True from the moment the user asks to delete their account until the
     /// backend confirms it. It is saved with the tokens the delete needs, so
     /// a delete that could not be sent is still owed after the app closes.
     var isAccountDeleteOwed = false
+    /// True for a test account, which signed in with a name and a password.
+    var isTestAccount = false
 
-    init(userID: String, tokens: SessionTokens, isAccountDeleteOwed: Bool = false) {
+    init(userID: String, tokens: SessionTokens, isAccountDeleteOwed: Bool = false, isTestAccount: Bool = false) {
         self.userID = userID
         self.tokens = tokens
         self.isAccountDeleteOwed = isAccountDeleteOwed
+        self.isTestAccount = isTestAccount
     }
 
     private enum CodingKeys: String, CodingKey {
-        case userID, tokens, isAccountDeleteOwed
+        case userID, tokens, isAccountDeleteOwed, isTestAccount
     }
 
-    /// A sign in saved before a delete could be owed still opens.
+    /// A sign in saved before a delete could be owed, or before there were
+    /// test accounts, still opens.
     init(from decoder: any Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         userID = try values.decode(String.self, forKey: .userID)
         tokens = try values.decode(SessionTokens.self, forKey: .tokens)
         isAccountDeleteOwed = try values.decodeIfPresent(Bool.self, forKey: .isAccountDeleteOwed) ?? false
+        isTestAccount = try values.decodeIfPresent(Bool.self, forKey: .isTestAccount) ?? false
     }
 }
 

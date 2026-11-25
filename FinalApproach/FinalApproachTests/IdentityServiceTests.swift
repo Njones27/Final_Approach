@@ -150,6 +150,66 @@ struct CognitoIdentityServiceTests {
         }
     }
 
+    // MARK: Signing in a test account
+
+    @Test func aTestAccountSignsInWithOneRequestThatCarriesItsNameAndPassword() async throws {
+        let transport = ScriptedTransport([try issued()])
+
+        let tokens = try await service(transport).signIn(testAccount: "test-one", password: "long-password")
+
+        #expect(tokens.accessToken == "access-1")
+        #expect(tokens.refreshToken == "refresh-1")
+        #expect(tokens.accessTokenExpiresAt == clock.addingTimeInterval(3600))
+        #expect(transport.requests.count == 1)
+        #expect(target(transport.requests[0]) == "AWSCognitoIdentityProviderService.InitiateAuth")
+        let sent = try object(transport.requests[0].httpBody)
+        #expect(sent["AuthFlow"] as? String == "USER_PASSWORD_AUTH")
+        #expect(sent["ClientId"] as? String == "client-1")
+        #expect(sent["AuthParameters"] as? [String: String] == ["USERNAME": "test-one", "PASSWORD": "long-password"])
+        // The password travels in the body and never in the address.
+        #expect(transport.requests[0].url == base)
+    }
+
+    @Test func aWrongPasswordOrAnUnknownNameIsRefusedTheSameWay() async throws {
+        for name in ["NotAuthorizedException", "UserNotFoundException"] {
+            let transport = ScriptedTransport([try refusal(name)])
+            await #expect(throws: IdentityError.credentialsRefused) {
+                try await service(transport).signIn(testAccount: "test-one", password: "wrong")
+            }
+        }
+    }
+
+    @Test func aTestAccountWhosePasswordWasNotSetForGoodIsNotReady() async throws {
+        let transport = ScriptedTransport([
+            .init(body: try json(["ChallengeName": "NEW_PASSWORD_REQUIRED", "Session": "session-1"])),
+        ])
+
+        await #expect(throws: IdentityError.testAccountNotReady) {
+            try await service(transport).signIn(testAccount: "test-one", password: "first-password")
+        }
+        #expect(transport.requests.count == 1)
+    }
+
+    @Test func aBackendWithTestAccountsTurnedOffKeepsItsRefusalsName() async throws {
+        let transport = ScriptedTransport([try refusal("InvalidParameterException")])
+
+        await #expect(throws: IdentityError.refused(status: 400, name: "InvalidParameterException")) {
+            try await service(transport).signIn(testAccount: "test-one", password: "long-password")
+        }
+    }
+
+    @Test func aTestAccountSignInWithNoTokensIsUnreadable() async throws {
+        let noTokens = ScriptedTransport([empty])
+        await #expect(throws: IdentityError.unreadableAnswer) {
+            try await service(noTokens).signIn(testAccount: "test-one", password: "long-password")
+        }
+
+        let noRefresh = ScriptedTransport([try issued(refreshToken: nil)])
+        await #expect(throws: IdentityError.unreadableAnswer) {
+            try await service(noRefresh).signIn(testAccount: "test-one", password: "long-password")
+        }
+    }
+
     @Test func aRefusalTheAppDoesNotActOnKeepsItsName() async throws {
         let transport = ScriptedTransport([try refusal("TooManyRequestsException")])
 

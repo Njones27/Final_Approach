@@ -9,6 +9,10 @@ final class SampleIdentityService: IdentityService {
     /// The refresh tokens that still work.
     private(set) var liveRefreshTokens: Set<String> = []
     private(set) var signInCount = 0
+    /// The test accounts that exist, each with its password.
+    var testAccounts: [String: String] = [:]
+    /// The test accounts whose password was never set for good.
+    var unreadyTestAccounts: Set<String> = []
     private(set) var refreshCount = 0
     private var issued = 0
 
@@ -25,6 +29,20 @@ final class SampleIdentityService: IdentityService {
         guard !identityToken.isEmpty else { throw IdentityError.tokenRefused }
         signInCount += 1
         userIDs.insert(userID)
+        issued += 1
+        let refreshToken = "sample-refresh-\(issued)"
+        liveRefreshTokens.insert(refreshToken)
+        return tokens(refreshToken: refreshToken)
+    }
+
+    func signIn(testAccount name: String, password: String) async throws -> SessionTokens {
+        if let failure { throw failure }
+        guard let expected = testAccounts[name], expected == password else {
+            throw IdentityError.credentialsRefused
+        }
+        guard !unreadyTestAccounts.contains(name) else { throw IdentityError.testAccountNotReady }
+        signInCount += 1
+        userIDs.insert(name)
         issued += 1
         let refreshToken = "sample-refresh-\(issued)"
         liveRefreshTokens.insert(refreshToken)

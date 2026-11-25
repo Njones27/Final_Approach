@@ -50,6 +50,10 @@ enum SampleData {
     /// The longest an aircraft type or an airline may be to go on a spot's
     /// page. It matches the backend's own limit.
     static let shownTextMaxLength = 80
+
+    /// The one test account the sample identity service knows, for previews.
+    static let testAccountName = "test-one"
+    static let testAccountPassword = "sample-password"
     /// How strongly a logged photo's saved copy is compressed.
     static let storedImageQuality = 0.9
 

@@ -364,6 +364,38 @@ struct SyncCoordinatorTests {
 
     // MARK: Signing in and out
 
+    @Test func aTestAccountSignsInAndSyncsLikeAnyoneElse() async throws {
+        let account = session()
+        let sync = coordinator(account)
+        let phone = SampleData.model()
+        phone.add(loggedPhoto())
+        identity.testAccounts = ["test-one": "long-password"]
+        backend.account = "test-one"
+
+        try await sync.signIn(testAccount: "test-one", password: "long-password", on: phone)
+
+        #expect(account.state == .signedIn(userID: "test-one"))
+        #expect(account.isTestAccount)
+        #expect(backend.inner.photos["imported-1"] == loggedPhoto())
+        #expect(sync.status == .upToDate)
+    }
+
+    @Test func aTestAccountThatIsRefusedSyncsNothing() async throws {
+        let account = session()
+        let sync = coordinator(account)
+        let phone = SampleData.model()
+        phone.add(loggedPhoto())
+        identity.testAccounts = ["test-one": "long-password"]
+
+        await #expect(throws: IdentityError.credentialsRefused) {
+            try await sync.signIn(testAccount: "test-one", password: "wrong", on: phone)
+        }
+
+        #expect(account.state == .signedOut)
+        #expect(backend.listCount == 0)
+        #expect(sync.status == .notYet)
+    }
+
     @Test func signingInSendsThePhotosAlreadyOnTheDevice() async throws {
         let account = session()
         let sync = coordinator(account)
