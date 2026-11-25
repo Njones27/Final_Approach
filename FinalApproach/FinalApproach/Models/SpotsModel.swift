@@ -1,10 +1,11 @@
+import FinalApproachCore
 import Foundation
 import Observation
 import UIKit
 
 /// Runs the Spots screen against the backend. It asks for the list of spots
-/// and hands it to the collection, and it holds the graded photos shown at
-/// each spot.
+/// and hands it to the collection, and it holds what is shown around the
+/// middle of the map and the graded photos shown at each spot and place.
 ///
 /// The photos here are other people's. All this holds about one is its
 /// image, its grade, and the aircraft type and airline its owner chose to
@@ -36,9 +37,32 @@ final class SpotsModel {
         var photos: [SpotPhoto] = []
     }
 
+    /// The spots and places with photos around one point of the map, as
+    /// far as they are known.
+    struct Around: Equatable {
+        var phase: Page.Phase
+        var shown = ShownAround()
+        /// The point this was last loaded for, or nil before the first
+        /// answer.
+        var center: Coordinate?
+    }
+
+    /// What a copy of a photo is drawn as, which sets how large it is kept.
+    enum ThumbnailUse {
+        /// A photo on a card or a page.
+        case page
+        /// A photo inside a pin on the map or a row of the ranked list.
+        case pin
+    }
+
     private(set) var phase: Phase = .idle
     /// The page of each spot that has been asked for, by spot id.
     private(set) var pages: [String: Page] = [:]
+    /// The page of each place that has been asked for, by place id.
+    private(set) var placePages: [String: Page] = [:]
+    /// What is shown around the middle of the map, or nil before it was
+    /// asked for.
+    private(set) var around: Around?
 
     let session: AccountSession
 
@@ -49,6 +73,9 @@ final class SpotsModel {
     /// The longest side, in pixels, of the copy of a photo kept for the
     /// screen.
     @ObservationIgnored private let thumbnailSide: CGFloat
+    /// The longest side, in pixels, of the copy kept for a pin. The map can
+    /// hold many pins, so each keeps far less than a page does.
+    @ObservationIgnored private let pinThumbnailSide: CGFloat
     /// The copies of photos made for the screen, by post id. They live in
     /// memory only, and the system may drop them when memory runs short.
     @ObservationIgnored private let thumbnails = NSCache<NSString, UIImage>()
@@ -57,6 +84,13 @@ final class SpotsModel {
     @ObservationIgnored private var listLoad: Task<Void, Never>?
     /// The request for each spot's photos that is running, by spot id.
     @ObservationIgnored private var pageLoads: [String: Task<Void, Never>] = [:]
+    /// The request for each place's photos that is running, by place id.
+    @ObservationIgnored private var placeLoads: [String: Task<Void, Never>] = [:]
+    /// The request for what is shown around a point that is running.
+    @ObservationIgnored private var aroundLoad: Task<Void, Never>?
+    /// How far, in meters, the map must move from the point last asked
+    /// about before the backend is asked again.
+    @ObservationIgnored private let aroundReloadDistance: Double
     /// How many times in a row the list is asked for again because the
     /// sign in changed while it was on its way.
     @ObservationIgnored private let listAttempts: Int
@@ -66,13 +100,17 @@ final class SpotsModel {
         backend: any SpotBackend,
         needsSignIn: Bool,
         thumbnailSide: CGFloat = 1200,
-        listAttempts: Int = 3
+        pinThumbnailSide: CGFloat = 240,
+        listAttempts: Int = 3,
+        aroundReloadDistance: Double = 10_000
     ) {
         self.session = session
         self.backend = backend
         self.needsSignIn = needsSignIn
         self.thumbnailSide = thumbnailSide
+        self.pinThumbnailSide = pinThumbnailSide
         self.listAttempts = listAttempts
+        self.aroundReloadDistance = aroundReloadDistance
     }
 
     /// True when the spots cannot be asked for because no one is signed in.
@@ -185,34 +223,140 @@ final class SpotsModel {
             pages[spotID] = Page(phase: .couldNotLoad, photos: before)
             return
         }
-        // A photo that left the page was taken off or deleted, so the copy
-        // made for the screen goes too.
-        let stillShown = Set(loaded.map(\.id))
-        for photo in before where !stillShown.contains(photo.id) {
-            thumbnails.removeObject(forKey: photo.id as NSString)
-        }
         pages[spotID] = Page(phase: .loaded, photos: loaded)
+        dropThumbnails(of: before)
     }
 
-    /// The image of one photo on a spot's page, made small enough for the
-    /// screen. It is nil when the link ran out or the image is gone.
+    /// Asks for the photos shown at one place, the way `loadPhotos(atSpotID:)`
+    /// does for a spot.
+    func loadPhotos(atPlaceID placeID: String) async {
+        guard !isSignedOut else { return }
+        if let running = placeLoads[placeID] {
+            await running.value
+            return
+        }
+        let load = Task { await self.fetchPhotos(atPlaceID: placeID) }
+        placeLoads[placeID] = load
+        await load.value
+        placeLoads[placeID] = nil
+    }
+
+    private func fetchPhotos(atPlaceID placeID: String) async {
+        if placePages[placeID] == nil {
+            placePages[placeID] = Page(phase: .loading)
+        }
+        var loaded: [SpotPhoto]?
+        do {
+            loaded = try await backend.photos(atPlaceID: placeID)
+        } catch {
+            #if DEBUG
+            print("SpotsModel: The photos at a place could not be loaded. \(error)")
+            #endif
+        }
+
+        guard !isSignedOut else { return }
+        let before = placePages[placeID]?.photos ?? []
+        guard let loaded else {
+            placePages[placeID] = Page(phase: .couldNotLoad, photos: before)
+            return
+        }
+        placePages[placeID] = Page(phase: .loaded, photos: loaded)
+        dropThumbnails(of: before)
+    }
+
+    /// True when the map has moved far enough from the point last asked
+    /// about that the backend should be asked again, or when it was never
+    /// asked.
+    func needsShown(around point: Coordinate) -> Bool {
+        guard let center = around?.center else { return true }
+        return center.distance(to: point) > aroundReloadDistance
+    }
+
+    /// Asks which spots and places around a point have photos. Call it when
+    /// the map settles somewhere new and each time the screen comes back,
+    /// because a link to an image works for a few minutes only. What was
+    /// loaded before stays until the new answer arrives.
     ///
-    /// The full image is never kept. A page can hold many photos, and a
-    /// small copy of each is all the screen draws.
-    func thumbnail(for photo: SpotPhoto) async -> UIImage? {
-        let key = photo.id as NSString
+    /// A call made while an answer is on its way waits for that answer. It
+    /// then asks again only when the answer was for somewhere too far from
+    /// `point`, which happens when the map moved on in the meantime.
+    func loadShown(around point: Coordinate) async {
+        guard !isSignedOut else { return }
+        if let running = aroundLoad {
+            await running.value
+            guard aroundLoad == nil, needsShown(around: point) else { return }
+        }
+        let load = Task {
+            await self.fetchShown(around: point)
+            // The request clears itself, so a caller that waited for it
+            // finds none running.
+            self.aroundLoad = nil
+        }
+        aroundLoad = load
+        await load.value
+    }
+
+    private func fetchShown(around point: Coordinate) async {
+        if around == nil {
+            around = Around(phase: .loading)
+        }
+        var loaded: ShownAround?
+        do {
+            loaded = try await backend.shown(around: point)
+        } catch {
+            #if DEBUG
+            print("SpotsModel: What is shown around a point could not be loaded. \(error)")
+            #endif
+        }
+
+        guard !isSignedOut else { return }
+        let before = around?.shown ?? ShownAround()
+        guard let loaded else {
+            around = Around(phase: .couldNotLoad, shown: before, center: around?.center)
+            return
+        }
+        around = Around(phase: .loaded, shown: loaded, center: point)
+        dropThumbnails(of: before.spots.map(\.bestPhoto) + before.places.map(\.bestPhoto))
+    }
+
+    /// Drops the copies made for the screen of the photos that were shown
+    /// before and are shown nowhere now. Such a photo was taken off or
+    /// deleted.
+    private func dropThumbnails(of before: [SpotPhoto]) {
+        for photo in before where !isShown(photoID: photo.id) {
+            thumbnails.removeObject(forKey: Self.thumbnailKey(photo.id, .page))
+            thumbnails.removeObject(forKey: Self.thumbnailKey(photo.id, .pin))
+        }
+    }
+
+    /// The name a copy of a photo is kept under. A photo can have a copy
+    /// for a page and a smaller one for a pin.
+    private static func thumbnailKey(_ photoID: String, _ use: ThumbnailUse) -> NSString {
+        switch use {
+        case .page: photoID as NSString
+        case .pin: ("pin:" + photoID) as NSString
+        }
+    }
+
+    /// The image of one shown photo, made small enough for where it is
+    /// drawn. It is nil when the link ran out or the image is gone.
+    ///
+    /// The full image is never kept. A page can hold many photos and the
+    /// map many pins, and a small copy of each is all the screen draws.
+    func thumbnail(for photo: SpotPhoto, use: ThumbnailUse = .page) async -> UIImage? {
+        let key = Self.thumbnailKey(photo.id, use)
         if let kept = thumbnails.object(forKey: key) {
             return kept
         }
         guard let data = try? await backend.image(from: photo.imageURL), let image = UIImage(data: data) else {
             return nil
         }
-        let size = Self.fitted(image.size, within: thumbnailSide)
+        let size = Self.fitted(image.size, within: use == .pin ? pinThumbnailSide : thumbnailSide)
         // The small copy is made off the main thread, so the screen does
         // not stall while a page fills.
         let small = await image.byPreparingThumbnail(ofSize: size) ?? image
-        // A copy is kept only while its photo is still on a page. The
-        // photos may have been cleared while this ran.
+        // A copy is kept only while its photo is still shown somewhere
+        // here. The photos may have been cleared while this ran.
         if isShown(photoID: photo.id) {
             thumbnails.setObject(small, forKey: key)
         }
@@ -225,18 +369,28 @@ final class SpotsModel {
         if !pages.isEmpty {
             pages = [:]
         }
+        if !placePages.isEmpty {
+            placePages = [:]
+        }
+        if around != nil {
+            around = nil
+        }
         thumbnails.removeAllObjects()
     }
 
     /// True while a copy of this photo is kept for the screen.
-    func hasThumbnail(forPhotoID id: String) -> Bool {
-        thumbnails.object(forKey: id as NSString) != nil
+    func hasThumbnail(forPhotoID id: String, use: ThumbnailUse = .page) -> Bool {
+        thumbnails.object(forKey: Self.thumbnailKey(id, use)) != nil
     }
 
     private func isShown(photoID: String) -> Bool {
-        pages.values.contains { page in
+        let onAPage = (Array(pages.values) + Array(placePages.values)).contains { page in
             page.photos.contains { $0.id == photoID }
         }
+        if onAPage { return true }
+        guard let shown = around?.shown else { return false }
+        return shown.spots.contains { $0.bestPhoto.id == photoID }
+            || shown.places.contains { $0.bestPhoto.id == photoID }
     }
 
     /// The size an image is drawn at so its longest side is no more than

@@ -1,14 +1,18 @@
 import SwiftUI
 import UIKit
 
-/// The image of one photo on a spot's page. It fills its frame, and shows
-/// a plain fill until the image arrives or when it cannot be loaded.
+/// The image of one photo shown at a spot or a place. It fills its frame,
+/// and shows a plain fill until the image arrives or when it cannot be
+/// loaded.
 ///
 /// The photo is another person's, so all it has to show is the image.
 struct SpotThumbnail: View {
     let photo: SpotPhoto
     /// What the photo shows, read by VoiceOver.
     let description: String
+    /// What the image is drawn as. A pin keeps a much smaller copy than a
+    /// page does.
+    var use: SpotsModel.ThumbnailUse = .page
 
     @Environment(SpotsModel.self) private var spots
     @State private var image: UIImage?
@@ -35,7 +39,7 @@ struct SpotThumbnail: View {
             // again the photo comes with a new one, and the image is tried
             // again.
             .task(id: photo.imageURL) {
-                if let loaded = await spots.thumbnail(for: photo) {
+                if let loaded = await spots.thumbnail(for: photo, use: use) {
                     image = loaded
                 }
             }

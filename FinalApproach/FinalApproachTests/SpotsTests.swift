@@ -7,7 +7,8 @@ import UIKit
 
 /// Spots. The client for the spot routes, the list of spots in the
 /// collection, which spot's page or place on the map a posted photo is
-/// shown at, and the photos a spot's page holds.
+/// shown at, the photos a spot's page or a place holds, and what the map
+/// and the ranked list show around a point.
 @MainActor
 final class SpotsTests {
     private let base = URL(string: "https://api.example.test")!
@@ -93,6 +94,10 @@ final class SpotsTests {
 
     private var longLensShown: ShownCamera {
         ShownCamera(focalLength: 400, aperture: 5.6, exposureTime: 0.001, iso: 200)
+    }
+
+    private func point(_ latitude: Double, _ longitude: Double) throws -> Coordinate {
+        try #require(Coordinate(latitude: latitude, longitude: longitude))
     }
 
     private func tinyImage() -> UIImage {
@@ -251,6 +256,94 @@ final class SpotsTests {
         let request = try #require(transport.requests.first)
         // The link carries its own permission.
         #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
+    }
+
+    @Test func theMapAsksWhatIsShownAroundAPointToTwoDecimals() async throws {
+        var withCamera = photoAnswer("post-2", score: 84, type: "F-22 Raptor")
+        withCamera["camera"] = ["focalLength": 400, "aperture": 5.6, "exposureTime": 0.001, "iso": 200] as [String: Any]
+        let shownSpot: [String: Any] = [
+            "spotID": "atl-south-approach",
+            "photoCount": 4,
+            "bestPhoto": photoAnswer("post-1", score: 91, type: "Boeing VC-25A", airline: "US Air Force"),
+        ]
+        let shownPlace: [String: Any] = [
+            "id": "n33631w84450",
+            "latitude": 33.631,
+            "longitude": -84.45,
+            "photoCount": 2,
+            "bestPhoto": withCamera,
+        ]
+        // A place that is not on the map cannot have a pin.
+        let nowhere: [String: Any] = [
+            "id": "n133000w84450",
+            "latitude": 133,
+            "longitude": -84.45,
+            "photoCount": 1,
+            "bestPhoto": photoAnswer("post-3", score: 50),
+        ]
+        let transport = ScriptedTransport([
+            .init(body: try json([
+                "spots": [shownSpot],
+                "places": [shownPlace, nowhere],
+                "imageLinkExpiresInSeconds": 300,
+            ])),
+        ])
+        let middle = try point(33.64074, -84.42771)
+
+        let around = try await spotClient(transport).shown(around: middle)
+
+        let request = try #require(transport.requests.first)
+        #expect(request.httpMethod == "GET")
+        // Two decimals is about a kilometer, which is all the backend
+        // needs to know about where the user is looking.
+        #expect(request.url?.absoluteString == "https://api.example.test/places?latitude=33.64&longitude=-84.43")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer token-1")
+        #expect(around.spots.count == 1)
+        let spot = try #require(around.spots.first)
+        #expect(spot.id == "atl-south-approach")
+        #expect(spot.photoCount == 4)
+        #expect(spot.bestPhoto.id == "post-1")
+        #expect(spot.bestPhoto.score == 91)
+        #expect(spot.bestPhoto.camera == nil)
+        #expect(around.places.count == 1)
+        let place = try #require(around.places.first)
+        #expect(place.id == "n33631w84450")
+        #expect(place.coordinate == Coordinate(latitude: 33.631, longitude: -84.45))
+        #expect(place.photoCount == 2)
+        #expect(place.bestPhoto.aircraftType == "F-22 Raptor")
+        #expect(place.bestPhoto.camera == longLensShown)
+    }
+
+    @Test func aPointIsWrittenWithTwoDecimals() {
+        #expect(HTTPSpotBackend.degrees(33.64074) == "33.64")
+        #expect(HTTPSpotBackend.degrees(-84.42771) == "-84.43")
+        #expect(HTTPSpotBackend.degrees(7) == "7.00")
+        #expect(HTTPSpotBackend.degrees(-0.05) == "-0.05")
+        // A point just west of Greenwich is not written as minus zero.
+        #expect(HTTPSpotBackend.degrees(-0.004) == "0.00")
+        #expect(HTTPSpotBackend.degrees(179.996) == "180.00")
+    }
+
+    @Test func aPlacesPhotosAreReadByItsID() async throws {
+        var withCamera = photoAnswer("post-2", score: 84)
+        withCamera["camera"] = ["focalLength": 400, "aperture": 5.6, "exposureTime": 0.001, "iso": 200] as [String: Any]
+        let transport = ScriptedTransport([
+            .init(body: try json([
+                "photos": [withCamera, photoAnswer("post-4", score: 60)],
+                "imageLinkExpiresInSeconds": 300,
+            ])),
+        ])
+
+        let photos = try await spotClient(transport).photos(atPlaceID: "n33631w84450")
+
+        let request = try #require(transport.requests.first)
+        #expect(request.httpMethod == "GET")
+        #expect(request.url?.absoluteString == "https://api.example.test/places/n33631w84450/photos")
+        let ids = photos.map { $0.id }
+        #expect(ids == ["post-2", "post-4"])
+        #expect(photos.first?.camera == longLensShown)
+        // A photo whose owner shows no settings has none.
+        #expect(photos.last?.camera == nil)
     }
 
     // MARK: The client for showing a photo at a spot
@@ -1137,6 +1230,278 @@ final class SpotsTests {
         #expect(SpotsModel.fitted(CGSize(width: 6000, height: 4000), within: 1200) == CGSize(width: 1200, height: 800))
         #expect(SpotsModel.fitted(CGSize(width: 3000, height: 4500), within: 1200) == CGSize(width: 800, height: 1200))
         #expect(SpotsModel.fitted(CGSize(width: 900, height: 600), within: 1200) == CGSize(width: 900, height: 600))
+    }
+
+    // MARK: What is shown on the map
+
+    private let westPlaceID = "n33631w84450"
+    private let northPlaceID = "n33664w84401"
+    private let seattlePlaceID = "n47463w122320"
+
+    /// The sample spots with two photos on one page, two places near
+    /// Atlanta, and one near Seattle. One place has two photos.
+    private func placeBackend() throws -> SampleSpotBackend {
+        let backend = try spotBackend()
+        var best = try shownPhoto("place-high", score: 84)
+        best.camera = longLensShown
+        let west = try point(33.631, -84.45)
+        backend.show(try shownPhoto("place-low", score: 55), atPlaceID: westPlaceID, middle: west)
+        backend.show(best, atPlaceID: westPlaceID, middle: west)
+        backend.show(
+            try shownPhoto("place-north", score: 79),
+            atPlaceID: northPlaceID,
+            middle: try point(33.664, -84.401)
+        )
+        backend.show(
+            try shownPhoto("place-seattle", score: 74),
+            atPlaceID: seattlePlaceID,
+            middle: try point(47.463, -122.32)
+        )
+        return backend
+    }
+
+    @Test func theMapIsToldWhatIsShownNearItsMiddle() async throws {
+        let backend = try placeBackend()
+        let spots = SpotsModel(session: try await signedInSession(), backend: backend, needsSignIn: true)
+        let atlanta = try point(33.6407, -84.4277)
+        #expect(spots.around == nil)
+        #expect(spots.needsShown(around: atlanta))
+
+        await spots.loadShown(around: atlanta)
+
+        let around = try #require(spots.around)
+        #expect(around.phase == .loaded)
+        #expect(around.center == atlanta)
+        // Only a spot with photos is in the answer.
+        let spotIDs = around.shown.spots.map { $0.id }
+        #expect(spotIDs == ["atl-south-approach"])
+        let spot = try #require(around.shown.spots.first)
+        #expect(spot.photoCount == 2)
+        #expect(spot.bestPhoto.id == "post-high")
+        // The place near Seattle is too far away to be in it.
+        let placeIDs = around.shown.places.map { $0.id }
+        #expect(placeIDs == [westPlaceID, northPlaceID])
+        let place = try #require(around.shown.places.first)
+        #expect(place.photoCount == 2)
+        #expect(place.bestPhoto.id == "place-high")
+        #expect(place.bestPhoto.camera == longLensShown)
+        #expect(place.coordinate == Coordinate(latitude: 33.631, longitude: -84.45))
+    }
+
+    @Test func theMapIsAskedAgainOnlyOnceItHasMovedFarEnough() async throws {
+        let backend = try placeBackend()
+        let spots = SpotsModel(session: try await signedInSession(), backend: backend, needsSignIn: true)
+        let atlanta = try point(33.6407, -84.4277)
+        let nearby = try point(33.66, -84.40)
+        let seattle = try point(47.4502, -122.3088)
+        await spots.loadShown(around: atlanta)
+
+        #expect(!spots.needsShown(around: nearby))
+        #expect(spots.needsShown(around: seattle))
+
+        await spots.loadShown(around: seattle)
+
+        #expect(backend.aroundCount == 2)
+        #expect(spots.around?.center == seattle)
+        let placeIDs = spots.around?.shown.places.map { $0.id }
+        #expect(placeIDs == [seattlePlaceID])
+        #expect(spots.needsShown(around: atlanta))
+    }
+
+    @Test func twoRequestsForTheSameViewOfTheMapAskOnce() async throws {
+        let backend = try placeBackend()
+        let spots = SpotsModel(session: try await signedInSession(), backend: backend, needsSignIn: true)
+        let atlanta = try point(33.6407, -84.4277)
+
+        async let first: Void = spots.loadShown(around: atlanta)
+        async let second: Void = spots.loadShown(around: atlanta)
+        _ = await (first, second)
+
+        #expect(backend.aroundCount == 1)
+        #expect(spots.around?.center == atlanta)
+    }
+
+    @Test func aMapThatMovedOnWhileAnAnswerWasOnItsWayIsAskedAgain() async throws {
+        let backend = try placeBackend()
+        let spots = SpotsModel(session: try await signedInSession(), backend: backend, needsSignIn: true)
+        let atlanta = try point(33.6407, -84.4277)
+        let seattle = try point(47.4502, -122.3088)
+
+        async let first: Void = spots.loadShown(around: atlanta)
+        async let second: Void = spots.loadShown(around: seattle)
+        _ = await (first, second)
+
+        // Whichever went second waited for the first, found the answer
+        // was for somewhere far away, and asked again.
+        #expect(backend.aroundCount == 2)
+        #expect(spots.around?.phase == .loaded)
+    }
+
+    @Test func whatIsShownStaysWhenTheMapCannotBeAskedAgain() async throws {
+        let backend = try placeBackend()
+        let spots = SpotsModel(session: try await signedInSession(), backend: backend, needsSignIn: true)
+        let atlanta = try point(33.6407, -84.4277)
+        let seattle = try point(47.4502, -122.3088)
+        await spots.loadShown(around: atlanta)
+
+        backend.aroundFailure = .unavailable(status: 503)
+        await spots.loadShown(around: seattle)
+
+        let around = try #require(spots.around)
+        #expect(around.phase == .couldNotLoad)
+        #expect(around.shown.places.count == 2)
+        // The answer in hand is still the one for Atlanta, so the map is
+        // asked again when it comes to rest near Seattle.
+        #expect(around.center == atlanta)
+        #expect(spots.needsShown(around: seattle))
+    }
+
+    @Test func aFirstAnswerThatCannotBeFetchedLeavesTheMapEmpty() async throws {
+        let backend = try placeBackend()
+        backend.aroundFailure = .unavailable(status: 503)
+        let spots = SpotsModel(session: try await signedInSession(), backend: backend, needsSignIn: true)
+        let atlanta = try point(33.6407, -84.4277)
+
+        await spots.loadShown(around: atlanta)
+
+        #expect(spots.around == SpotsModel.Around(phase: .couldNotLoad))
+        #expect(spots.needsShown(around: atlanta))
+    }
+
+    @Test func aPlacesPhotosComeBestFirstWithTheirCameraSettings() async throws {
+        let backend = try placeBackend()
+        let spots = SpotsModel(session: try await signedInSession(), backend: backend, needsSignIn: true)
+
+        await spots.loadPhotos(atPlaceID: westPlaceID)
+        await spots.loadPhotos(atPlaceID: "n10000e10000")
+
+        let page = try #require(spots.placePages[westPlaceID])
+        #expect(page.phase == .loaded)
+        let ids = page.photos.map { $0.id }
+        #expect(ids == ["place-high", "place-low"])
+        #expect(page.photos.first?.camera == longLensShown)
+        #expect(page.photos.last?.camera == nil)
+        // A place nobody has shown a photo at has an empty page.
+        #expect(spots.placePages["n10000e10000"] == SpotsModel.Page(phase: .loaded))
+        // A place's page is kept apart from a spot's.
+        #expect(spots.pages.isEmpty)
+    }
+
+    @Test func aPlacesPhotosThatCannotBeLoadedLeaveTheOnesInHand() async throws {
+        let backend = try placeBackend()
+        let spots = SpotsModel(session: try await signedInSession(), backend: backend, needsSignIn: true)
+        await spots.loadPhotos(atPlaceID: westPlaceID)
+
+        backend.pageFailure = .unavailable(status: 503)
+        await spots.loadPhotos(atPlaceID: westPlaceID)
+
+        let page = try #require(spots.placePages[westPlaceID])
+        #expect(page.phase == .couldNotLoad)
+        #expect(page.photos.count == 2)
+    }
+
+    @Test func nothingOnTheMapIsAskedForWhileNoOneIsSignedIn() async throws {
+        let backend = try placeBackend()
+        let session = AccountSession(identity: SampleIdentityService(), store: MemorySessionStore())
+        let spots = SpotsModel(session: session, backend: backend, needsSignIn: true)
+
+        await spots.loadShown(around: try point(33.6407, -84.4277))
+        await spots.loadPhotos(atPlaceID: westPlaceID)
+
+        #expect(backend.aroundCount == 0)
+        #expect(backend.placePageCounts.isEmpty)
+        #expect(spots.around == nil)
+        #expect(spots.placePages.isEmpty)
+    }
+
+    @Test func aPinKeepsItsOwnSmallCopyOnlyWhileItsPhotoIsShown() async throws {
+        let backend = try placeBackend()
+        let spots = SpotsModel(session: try await signedInSession(), backend: backend, needsSignIn: true)
+        let atlanta = try point(33.6407, -84.4277)
+        await spots.loadShown(around: atlanta)
+        let place = try #require(spots.around?.shown.places.first)
+
+        let image = await spots.thumbnail(for: place.bestPhoto, use: .pin)
+
+        #expect(image != nil)
+        #expect(spots.hasThumbnail(forPhotoID: "place-high", use: .pin))
+        // The copy for a page is a different, larger one.
+        #expect(!spots.hasThumbnail(forPhotoID: "place-high"))
+
+        // Its owner deletes it, and the map is asked again.
+        backend.remove(photoID: "place-high")
+        await spots.loadShown(around: atlanta)
+
+        #expect(!spots.hasThumbnail(forPhotoID: "place-high", use: .pin))
+        let next = try #require(spots.around?.shown.places.first)
+        #expect(next.bestPhoto.id == "place-low")
+        #expect(next.photoCount == 1)
+    }
+
+    @Test func deletingAPhotoClearsWhatIsShownOnTheMap() async throws {
+        let backend = try placeBackend()
+        let spots = SpotsModel(session: try await signedInSession(), backend: backend, needsSignIn: true)
+        let model = SampleData.model()
+        spots.follow(model)
+        model.add(photo())
+        await spots.loadShown(around: try point(33.6407, -84.4277))
+        await spots.loadPhotos(atPlaceID: westPlaceID)
+        let place = try #require(spots.around?.shown.places.first)
+        _ = await spots.thumbnail(for: place.bestPhoto, use: .pin)
+        _ = await spots.thumbnail(for: place.bestPhoto)
+        #expect(spots.hasThumbnail(forPhotoID: "place-high", use: .pin))
+        #expect(spots.hasThumbnail(forPhotoID: "place-high"))
+
+        // One of the photos on the map may be the user's own, so a delete
+        // leaves no copy behind.
+        model.deletePhoto(id: "imported-1")
+
+        #expect(spots.around == nil)
+        #expect(spots.placePages.isEmpty)
+        #expect(!spots.hasThumbnail(forPhotoID: "place-high", use: .pin))
+        #expect(!spots.hasThumbnail(forPhotoID: "place-high"))
+    }
+
+    @Test func theRankedListPutsTheMostPhotosFirstAndNamesOnlyListedSpots() throws {
+        let link = try #require(URL(string: "https://images.example.test/best"))
+        let middle = try point(33.631, -84.45)
+        let shown = ShownAround(
+            spots: [
+                ShownSpot(
+                    id: "atl-south-approach",
+                    photoCount: 2,
+                    bestPhoto: SpotPhoto(id: "a", imageURL: link, score: 88)
+                ),
+                // A spot that is no longer listed has no name and no pin.
+                ShownSpot(id: "gone", photoCount: 9, bestPhoto: SpotPhoto(id: "b", imageURL: link, score: 99)),
+            ],
+            places: [
+                ShownPlace(
+                    id: westPlaceID,
+                    coordinate: middle,
+                    photoCount: 5,
+                    bestPhoto: SpotPhoto(id: "c", imageURL: link, score: 70)
+                ),
+                ShownPlace(
+                    id: northPlaceID,
+                    coordinate: middle,
+                    photoCount: 2,
+                    bestPhoto: SpotPhoto(id: "d", imageURL: link, score: 91)
+                ),
+            ]
+        )
+
+        let rows = RankedRow.rows(for: shown, spots: SampleData.airports.flatMap { $0.spots })
+
+        // The most photos come first, and the better top photo breaks a
+        // tie.
+        let targets = rows.map { $0.target }
+        #expect(targets == [.place(westPlaceID), .place(northPlaceID), .spot("atl-south-approach")])
+        let titles = rows.map { $0.title }
+        #expect(titles == ["Unnamed place", "Unnamed place", "South approach"])
+        #expect(rows.first?.countText == "5 photos")
+        #expect(RankedRow.countText(1) == "1 photo")
+        #expect(RankedRow.rows(for: ShownAround(), spots: []).isEmpty)
     }
 
     // MARK: Wording
