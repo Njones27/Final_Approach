@@ -127,8 +127,6 @@ An app change reaches TestFlight, which talks to prod, as soon as it merges.
 So a backend change goes in its own pull request, and is approved to prod,
 before the app change that needs it. The check named Prod holds this backend
 stops a pull request that breaks this order.
-A merge goes through CI, then beta, then Xcode Cloud, and prod comes last.
-The Release workflow moves the `testflight` branch once beta holds the
-backend, and Xcode Cloud builds the app from that branch. Details and the environment
+Xcode Cloud builds the app on merges to `main`. Details and the environment
 mechanism are in `docs/ci-cd.md`. Pin every GitHub Action by full commit SHA
 with the release in a trailing comment.
