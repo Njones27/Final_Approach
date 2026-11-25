@@ -156,6 +156,14 @@ final class SyncCoordinator {
         await sync(on: model)
     }
 
+    /// Signs in a test account, and then syncs, as a sign in with Apple does.
+    func signIn(testAccount name: String, password: String, on model: CollectionModel) async throws {
+        try await session.signIn(testAccount: name, password: password)
+        lastReport = nil
+        lastProblem = nil
+        await sync(on: model)
+    }
+
     /// Signs out. The photos stay on the device, and nothing more is sent.
     func signOut() async {
         waiting?.cancel()
@@ -554,9 +562,11 @@ extension SyncCoordinator {
         }
         let hasBackend = account != .noBackend
         let photos = SamplePhotoBackend()
+        let identity = SampleIdentityService()
+        identity.testAccounts = [SampleData.testAccountName: SampleData.testAccountPassword]
         return SyncCoordinator(
             session: AccountSession(
-                identity: hasBackend ? SampleIdentityService() : nil,
+                identity: hasBackend ? identity : nil,
                 store: MemorySessionStore(saved)
             ),
             backend: hasBackend ? photos : nil,

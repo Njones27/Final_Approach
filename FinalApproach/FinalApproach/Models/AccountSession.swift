@@ -60,6 +60,9 @@ final class AccountSession {
     /// True while a delete of the account is owed to the backend.
     var isAccountDeleteOwed: Bool { stored?.isAccountDeleteOwed == true }
 
+    /// True while a test account is the one signed in.
+    var isTestAccount: Bool { stored?.isTestAccount == true }
+
     /// Signs in with the identity token from Sign in with Apple.
     ///
     /// The user's id is read from the token, and the backend checks that the
@@ -77,6 +80,23 @@ final class AccountSession {
         try store.save(session)
         stored = session
         state = .signedIn(userID: userID)
+    }
+
+    /// Signs in a test account with its name and password.
+    ///
+    /// Spaces around the name are dropped, because a keyboard adds one after
+    /// a suggestion. The password is sent as typed and is kept nowhere.
+    func signIn(testAccount name: String, password: String) async throws {
+        guard let identity else { throw PhotoBackendError.notSignedIn }
+        // A new sign in would replace the tokens the delete still needs.
+        guard !isAccountDeleteOwed else { throw PhotoBackendError.accountDeleted }
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, !password.isEmpty else { throw IdentityError.credentialsRefused }
+        let tokens = try await identity.signIn(testAccount: name, password: password)
+        let session = StoredSession(userID: name, tokens: tokens, isTestAccount: true)
+        try store.save(session)
+        stored = session
+        state = .signedIn(userID: name)
     }
 
     /// Signs out on this device at once, and then tells the backend so the

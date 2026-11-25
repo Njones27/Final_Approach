@@ -2,9 +2,10 @@ import Foundation
 
 /// Signs a user in against the backend's Cognito user pool.
 ///
-/// The pool has no passwords in use. The app proves who the user is with
-/// the identity token from Sign in with Apple, and the pool checks that
-/// token itself. The steps are in `docs/backend.md`.
+/// The app proves who the user is with the identity token from Sign in with
+/// Apple, and the pool checks that token itself. A test account, which only
+/// the owner can make, signs in with a name and a password instead. The
+/// steps are in `docs/backend.md`.
 ///
 /// Nothing here is signed with AWS keys. The pool's sign in calls are open
 /// to an app that knows the app client id, which ships inside the app.
@@ -50,6 +51,26 @@ struct CognitoIdentityService: IdentityService {
         return tokens(from: result, refreshToken: refreshToken)
     }
 
+    func signIn(testAccount name: String, password: String) async throws -> SessionTokens {
+        let answered: AuthAnswer
+        do {
+            answered = try await answer(to: "InitiateAuth", [
+                "AuthFlow": "USER_PASSWORD_AUTH",
+                "ClientId": clientID,
+                "AuthParameters": ["USERNAME": name, "PASSWORD": password],
+            ])
+        } catch IdentityError.refused(_, let kind) where Self.refusedCredentialNames.contains(kind) {
+            throw IdentityError.credentialsRefused
+        }
+        // A challenge here means the pool wants more first, such as a new
+        // password for an account whose password was not set for good.
+        guard answered.challengeName == nil else { throw IdentityError.testAccountNotReady }
+        guard let result = answered.result, let refreshToken = result.refreshToken else {
+            throw IdentityError.unreadableAnswer
+        }
+        return tokens(from: result, refreshToken: refreshToken)
+    }
+
     func refresh(_ tokens: SessionTokens) async throws -> SessionTokens {
         let renewed: AuthAnswer
         do {
@@ -89,9 +110,8 @@ struct CognitoIdentityService: IdentityService {
         }
     }
 
-    /// A password the pool's rules accept. A sign up must carry one, but the
-    /// app client allows no sign in by password, so it can never be used. It
-    /// is made here and kept nowhere.
+    /// A password the pool's rules accept. A sign up must carry one. It is
+    /// made here at random and kept nowhere, so nobody can sign in with it.
     static func throwawayPassword() -> String {
         let letters = Array("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
         let random = (0..<40).map { _ in letters.randomElement() ?? "x" }
@@ -112,6 +132,11 @@ struct CognitoIdentityService: IdentityService {
     /// What the pool says when a refresh token no longer works.
     private static let endedSessionNames: Set<String> = [
         "NotAuthorizedException", "UserNotFoundException", "RefreshTokenReuseException",
+    ]
+
+    /// What the pool says when a name and password do not match an account.
+    private static let refusedCredentialNames: Set<String> = [
+        "NotAuthorizedException", "UserNotFoundException",
     ]
 
     private func answer(to operation: String, _ body: [String: Any]) async throws -> AuthAnswer {

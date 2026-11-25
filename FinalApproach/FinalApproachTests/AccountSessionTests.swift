@@ -377,6 +377,119 @@ struct AccountSessionTests {
         #expect(store.session == nil)
     }
 
+    // MARK: Test accounts
+
+    @Test func aTestAccountSignsInUnderItsNameAndIsSavedAsOne() async throws {
+        let store = MemorySessionStore()
+        let account = session(store: store)
+        identity.testAccounts = ["test-one": "long-password"]
+
+        try await account.signIn(testAccount: " test-one ", password: "long-password")
+
+        #expect(account.state == .signedIn(userID: "test-one"))
+        #expect(account.isTestAccount)
+        #expect(store.session?.userID == "test-one")
+        #expect(store.session?.isTestAccount == true)
+        let token = try await account.accessToken()
+        #expect(!token.isEmpty)
+
+        // The next launch still knows how the user signed in.
+        let reopened = session(store: store)
+        #expect(reopened.state == .signedIn(userID: "test-one"))
+        #expect(reopened.isTestAccount)
+    }
+
+    @Test func aSignInWithAppleIsNotATestAccount() async throws {
+        let account = session()
+        try await account.signIn(identityToken: appleToken())
+
+        #expect(!account.isTestAccount)
+    }
+
+    @Test func aWrongPasswordLeavesNoOneSignedIn() async throws {
+        let store = MemorySessionStore()
+        let account = session(store: store)
+        identity.testAccounts = ["test-one": "long-password"]
+
+        await #expect(throws: IdentityError.credentialsRefused) {
+            try await account.signIn(testAccount: "test-one", password: "wrong")
+        }
+        await #expect(throws: IdentityError.credentialsRefused) {
+            try await account.signIn(testAccount: "nobody", password: "long-password")
+        }
+        #expect(account.state == .signedOut)
+        #expect(store.session == nil)
+        #expect(identity.signInCount == 0)
+    }
+
+    @Test func anEmptyNameOrPasswordIsNotSent() async throws {
+        let account = session()
+        identity.testAccounts = ["": "", "test-one": ""]
+
+        await #expect(throws: IdentityError.credentialsRefused) {
+            try await account.signIn(testAccount: "   ", password: "long-password")
+        }
+        await #expect(throws: IdentityError.credentialsRefused) {
+            try await account.signIn(testAccount: "test-one", password: "")
+        }
+        #expect(identity.signInCount == 0)
+    }
+
+    @Test func aTestAccountThatIsNotReadyLeavesNoOneSignedIn() async throws {
+        let account = session()
+        identity.testAccounts = ["test-one": "first-password"]
+        identity.unreadyTestAccounts = ["test-one"]
+
+        await #expect(throws: IdentityError.testAccountNotReady) {
+            try await account.signIn(testAccount: "test-one", password: "first-password")
+        }
+        #expect(account.state == .signedOut)
+    }
+
+    @Test func aBuildWithNoBackendCannotSignInATestAccount() async throws {
+        let account = session(withBackend: false)
+
+        await #expect(throws: PhotoBackendError.notSignedIn) {
+            try await account.signIn(testAccount: "test-one", password: "long-password")
+        }
+    }
+
+    @Test func aTestAccountCannotSignInWhileADeleteIsOwed() async throws {
+        let account = session()
+        identity.testAccounts = ["test-one": "long-password"]
+        try await account.signIn(identityToken: appleToken())
+        try account.beginAccountDelete()
+
+        await #expect(throws: PhotoBackendError.accountDeleted) {
+            try await account.signIn(testAccount: "test-one", password: "long-password")
+        }
+        #expect(account.state == .deletingAccount(userID: "apple-user-1"))
+    }
+
+    @Test func aTestAccountSignsOutLikeAnyoneElse() async throws {
+        let store = MemorySessionStore()
+        let account = session(store: store)
+        identity.testAccounts = ["test-one": "long-password"]
+        try await account.signIn(testAccount: "test-one", password: "long-password")
+
+        await account.signOut()
+
+        #expect(account.state == .signedOut)
+        #expect(!account.isTestAccount)
+        #expect(store.session == nil)
+        #expect(identity.liveRefreshTokens.isEmpty)
+    }
+
+    @Test func aSignInSavedBeforeThereWereTestAccountsIsNotOne() throws {
+        let saved = Data(
+            #"{"userID":"apple-user-1","tokens":{"accessToken":"a","refreshToken":"r","accessTokenExpiresAt":0},"isAccountDeleteOwed":false}"#.utf8
+        )
+
+        let session = try JSONDecoder().decode(StoredSession.self, from: saved)
+
+        #expect(!session.isTestAccount)
+    }
+
     @Test func finishingADeleteNoOneAskedForDoesNothing() async throws {
         let store = MemorySessionStore()
         let account = session(store: store)

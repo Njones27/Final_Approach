@@ -9,6 +9,7 @@ struct AccountSection: View {
     @Environment(SyncCoordinator.self) private var sync
     @State private var isSigningIn = false
     @State private var didSignInFail = false
+    @State private var isTestAccountSheetShown = false
 
     var body: some View {
         Section {
@@ -23,8 +24,13 @@ struct AccountSection: View {
                     } message: {
                         Text("Nothing changed. Try again in a moment.")
                     }
+                Button("Use a test account") { isTestAccountSheetShown = true }
+                    .disabled(isSigningIn)
+                    .sheet(isPresented: $isTestAccountSheetShown) {
+                        TestAccountSignInView()
+                    }
             case .signedIn:
-                LabeledContent("Signed in", value: "With Apple")
+                LabeledContent("Signed in", value: Self.signedInWith(testAccount: sync.session.isTestAccount))
                 LabeledContent("Photos", value: sync.status.text)
                 Button("Sign out") {
                     Task { await sync.signOut() }
@@ -41,6 +47,11 @@ struct AccountSection: View {
         } footer: {
             Text(footer)
         }
+    }
+
+    /// How the user signed in, in words.
+    static func signedInWith(testAccount: Bool) -> String {
+        testAccount ? "With a test account" : "With Apple"
     }
 
     private var footer: String {
