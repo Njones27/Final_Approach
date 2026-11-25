@@ -132,13 +132,21 @@ describe('what a deleted stack leaves behind', () => {
 });
 
 describe('sign in', () => {
-  test('the app can only use the custom flow, with no web sign in and no secret', () => {
+  test('the app can use the custom flow and a test account’s password, with no web sign in and no secret', () => {
     beta.identity.hasResourceProperties('AWS::Cognito::UserPoolClient', {
-      ExplicitAuthFlows: ['ALLOW_CUSTOM_AUTH', 'ALLOW_REFRESH_TOKEN_AUTH'],
+      ExplicitAuthFlows: ['ALLOW_USER_PASSWORD_AUTH', 'ALLOW_CUSTOM_AUTH', 'ALLOW_REFRESH_TOKEN_AUTH'],
       AllowedOAuthFlowsUserPoolClient: false,
       GenerateSecret: false,
       PreventUserExistenceErrors: 'ENABLED',
       EnableTokenRevocation: true,
+    });
+  });
+
+  test('a stage with test accounts turned off leaves Apple as the only way in', () => {
+    const app = new App({ context: { 'aws:cdk:bundling-stacks': [] } });
+    const backend = buildBackend(app, { ...stages.beta, testAccountSignIn: false });
+    Template.fromStack(backend.identity).hasResourceProperties('AWS::Cognito::UserPoolClient', {
+      ExplicitAuthFlows: ['ALLOW_CUSTOM_AUTH', 'ALLOW_REFRESH_TOKEN_AUTH'],
     });
   });
 

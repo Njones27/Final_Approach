@@ -240,7 +240,8 @@ Known limits.
 ## Sign in
 
 The app shows Apple's own sign in sheet and gets an identity token. The user's
-name in the pool is Apple's id for them. There are no passwords in use.
+name in the pool is Apple's id for them. Test accounts are the one exception
+and are described under Test accounts below.
 
 1. On a first sign in the app calls `SignUp` with the token as validation
    data. The pre sign up function lets the user in only when the token is
@@ -255,6 +256,38 @@ The token checks are in `backend/src/auth/appleToken.ts`. The token is not
 tied to one sign in attempt, because the app learns the user's name from the
 token itself. A copied token is of use only until it reaches the age limit in
 the stage settings, which is ten minutes.
+
+### Test accounts
+
+A second account is needed to try voting and spot pages, because nobody is
+shown their own photos to vote on. App Review also asks for an account it can
+use. So a stage whose `testAccountSignIn` setting is true lets a test account
+sign in with a name and a password. Both stages have it on.
+
+Nobody can sign up for a test account. A sign up is refused without Apple's
+token for the same name, so the only way to make one is by hand, as the
+owner, with the two commands below. The first makes the account and the
+second gives it a password that does not have to be changed at the first
+sign in. Use a long random password, above all on prod.
+
+```sh
+aws cognito-idp admin-create-user --profile fa_beta --region us-east-1 \
+  --user-pool-id <pool id> --username test-one --message-action SUPPRESS
+aws cognito-idp admin-set-user-password --profile fa_beta --region us-east-1 \
+  --user-pool-id <pool id> --username test-one --password '<password>' --permanent
+```
+
+The app signs a test account in with one `InitiateAuth` request that uses
+the `USER_PASSWORD_AUTH` flow. From there a test account is a user like any
+other. Its photos, posts, and votes are real ones, so on prod its votes count
+toward real grades. Deleting the account in the app removes it from the pool
+too, and it must be made again by hand.
+
+A sign up through Sign in with Apple still carries a password, because the
+pool asks for one. The app makes it at random and keeps it nowhere. A changed
+app could choose that password for its own new account, and could then sign
+in to that one account without Apple. It gains nothing else, since a sign up
+is accepted only with Apple's token for that same account.
 
 ## Deleting
 
