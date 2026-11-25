@@ -242,6 +242,9 @@ private struct StarBallot: View {
     let cast: (Int) -> Void
 
     @State private var picked: Int?
+    /// Counts taps on a star, so tapping the same star again pops it again.
+    @State private var taps = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -290,14 +293,26 @@ private struct StarBallot: View {
         return VStack(spacing: 8) {
             HStack(spacing: 0) {
                 ForEach(values, id: \.self) { value in
+                    let isFilled = value <= (picked ?? 0)
                     Button {
                         withAnimation(Motion.press) {
                             picked = value
                         }
+                        taps += 1
                     } label: {
-                        Image(systemName: value <= (picked ?? 0) ? "star.fill" : "star")
+                        Image(systemName: isFilled ? "star.fill" : "star")
+                            // The picked stars spring up one after another,
+                            // from the first to the one that was tapped.
+                            // With Reduce Motion on they only change color.
+                            .phaseAnimator([false, true], trigger: taps) { star, isRaised in
+                                star.scaleEffect(isRaised && isFilled && !reduceMotion ? Motion.popScale : 1)
+                            } animation: { isRaised in
+                                isRaised
+                                    ? Motion.pop.delay(Double(value - scale.lowerBound) * Motion.stagger)
+                                    : Motion.settle
+                            }
                     }
-                    .buttonStyle(StarButtonStyle(isFilled: value <= (picked ?? 0)))
+                    .buttonStyle(StarButtonStyle(isFilled: isFilled))
                     .disabled(isBusy)
                     .accessibilityLabel(VoteView.spokenLabel(for: value, in: scale))
                     .accessibilityAddTraits(picked == value ? .isSelected : [])
@@ -326,7 +341,7 @@ private struct StarButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.title)
-            .foregroundStyle(isFilled ? Theme.ink : Theme.chevron)
+            .foregroundStyle(isFilled ? Theme.star : Theme.chevron)
             .frame(minWidth: 44, minHeight: 56)
             .contentShape(Rectangle())
             .opacity(configuration.isPressed ? 0.7 : 1)

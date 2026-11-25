@@ -49,6 +49,10 @@ enum Theme {
         }
     }
 
+    /// A star the voter has picked. It is a little deeper in light mode so
+    /// it stands out on white.
+    static let star = Color.dynamic(light: 0xF2B100, dark: 0xFFD60A)
+
     /// The color for points a fix would add.
     static let gain = text(for: .gold)
 }

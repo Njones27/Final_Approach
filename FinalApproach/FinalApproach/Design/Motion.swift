@@ -23,6 +23,12 @@ enum Motion {
     /// A marker travelling to its value and settling there.
     static let settle = Animation.spring(duration: 0.6, bounce: 0.18)
 
+    /// Something picked springing up for a moment, such as a star.
+    static let pop = Animation.spring(duration: 0.28, bounce: 0.5)
+
+    /// How large a picked item grows at the top of its pop.
+    static let popScale: CGFloat = 1.3
+
     /// Old content fading away before its replacement arrives.
     static let leave = Animation.easeOut(duration: 0.12)
 
