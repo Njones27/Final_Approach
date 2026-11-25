@@ -470,7 +470,8 @@ enum SampleData {
                     longitude: -84.3990,
                     accessNotes: "Park on the gravel beside the road and walk to the fence line.",
                     localRules: "Stay off the grass inside the fence, and keep the gate clear.",
-                    runwayNotes: "Looks at the two south runways. Arrivals use them when the wind is from the west."
+                    runwayNotes: "Looks at the two south runways. Arrivals use them when the wind is from the west.",
+                    viewBearing: 0
                 ),
                 Spot(
                     id: "atl-cargo-ramp",
@@ -493,7 +494,8 @@ enum SampleData {
                     name: "West road",
                     summary: "A quiet road beside the west end of the runways.",
                     latitude: 33.6395,
-                    longitude: -84.4575
+                    longitude: -84.4575,
+                    viewBearing: 90
                 ),
             ]
         ),

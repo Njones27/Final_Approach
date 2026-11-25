@@ -305,7 +305,7 @@ for deleting and for syncing, and how to deploy are in `docs/backend.md`.
    and directions. The backend for all four is described in
    `docs/backend.md` under Places and Camera settings.
 
-   The app side comes in parts. The first two parts are built. A posted
+   The app side came in three parts, and all three are built. A posted
    photo whose location shows goes on its listed spot's page as before, and
    one taken away from every listed spot goes on the map at its place. The
    app turns where the photo was taken into its cell on the phone and sends
@@ -321,8 +321,13 @@ for deleting and for syncing, and how to deploy are in `docs/backend.md`.
    each place has a round pin with its top voted photo and its count. A
    place's card shows its best photos and says how exact the pin is. "Top
    spots here" opens the spots and places ranked by how many photos they
-   have. The photo first page with the light and the camera settings is
-   still to come.
+   have.
+
+   The third part rebuilds the pages. A spot's page and a place's page open
+   on the top voted photo, and each photo shows how it was taken. Both
+   pages show today's light, which is golden hour, sunrise, and sunset, and
+   for a spot that says which way it looks, when the sun is behind the
+   photographer.
 10. **Flight data lookup.** The backend asks the flight data provider what
     was flying near a photo, with the per-camera clock correction. It is
     last of the features because it needs a paid plan and a check of the

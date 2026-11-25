@@ -79,4 +79,12 @@ import Testing
         #expect(settings.isoText == "ISO 200")
         #expect(settings.cameraName == nil)
     }
+
+    @Test func theSettingsReadOnOneLine() {
+        let full = ShownCamera(focalLength: 400, aperture: 5.6, exposureTime: 0.001, iso: 200)
+        #expect(full.summary == "400 mm, f/5.6, 1/1000 s, ISO 200")
+        // A part that is not set is left out.
+        #expect(ShownCamera(focalLength: 85).summary == "85 mm")
+        #expect(ShownCamera().summary == nil)
+    }
 }

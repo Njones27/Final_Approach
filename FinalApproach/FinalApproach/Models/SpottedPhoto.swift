@@ -267,6 +267,10 @@ struct Spot: Identifiable, Equatable {
     var localRules = ""
     /// Which runways the spot looks at, and when each is in use.
     var runwayNotes = ""
+    /// The compass direction a photographer faces to see the aircraft, in
+    /// degrees from 0 up to 360. It is nil for a spot that looks more than
+    /// one way or does not say.
+    var viewBearing: Double?
 
     var coordinate: Coordinate? {
         Coordinate(latitude: latitude, longitude: longitude)

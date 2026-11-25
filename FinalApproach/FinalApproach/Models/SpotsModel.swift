@@ -65,6 +65,9 @@ final class SpotsModel {
     private(set) var around: Around?
 
     let session: AccountSession
+    /// What counts as good light at a spot. It is data, so it can be tuned
+    /// without a release.
+    let lightRules: LightRules
 
     @ObservationIgnored private let backend: any SpotBackend
     /// True when the backend answers a signed in user only. The sample
@@ -102,7 +105,8 @@ final class SpotsModel {
         thumbnailSide: CGFloat = 1200,
         pinThumbnailSide: CGFloat = 240,
         listAttempts: Int = 3,
-        aroundReloadDistance: Double = 10_000
+        aroundReloadDistance: Double = 10_000,
+        lightRules: LightRules = .launch
     ) {
         self.session = session
         self.backend = backend
@@ -111,6 +115,7 @@ final class SpotsModel {
         self.pinThumbnailSide = pinThumbnailSide
         self.listAttempts = listAttempts
         self.aroundReloadDistance = aroundReloadDistance
+        self.lightRules = lightRules
     }
 
     /// True when the spots cannot be asked for because no one is signed in.

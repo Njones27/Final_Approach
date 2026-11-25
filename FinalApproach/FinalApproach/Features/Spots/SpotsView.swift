@@ -7,6 +7,8 @@ import SwiftUI
 enum SpotRoute: Hashable {
     /// The page of one spot, by spot id.
     case page(String)
+    /// The page of one place, by place id.
+    case place(String)
 }
 
 /// What the card says while there is no spot to show.
@@ -218,6 +220,8 @@ struct SpotsView: View {
                 switch route {
                 case let .page(spotID):
                     SpotPageView(spotID: spotID)
+                case let .place(placeID):
+                    PlacePageView(placeID: placeID)
                 }
             }
             .photoDestinations(zoomingIn: photoZoom)
@@ -764,7 +768,8 @@ private struct SpotCard: View {
 }
 
 /// The card for the selected place, with the best photos shown there. A
-/// place has no name, notes, or directions, so the card has no actions.
+/// place has no name, notes, or directions, so the card's one action
+/// opens its photos.
 private struct PlaceCard: View {
     let place: ShownPlace
     /// The place's photos as far as they are known, or nil before they
@@ -792,29 +797,36 @@ private struct PlaceCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Unnamed place")
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(Theme.ink)
-                Text(detail)
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.secondaryText)
-                    .lineLimit(2, reservesSpace: true)
-            }
-            // The card has no actions, so the photos take the room the
-            // buttons take on a spot's card. The map under the card then
-            // moves little when one card takes the other's place.
-            HStack(spacing: 6) {
-                ForEach(bestPhotos) { photo in
-                    SpotThumbnail(photo: photo, description: "A photo taken from this place")
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            // The card is laid out as the spot card is, with the same
+            // heights, so the map under it holds still when one card takes
+            // the other's place.
+            VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Unnamed place")
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(Theme.ink)
+                    Text(detail)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondaryText)
+                        .lineLimit(2, reservesSpace: true)
                 }
+                HStack(spacing: 6) {
+                    ForEach(bestPhotos) { photo in
+                        SpotThumbnail(photo: photo, description: "A photo taken from this place")
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
+                }
+                .frame(height: 70)
             }
-            .frame(height: 126)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .id(place.id)
+            .transition(.fadeThrough)
+
+            NavigationLink(value: SpotRoute.place(place.id)) {
+                Text("Open photos")
+            }
+            .buttonStyle(.primaryCompact)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .id(place.id)
-        .transition(.fadeThrough)
         .padding(16)
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
         .shadow(color: Theme.scrim.opacity(0.25), radius: 17, y: 12)

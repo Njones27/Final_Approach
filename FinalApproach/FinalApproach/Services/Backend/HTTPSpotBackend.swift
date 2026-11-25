@@ -85,6 +85,7 @@ private struct CatalogAnswer: Decodable {
         let accessNotes: String?
         let localRules: String?
         let runwayNotes: String?
+        let viewBearing: Double?
 
         var spot: Spot {
             Spot(
@@ -95,7 +96,9 @@ private struct CatalogAnswer: Decodable {
                 longitude: longitude,
                 accessNotes: accessNotes ?? "",
                 localRules: localRules ?? "",
-                runwayNotes: runwayNotes ?? ""
+                runwayNotes: runwayNotes ?? "",
+                // A direction that is not on the compass is left out.
+                viewBearing: viewBearing.flatMap { (0..<360).contains($0) ? $0 : nil }
             )
         }
     }

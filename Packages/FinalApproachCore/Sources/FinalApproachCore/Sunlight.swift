@@ -84,6 +84,19 @@ public struct LightRules: Equatable, Sendable {
         self.behindWithinDegrees = behindWithinDegrees
         self.stepSeconds = stepSeconds
     }
+
+    /// The rules the app launched with. The sun's upper edge meets the
+    /// horizon at about 0.83 degrees below it. Golden hour runs from 4
+    /// degrees below the horizon to 6 above. The sun counts as behind a
+    /// photographer within 70 degrees of their back, and the sky is looked
+    /// at once a minute.
+    public static let launch = LightRules(
+        horizonElevation: -0.833,
+        goldenLowestElevation: -4,
+        goldenHighestElevation: 6,
+        behindWithinDegrees: 70,
+        stepSeconds: 60
+    )
 }
 
 /// A stretch of time with a start and an end.

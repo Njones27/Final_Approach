@@ -133,6 +133,22 @@ import Testing
         #expect(day.sunset == nil)
     }
 
+    @Test func theLaunchRulesFindADayOfLightInAtlanta() throws {
+        let day = Sunlight.light(
+            at: try atlanta(),
+            from: dayStart,
+            to: dayStart.addingTimeInterval(86_400),
+            viewBearing: 270,
+            rules: .launch
+        )
+        #expect(isNear(day.sunrise, hour: 12, minute: 19))
+        #expect(day.sunset != nil)
+        #expect(day.goldenHours.count == 2)
+        // A photographer who looks west has the sun behind them in the
+        // morning.
+        #expect(day.sunBehind.count == 1)
+    }
+
     @Test func aStretchWithNoLengthOrNoStepHasNoLight() throws {
         let empty = DayLight(sunrise: nil, sunset: nil, goldenHours: [], sunBehind: [])
         let nothing = Sunlight.light(at: try atlanta(), from: dayStart, to: dayStart, viewBearing: 0, rules: rules)

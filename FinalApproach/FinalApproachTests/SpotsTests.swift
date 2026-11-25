@@ -202,6 +202,28 @@ final class SpotsTests {
         #expect(second.accessNotes.isEmpty)
     }
 
+    @Test func aSpotSaysWhichWayItLooksOnlyWhenTheDirectionIsOnTheCompass() async throws {
+        var west = spotAnswer("atl-west", latitude: 33.62, notes: false)
+        west["viewBearing"] = 270
+        var wrong = spotAnswer("atl-wrong", latitude: 33.63, notes: false)
+        wrong["viewBearing"] = 400
+        let plain = spotAnswer("atl-plain", latitude: 33.64, notes: false)
+        let atlanta: [String: Any] = [
+            "code": "ATL",
+            "city": "Atlanta",
+            "latitude": 33.6407,
+            "longitude": -84.4277,
+            "spots": [west, wrong, plain],
+        ]
+        let transport = ScriptedTransport([.init(body: try json(["airports": [atlanta]]))])
+
+        let airports = try await spotClient(transport).airports()
+
+        let spots = try #require(airports.first?.spots)
+        let bearings = spots.map { $0.viewBearing }
+        #expect(bearings == [270, nil, nil])
+    }
+
     @Test func aSpotsPhotosComeWithTheirGradeAndWhatTheOwnerShows() async throws {
         let transport = ScriptedTransport([
             .init(body: try json([
@@ -1635,5 +1657,121 @@ final class SpotsTests {
             == "Southwest Airlines Boeing 737-800, taken from South approach")
         #expect(SpotPageView.imageDescription(for: unnamed, spotName: "South approach")
             == "A photo taken from South approach")
+    }
+
+    @Test func aPhotoOnAPlacesPageIsDescribedByWhatItsOwnerShows() throws {
+        let link = try #require(URL(string: "https://images.example.test/post-1"))
+        let named = SpotPhoto(id: "post-1", imageURL: link, score: 80, aircraftType: "F-22 Raptor")
+        let unnamed = SpotPhoto(id: "post-2", imageURL: link, score: 80)
+
+        #expect(PlacePageView.imageDescription(for: named) == "F-22 Raptor, taken from this place")
+        #expect(PlacePageView.imageDescription(for: unnamed) == "A photo taken from this place")
+    }
+
+    @Test func aPlacesPageSaysHowExactThePlaceIs() {
+        let words = PlacePageView.aboutText(meters: 100)
+        #expect(words.contains("to about 100 meters"))
+        #expect(words.contains("no name, notes, or directions"))
+    }
+
+    // MARK: The light at a spot
+
+    /// Midnight in Atlanta on 25 November 2026, which is 05:00 UTC.
+    private let atlantaMidnight = Date(timeIntervalSince1970: 1_795_582_800)
+
+    private func atlantaTime() throws -> Date.FormatStyle {
+        let zone = try #require(TimeZone(identifier: "America/New_York"))
+        return Date.FormatStyle(date: .omitted, time: .shortened, locale: Locale(identifier: "en_US"), timeZone: zone)
+    }
+
+    private func hours(_ hours: Double) -> Date {
+        atlantaMidnight.addingTimeInterval(hours * 3600)
+    }
+
+    @Test func thePageSaysWhenTheLightIsGood() throws {
+        let time = try atlantaTime()
+        let morning = TimeWindow(start: hours(7), end: hours(8))
+        let evening = TimeWindow(start: hours(17), end: hours(17.75))
+        let behind = TimeWindow(start: hours(7.25), end: hours(11.25))
+        let light = DayLight(
+            sunrise: hours(7.25),
+            sunset: hours(17.5),
+            goldenHours: [morning, evening],
+            sunBehind: [behind]
+        )
+
+        let lines = SpotLight.lines(for: light, looksOneWay: true, time: time)
+
+        let titles = lines.map { $0.title }
+        #expect(titles == ["Sun behind you", "Golden hour", "Sunrise", "Sunset"])
+        let texts = lines.map { $0.text }
+        let behindText = "\(behind.start.formatted(time)) to \(behind.end.formatted(time))"
+        let morningText = "\(morning.start.formatted(time)) to \(morning.end.formatted(time))"
+        let eveningText = "\(evening.start.formatted(time)) to \(evening.end.formatted(time))"
+        #expect(texts == [
+            behindText,
+            "\(morningText), \(eveningText)",
+            hours(7.25).formatted(time),
+            hours(17.5).formatted(time),
+        ])
+        // The times are written for the clock in Atlanta.
+        #expect(behindText.hasPrefix("7:15"))
+        #expect(eveningText.hasPrefix("5:00"))
+    }
+
+    @Test func aPlaceThatDoesNotSayWhichWayItLooksHasNoLineAboutTheSunBehind() throws {
+        let time = try atlantaTime()
+        let light = DayLight(
+            sunrise: hours(7.25),
+            sunset: hours(17.5),
+            goldenHours: [TimeWindow(start: hours(7), end: hours(8))],
+            sunBehind: []
+        )
+
+        let titles = SpotLight.lines(for: light, looksOneWay: false, time: time).map { $0.title }
+
+        #expect(titles == ["Golden hour", "Sunrise", "Sunset"])
+    }
+
+    @Test func aDayWithNoGoodLightSaysSo() throws {
+        let time = try atlantaTime()
+        // Where the sun does not rise there is nothing to say but that.
+        let dark = DayLight(sunrise: nil, sunset: nil, goldenHours: [], sunBehind: [])
+
+        let lines = SpotLight.lines(for: dark, looksOneWay: true, time: time)
+
+        #expect(lines == [
+            LightLine(title: "Sun behind you", text: "Not today"),
+            LightLine(title: "Golden hour", text: "Not today"),
+        ])
+    }
+
+    @Test func theLightIsWorkedOutForTheDayOnTheClock() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: "America/New_York"))
+
+        let day = SpotLight.day(holding: hours(10), in: calendar)
+
+        #expect(day.start == atlantaMidnight)
+        #expect(day.end == hours(24))
+    }
+
+    @Test func aSampleSpotThatLooksNorthHasTheSunBehindItAllDayInNovember() throws {
+        let spot = try #require(SampleData.airports.first?.spots.first)
+        let pin = try #require(spot.coordinate)
+        #expect(spot.viewBearing == 0)
+
+        let light = Sunlight.light(
+            at: pin,
+            from: atlantaMidnight,
+            to: hours(24),
+            viewBearing: spot.viewBearing,
+            rules: .launch
+        )
+
+        let window = try #require(light.sunBehind.first)
+        #expect(light.sunBehind.count == 1)
+        #expect(window.start == light.sunrise)
+        #expect(window.end == light.sunset)
     }
 }

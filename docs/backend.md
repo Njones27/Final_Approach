@@ -615,6 +615,16 @@ top voted photo and a count.
   pin is round and shows its top voted photo with its count, where the
   user's own photos are square. A place's card shows its best photos and
   says how exact the pin is. It has no name, notes, or directions.
+- A spot's page and a place's page open on the top voted photo shown
+  there, then say what there is to say about it, then show the rest of the
+  photos best first. A photo comes with its focal length, aperture, shutter
+  time, and ISO on one line when its owner shows them. A place's card
+  opens its page with "Open photos".
+- Both pages show the light for today, worked out on the phone by
+  `Sunlight` in the core package from where the pin is. That is golden
+  hour, sunrise, and sunset, and for a spot with a `viewBearing` when the
+  sun is behind the photographer. The rules are `LightRules.launch`, held
+  by `SpotsModel`. The times are in the phone's time zone.
 - "Top spots here" in the toolbar opens the ranked list of the spots and
   places in the answer. `ShownRanking` in the core package orders them by
   how many photos they have, then by the grade of their best photo. A tap
@@ -663,8 +673,10 @@ Known limits.
 - The list of spots is kept in memory. A photo logged right after the app
   opens with no network has no spot until the list arrives, and then finds
   it by where it was taken.
-- A photo on a page cannot be opened larger yet, and a place has no page
-  of its own yet. Its card shows its three best photos.
+- A photo on a page cannot be opened larger yet.
+- The light takes no account of the weather or of what stands between the
+  photographer and the sun, and its times are in the phone's time zone
+  even for a spot far away.
 - A pin's image is the full image made small on the phone. The backend
   has no smaller copy to send, so a map with many pins downloads many
   full images.
@@ -861,12 +873,8 @@ change to those values in a deploy must be copied into the stage's file.
 ## Still to come
 
 - The first real spots in the list, which the owner supplies.
-- The rest of the app side of places, the light at a spot, and camera
-  settings. The app sends a place and camera settings when a photo is
-  shown, and the map reads `GET /places` for its pins, counts, and ranked
-  list. A place has no page yet, no screen shows the camera settings or
-  the light, and the app does not read a spot's `viewBearing`. The backend
-  for them is under Places and Camera settings above.
+- A view direction on the first real spots, so their pages can say when
+  the sun is behind the photographer.
 - A way to open a photo on a spot's page larger, and a way to change
   whether a logged photo's spot shows.
 - Reputation, which gives a voter whose votes land near the final grades
