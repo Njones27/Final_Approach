@@ -91,7 +91,7 @@ describe('the table', () => {
     });
   });
 
-  test('has two indexes, of the posts open for votes and of the photos shown at spots', () => {
+  test('has three indexes, of the posts open for votes, of the photos shown at each spot or place, and of the photos shown in each tile of the map', () => {
     for (const stage of [beta, prod]) {
       stage.storage.hasResourceProperties('AWS::DynamoDB::Table', {
         GlobalSecondaryIndexes: [
@@ -107,6 +107,14 @@ describe('the table', () => {
             IndexName: 'Spot',
             KeySchema: [
               { AttributeName: 'spotKey', KeyType: 'HASH' },
+              { AttributeName: 'finalScore', KeyType: 'RANGE' },
+            ],
+            Projection: { ProjectionType: 'ALL' },
+          },
+          {
+            IndexName: 'Area',
+            KeySchema: [
+              { AttributeName: 'areaKey', KeyType: 'HASH' },
               { AttributeName: 'finalScore', KeyType: 'RANGE' },
             ],
             Projection: { ProjectionType: 'ALL' },
@@ -176,7 +184,7 @@ describe('sign in', () => {
 });
 
 describe('the API', () => {
-  test('has exactly the twelve routes, and each needs a signed in user', () => {
+  test('has exactly the fourteen routes, and each needs a signed in user', () => {
     const routes = Object.values(beta.api.findResources('AWS::ApiGatewayV2::Route')).map(
       (route) => route['Properties'],
     );
@@ -185,6 +193,8 @@ describe('the API', () => {
       'DELETE /photos/{photoID}',
       'DELETE /posts/{photoID}/spot',
       'GET /photos',
+      'GET /places',
+      'GET /places/{placeID}/photos',
       'GET /posts',
       'GET /spots',
       'GET /spots/{spotID}/photos',
@@ -301,6 +311,7 @@ describe('what the functions may do', () => {
       'dynamodb:Query',
       'dynamodb:Query',
       'dynamodb:Query',
+      'dynamodb:Query',
       'dynamodb:UpdateItem',
       'dynamodb:UpdateItem',
       'dynamodb:UpdateItem',
@@ -348,12 +359,43 @@ describe('what the functions may do', () => {
     assert.match(JSON.stringify(query?.Resource), /\/index\/Voting/);
   });
 
-  test('the spots function reads the index of photos shown at spots and signs links, and writes nothing', () => {
+  test('the spots function reads the two indexes of shown photos and signs links, and writes nothing', () => {
     const statements = policyOf('Spots');
-    assert.deepEqual(statements.flatMap((statement) => statement.Action).sort(), ['dynamodb:Query', 's3:GetObject']);
-    const query = statements.find((statement) => [statement.Action].flat().includes('dynamodb:Query'));
-    // It may read the one index, and not the table of every user's records.
-    assert.match(JSON.stringify(query?.Resource), /\/index\/Spot"\]\]\}$/);
+    assert.deepEqual(statements.flatMap((statement) => statement.Action).sort(), [
+      'dynamodb:Query',
+      'dynamodb:Query',
+      's3:GetObject',
+    ]);
+    const queries = statements.filter((statement) => [statement.Action].flat().includes('dynamodb:Query'));
+    // It may read the two indexes, and not the table of every user's records.
+    assert.match(JSON.stringify(queries[0]?.Resource), /\/index\/Spot"\]\]\}$/);
+    assert.match(JSON.stringify(queries[1]?.Resource), /\/index\/Area"\]\]\}$/);
+  });
+
+  test('the two functions that sort shown photos use the same grid', () => {
+    for (const [stage, name] of [[beta, 'beta'], [prod, 'prod']] as const) {
+      const functions = Object.values(stage.api.findResources('AWS::Lambda::Function'))
+        .map((fn) => fn['Properties'].Environment?.Variables ?? {})
+        .filter((variables) => 'PLACE_CELLS_PER_DEGREE' in variables);
+      // Posts files a shown photo, and Spots finds it again.
+      assert.equal(functions.length, 2);
+      for (const variables of functions) {
+        assert.equal(variables.PLACE_CELLS_PER_DEGREE, String(stages[name].placeCellsPerDegree));
+        assert.equal(variables.AREA_TILES_PER_DEGREE, String(stages[name].areaTilesPerDegree));
+      }
+    }
+  });
+
+  test('the map settings are amounts that make sense', () => {
+    for (const stage of Object.values(stages)) {
+      // Whole cells in a degree keep a cell's edges exact.
+      assert.ok(Number.isInteger(stage.placeCellsPerDegree) && stage.placeCellsPerDegree >= 1);
+      assert.ok(Number.isInteger(stage.areaTilesPerDegree) && stage.areaTilesPerDegree >= 1);
+      // A tile holds many cells, or looking around a point would find nothing.
+      assert.ok(stage.placeCellsPerDegree >= 100 * stage.areaTilesPerDegree);
+      assert.ok(stage.areaReadLimit >= 1 && stage.areaReadLimit <= 1000);
+      assert.ok(stage.placesPerAnswer >= 1);
+    }
   });
 
   test('the posts function reads and writes records and reads images, and changes no image', () => {

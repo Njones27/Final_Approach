@@ -7,10 +7,12 @@ import {
   type DynamoDBDocumentClient,
 } from '@aws-sdk/lib-dynamodb';
 import {
+  areaIndex,
   deletedAccountSortKey,
   imageKey,
   partitionKey,
   photoSortKey,
+  placeKey,
   postSortKey,
   postSortKeyPrefix,
   spotIndex,
@@ -18,6 +20,7 @@ import {
   votingIndex,
 } from '../shared/keys.ts';
 import { emptyTally } from '../votes/standing.ts';
+import { cameraFields, cameraOf } from './camera.ts';
 import type { PostOutcome, PostPage, PostStore, SpotShowing, StoredPost } from './store.ts';
 
 export interface AwsPostStoreSettings {
@@ -49,18 +52,35 @@ function isNamed(error: unknown, ...names: string[]): boolean {
 
 const count = (value: unknown): number => (typeof value === 'number' ? value : 0);
 
-/** The things a post can show at a spot beside the spot itself. */
-const shownFields = ['aircraftType', 'airline'] as const;
+/**
+ * Everything a shown post carries beside its own fields. The two index
+ * keys come first, then where it is shown, then what is shown with it.
+ * Taking a post off removes every one of them.
+ */
+const shownAttributes = [
+  spotIndex.partitionKey,
+  areaIndex.partitionKey,
+  'spotID',
+  'placeID',
+  'aircraftType',
+  'airline',
+  ...cameraFields,
+] as const;
 
 function showingOf(item: Record<string, unknown>): SpotShowing | undefined {
   const spotID = item['spotID'];
-  if (typeof spotID !== 'string') return undefined;
+  const placeID = item['placeID'];
+  const where =
+    typeof spotID === 'string' ? { spotID } : typeof placeID === 'string' ? { placeID } : undefined;
+  if (!where) return undefined;
   const aircraftType = item['aircraftType'];
   const airline = item['airline'];
+  const camera = cameraOf(item);
   return {
-    spotID,
+    ...where,
     ...(typeof aircraftType === 'string' ? { aircraftType } : {}),
     ...(typeof airline === 'string' ? { airline } : {}),
+    ...(camera ? { camera } : {}),
   };
 }
 
@@ -179,24 +199,31 @@ export function makeAwsPostStore(settings: AwsPostStoreSettings): PostStore {
       return { posts: (result.Items ?? []).map(postOf), ...(nextAfter ? { nextAfter } : {}) };
     },
 
-    async showAtSpot(userID, photoID, showing) {
-      const names: Record<string, string> = { '#spotKey': spotIndex.partitionKey, '#spotID': 'spotID' };
-      const values: Record<string, string> = {
-        ':spotKey': spotKey(showing.spotID),
-        ':spotID': showing.spotID,
-      };
-      const sets = ['#spotKey = :spotKey', '#spotID = :spotID'];
-      const removes: string[] = [];
-      // What is shown replaces what was shown before, so a field that is
+    async showAtSpot(userID, photoID, showing, areaKey) {
+      // What is shown replaces what was shown before, so anything that is
       // left out now is taken off the post.
-      for (const field of shownFields) {
-        names[`#${field}`] = field;
-        const value = showing[field];
+      const kept: Record<string, string | number | undefined> = {
+        [spotIndex.partitionKey]:
+          showing.spotID !== undefined ? spotKey(showing.spotID) : placeKey(showing.placeID),
+        [areaIndex.partitionKey]: areaKey,
+        spotID: showing.spotID,
+        placeID: showing.placeID,
+        aircraftType: showing.aircraftType,
+        airline: showing.airline,
+        ...Object.fromEntries(cameraFields.map((field) => [field, showing.camera?.[field]])),
+      };
+      const names: Record<string, string> = {};
+      const values: Record<string, string | number> = {};
+      const sets: string[] = [];
+      const removes: string[] = [];
+      for (const attribute of shownAttributes) {
+        names[`#${attribute}`] = attribute;
+        const value = kept[attribute];
         if (value === undefined) {
-          removes.push(`#${field}`);
+          removes.push(`#${attribute}`);
         } else {
-          sets.push(`#${field} = :${field}`);
-          values[`:${field}`] = value;
+          sets.push(`#${attribute} = :${attribute}`);
+          values[`:${attribute}`] = value;
         }
       }
       try {
@@ -204,8 +231,7 @@ export function makeAwsPostStore(settings: AwsPostStoreSettings): PostStore {
           new UpdateCommand({
             TableName: tableName,
             Key: { pk: partitionKey(userID), sk: postSortKey(photoID) },
-            UpdateExpression:
-              `SET ${sets.join(', ')}` + (removes.length > 0 ? ` REMOVE ${removes.join(', ')}` : ''),
+            UpdateExpression: `SET ${sets.join(', ')} REMOVE ${removes.join(', ')}`,
             ExpressionAttributeNames: names,
             ExpressionAttributeValues: values,
             // An update makes a record when there is none. Only a post that
@@ -221,8 +247,7 @@ export function makeAwsPostStore(settings: AwsPostStoreSettings): PostStore {
     },
 
     async hideFromSpots(userID, photoID) {
-      const names: Record<string, string> = { '#spotKey': spotIndex.partitionKey, '#spotID': 'spotID' };
-      for (const field of shownFields) names[`#${field}`] = field;
+      const names = Object.fromEntries(shownAttributes.map((attribute) => [`#${attribute}`, attribute]));
       try {
         await dynamo.send(
           new UpdateCommand({

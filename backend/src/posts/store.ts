@@ -1,4 +1,5 @@
 import type { Tally } from '../votes/standing.ts';
+import type { CameraSettings } from './camera.ts';
 
 /** One photo put in front of other users for their votes. */
 export interface Post {
@@ -12,16 +13,24 @@ export interface Post {
 }
 
 /**
- * What a post shows on a spot's page, by its owner's choice. These are the
- * only things about a photo, beside its image and grade, that another user
- * is ever sent. There is no name, no registration, and no position.
+ * Where a photo is shown. It is either a listed spot or a place, which is
+ * one small cell of the map for a photo taken away from the listed spots.
  */
-export interface SpotShowing {
-  /** The listed spot the photo was taken at. */
-  readonly spotID: string;
+export type ShownWhere =
+  | { readonly spotID: string; readonly placeID?: undefined }
+  | { readonly placeID: string; readonly spotID?: undefined };
+
+/**
+ * What a post shows to other users, by its owner's choice. These are the
+ * only things about a photo, beside its image and grade, that another user
+ * is ever sent. There is no name, no registration, and no position finer
+ * than the place's cell.
+ */
+export type SpotShowing = ShownWhere & {
   readonly aircraftType?: string;
   readonly airline?: string;
-}
+  readonly camera?: CameraSettings;
+};
 
 /** A post as it is kept, with the votes counted on it so far. */
 export interface StoredPost extends Post, Tally {
@@ -57,10 +66,16 @@ export interface PostStore {
   /** The photo's image as it is stored, or nothing when none has arrived. */
   imageBytes(userID: string, photoID: string): Promise<Uint8Array | undefined>;
   /**
-   * Shows a posted photo at a spot, in place of anything it showed before.
-   * A photo that is not posted is turned away.
+   * Shows a posted photo at a spot or a place, in place of anything it
+   * showed before. `areaKey` names the tile of the map it is found in. A
+   * photo that is not posted is turned away.
    */
-  showAtSpot(userID: string, photoID: string, showing: SpotShowing): Promise<'shown' | 'notPosted'>;
-  /** Takes a photo off its spot. A photo shown nowhere is left as it is. */
+  showAtSpot(
+    userID: string,
+    photoID: string,
+    showing: SpotShowing,
+    areaKey: string,
+  ): Promise<'shown' | 'notPosted'>;
+  /** Takes a photo off its spot or place. A photo shown nowhere is left as it is. */
   hideFromSpots(userID: string, photoID: string): Promise<void>;
 }

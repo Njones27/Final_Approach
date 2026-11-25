@@ -102,6 +102,24 @@ export interface StageSettings {
   readonly photosPerSpot: number;
   /** The longest an aircraft type or an airline shown at a spot may be. */
   readonly shownTextMaxLength: number;
+  /**
+   * How many cells one degree of the map is cut into. A photo shown away
+   * from the listed spots is kept by its cell and by nothing finer. 1,000
+   * makes a cell about 110 meters tall. It must not change once photos
+   * are shown, because each one names its place by its cell.
+   */
+  readonly placeCellsPerDegree: number;
+  /**
+   * How many tiles one degree of the map is cut into, for finding the
+   * photos shown around a point. 2 makes a tile about 55 kilometers tall,
+   * and a request reads the four nearest. It must not change once photos
+   * are shown, because each one names its tile.
+   */
+  readonly areaTilesPerDegree: number;
+  /** How many shown photos one request reads from each tile, best first. */
+  readonly areaReadLimit: number;
+  /** How many places one answer about a point of the map holds, best first. */
+  readonly placesPerAnswer: number;
   /** How many photos one answer of the voting queue holds. */
   readonly votingQueueSize: number;
   /** How many open posts one request reads to fill the queue. */
@@ -154,6 +172,10 @@ const shared = {
   minVotesToFinalize: 5,
   photosPerSpot: 30,
   shownTextMaxLength: 80,
+  placeCellsPerDegree: 1000,
+  areaTilesPerDegree: 2,
+  areaReadLimit: 200,
+  placesPerAnswer: 60,
   votingQueueSize: 10,
   votingQueueReadLimit: 50,
   closerMinutes: 15,

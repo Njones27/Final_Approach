@@ -12,7 +12,7 @@ import { LambdaDestination } from 'aws-cdk-lib/aws-s3-notifications';
 import type { ITopic } from 'aws-cdk-lib/aws-sns';
 import type { Construct } from 'constructs';
 import { expiryAttribute } from '../src/account/awsStore.ts';
-import { spotIndex, votingIndex } from '../src/shared/keys.ts';
+import { areaIndex, spotIndex, votingIndex } from '../src/shared/keys.ts';
 import { allow, backendFunction, userImages } from './functions.ts';
 import type { StageSettings } from './stages.ts';
 
@@ -60,6 +60,16 @@ export class StorageStack extends Stack {
       indexName: spotIndex.name,
       partitionKey: { name: spotIndex.partitionKey, type: AttributeType.STRING },
       sortKey: { name: spotIndex.sortKey, type: AttributeType.NUMBER },
+      projectionType: ProjectionType.ALL,
+    });
+
+    // The graded photos shown in each large tile of the map, best first,
+    // which is how the map finds what is shown around a point. A post is
+    // in it under the same two conditions as the index above.
+    this.table.addGlobalSecondaryIndex({
+      indexName: areaIndex.name,
+      partitionKey: { name: areaIndex.partitionKey, type: AttributeType.STRING },
+      sortKey: { name: areaIndex.sortKey, type: AttributeType.NUMBER },
       projectionType: ProjectionType.ALL,
     });
 
