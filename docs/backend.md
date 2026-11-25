@@ -833,8 +833,10 @@ change to those values in a deploy must be copied into the stage's file.
 ## Still to come
 
 - The first real spots in the list, which the owner supplies.
-- The app side of places, the light at a spot, and camera settings. The
-  backend for them is under Places and Camera settings above.
+- The rest of the app side of places, the light at a spot, and camera
+  settings. The app sends a place and camera settings when a photo is
+  shown. It does not yet read `GET /places` or show the light. The backend
+  for them is under Places and Camera settings above.
 - A way to open a photo on a spot's page larger, and a way to change
   whether a logged photo's spot shows.
 - Reputation, which gives a voter whose votes land near the final grades

@@ -81,7 +81,12 @@ final class PostingTests {
     }
 
     private func client(_ transport: ScriptedTransport) -> HTTPPostBackend {
-        HTTPPostBackend(baseURL: base, transport: transport, accessToken: { "token-1" })
+        HTTPPostBackend(
+            baseURL: base,
+            transport: transport,
+            placeGrid: SampleData.placeGrid,
+            accessToken: { "token-1" }
+        )
     }
 
     // MARK: The client

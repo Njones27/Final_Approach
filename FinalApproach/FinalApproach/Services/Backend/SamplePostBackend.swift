@@ -11,7 +11,7 @@ final class SamplePostBackend: PostBackend {
     private let minimumVotes: Int
     private let now: () -> Date
     private var standings: [String: PostStanding] = [:]
-    /// The spot's page each posted photo is shown on, by photo id.
+    /// Where each posted photo is shown, by photo id.
     private(set) var showings: [String: SpotShowing] = [:]
     /// The spots a photo may be shown at. With nil every spot is listed.
     var listedSpotIDs: Set<String>?
@@ -66,9 +66,11 @@ final class SamplePostBackend: PostBackend {
             nextShowFailure = nil
             throw failure
         }
-        if let listedSpotIDs, !listedSpotIDs.contains(showing.spotID) {
+        // A place is any cell of the map, so only a spot can be unlisted.
+        if let spotID = showing.spotID, let listedSpotIDs, !listedSpotIDs.contains(spotID) {
             throw PhotoBackendError.unknownSpot
         }
+        guard showing.isSomewhere else { throw PhotoBackendError.unknownSpot }
         guard standings[photoID] != nil, photos.photos[photoID] != nil else {
             throw PhotoBackendError.notPosted
         }
