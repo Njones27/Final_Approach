@@ -1,8 +1,10 @@
-name: Backend deploy
+name: Release
 
-# Deploys the backend when a change to it reaches main. Beta goes first and
-# is checked. Prod follows the same run, and waits for the approval that
-# the `prod` environment on GitHub asks for. See docs/backend.md.
+# Takes a change on main through the chain the owner chose. Checks run
+# first, then the backend deploys to beta, then Xcode Cloud builds the app
+# for TestFlight, and prod comes last behind the owner's approval. A step
+# whose part of the repo did not change is skipped, and the chain goes on.
+# See docs/ci-cd.md.
 #
 # No AWS keys are stored in GitHub. A job asks GitHub for a short lived
 # token that says where it runs, and the stage's AWS account trades that
@@ -16,34 +18,86 @@ on:
       - main
     paths:
       - backend/**
+      - FinalApproach/**
+      - Packages/**
       - .github/actions/deploy-backend/**
       - .github/workflows/backend-deploy.yml
       - .github/workflows/backend-checks.yml
+      - .github/workflows/core-checks.yml
   # Lets the owner run a deploy by hand from the Actions tab.
   workflow_dispatch:
     inputs:
       stage:
-        description: How far to deploy. Prod still waits for its approval.
+        description: How far to deploy the backend. Prod still waits for its approval.
         type: choice
         options:
           - beta
           - prod
         default: beta
+      testflight:
+        description: Also hand this commit to Xcode Cloud for a TestFlight build.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
+  changes:
+    name: What changed
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.diff.outputs.backend }}
+      app: ${{ steps.diff.outputs.app }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Compare with the last commit main had
+        id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          TESTFLIGHT: ${{ inputs.testflight }}
+        run: |
+          if [ "$EVENT" = workflow_dispatch ]; then
+            # A run by hand deploys the backend, and builds the app when asked.
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+            echo "app=${TESTFLIGHT:-false}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # A push with no earlier commit to compare with counts as changing both.
+          if ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+            echo "app=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed() { git diff --quiet "$BEFORE" HEAD -- "$@" && echo false || echo true; }
+          {
+            echo "backend=$(changed backend .github/actions/deploy-backend .github/workflows/backend-deploy.yml .github/workflows/backend-checks.yml)"
+            echo "app=$(changed FinalApproach Packages)"
+          } >> "$GITHUB_OUTPUT"
+
   checks:
     name: Checks
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     uses: ./.github/workflows/backend-checks.yml
+
+  app-checks:
+    name: App checks
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
+    uses: ./.github/workflows/core-checks.yml
 
   beta:
     name: Deploy to beta
-    needs: checks
+    needs: [changes, checks]
     # A run started by hand from another branch stops here. The beta account
     # would turn its token away in any case.
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     # Official Node.js image, the same one the checks use.
     container: node:22
@@ -70,15 +124,58 @@ jobs:
           role: ${{ vars.BETA_DEPLOY_ROLE_ARN }}
           role-variable: BETA_DEPLOY_ROLE_ARN
 
+  testflight:
+    name: Hand to Xcode Cloud
+    needs: [changes, app-checks, beta]
+    # The app is built only once beta holds the backend it talks to. A beta
+    # deploy that was not needed is skipped, and that is no reason to stop.
+    # A beta deploy that was needed and did not pass stops the app too.
+    if: >-
+      always()
+      && github.ref == 'refs/heads/main'
+      && needs.changes.outputs.app == 'true'
+      && needs.app-checks.result == 'success'
+      && (needs.beta.result == 'success'
+        || (needs.beta.result == 'skipped' && needs.changes.outputs.backend != 'true'))
+    runs-on: ubuntu-latest
+    concurrency:
+      group: testflight-handoff
+      cancel-in-progress: false
+    permissions:
+      # Lets the job move the testflight branch.
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Move the testflight branch to this commit
+        # The Xcode Cloud TestFlight workflow starts on a change to this
+        # branch, and on nothing else. The branch only ever moves forward, so
+        # an older run that finishes late cannot take TestFlight back. A push
+        # made with this job's token starts no other workflow.
+        run: |
+          if git fetch --quiet origin testflight 2>/dev/null \
+            && ! git merge-base --is-ancestor FETCH_HEAD HEAD; then
+            echo "The testflight branch already holds a newer commit, so this run leaves it."
+            exit 0
+          fi
+          git push origin HEAD:refs/heads/testflight
+
   prod:
     name: Deploy to prod
-    # Prod gets only what beta took and passed its check with.
-    needs: beta
+    # Prod comes last. It gets only what beta took and passed its check with,
+    # and waits for the app build when there is one.
+    needs: [changes, beta, testflight]
     # The job is left out until the prod account has a deploy role and the
     # repository variable names it. A run started by hand goes on to prod
     # only when asked to.
     if: >-
-      github.ref == 'refs/heads/main'
+      always()
+      && github.ref == 'refs/heads/main'
+      && needs.beta.result == 'success'
+      && (needs.testflight.result == 'success' || needs.testflight.result == 'skipped')
       && vars.PROD_DEPLOY_ROLE_ARN != ''
       && (github.event_name == 'push' || inputs.stage == 'prod')
     runs-on: ubuntu-latest
@@ -104,7 +201,7 @@ jobs:
           git config --global --add safe.directory "${GITHUB_WORKSPACE}"
           git fetch --quiet --depth=1 origin main
           if ! git diff --quiet HEAD FETCH_HEAD -- backend; then
-            echo "::error::main has a newer backend than this run holds. Approve the newest Backend deploy run instead."
+            echo "::error::main has a newer backend than this run holds. Approve the newest Release run instead."
             exit 1
           fi
 

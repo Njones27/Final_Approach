@@ -7,12 +7,13 @@ check that works on Linux. This is the same split the WalkWorthy repo uses.
 | --- | --- | --- |
 | Core package tests (`Packages/FinalApproachCore`) | GitHub Actions, Linux | Every pull request and push to `main` |
 | `ci_scripts` lint and behavior checks | GitHub Actions, Linux | Every pull request and push to `main` |
-| App build and unit tests in the simulator | Xcode Cloud | Merge to `main` |
-| Archive and internal TestFlight | Xcode Cloud, TestFlight workflow | Merge to `main` |
+| App build and unit tests in the simulator | Xcode Cloud | When the Release workflow moves the `testflight` branch |
+| Archive and internal TestFlight | Xcode Cloud, TestFlight workflow | When the Release workflow moves the `testflight` branch |
 | Archive, external TestFlight, App Store | Xcode Cloud, Release workflow | Version tag such as `v1.0.0` |
 | Backend type check, tests, and template build (`backend/`) | GitHub Actions, Linux | Every pull request and push to `main` |
-| Backend deploy to beta | GitHub Actions, Linux | Push to `main` that changes `backend/`, or by hand from the Actions tab |
-| Backend deploy to prod | GitHub Actions, Linux | After the beta deploy of the same run passes, and only once the owner approves it |
+| Backend deploy to beta | GitHub Actions, Release workflow | Push to `main` that changes `backend/`, or by hand from the Actions tab |
+| Hand to Xcode Cloud | GitHub Actions, Release workflow | Push to `main` that changes the app, after the app checks pass and after beta deploys when the backend changed too |
+| Backend deploy to prod | GitHub Actions, Release workflow | Last, after beta and the hand to Xcode Cloud, and only once the owner approves it |
 | Prod holds this backend | GitHub Actions, Linux | Every pull request. It stops an app change while prod is behind `main` |
 
 ## Environments
@@ -91,8 +92,8 @@ TestFlight says what it does.
 | Environment, Xcode version | Latest Release |
 | Environment, macOS version | Latest Release |
 | Environment variable | `APP_ENVIRONMENT` = `prod` |
-| Start condition | Branch Changes, branch `main` |
-| Start condition, files and folders | Start a build only when files change in `FinalApproach/` or `Packages/` |
+| Start condition | Branch Changes, branch `testflight` |
+| Start condition, files and folders | Any file. The Release workflow moves the branch only when the app changed |
 | Start condition, auto-cancel builds | On |
 | Action 1 | Test, scheme `FinalApproach`, platform iOS Simulator, one recommended iPhone |
 | Action 2 | Archive, scheme `FinalApproach`, platform iOS, deployment preparation TestFlight (Internal Testing Only) |
@@ -120,8 +121,8 @@ does not need to change by hand. Bump `MARKETING_VERSION` for each release.
 The Apple Developer Program includes 25 Xcode Cloud compute hours a month.
 
 - Pull requests never start an Xcode Cloud build. The Linux checks cover them.
-- The files and folders condition keeps docs and backend changes from starting
-  an app build.
+- The Release workflow moves the `testflight` branch only when `FinalApproach/`
+  or `Packages/` changed, so docs and backend changes start no app build.
 - Auto-cancel stops a build when a newer commit lands.
 - Tests run on one simulator, not a device matrix.
 
@@ -131,8 +132,8 @@ The Apple Developer Program includes 25 Xcode Cloud compute hours a month.
 It calls two reusable workflows. `.github/workflows/core-checks.yml` has two
 jobs, and `.github/workflows/backend-checks.yml` has one. It also has one job
 of its own, which runs on pull requests only.
-`.github/workflows/backend-deploy.yml` is separate and deploys the backend to
-beta. It is described below.
+`.github/workflows/backend-deploy.yml` is the Release workflow. It runs on
+merges and is described below.
 
 - **Core package tests** builds and tests `Packages/FinalApproachCore` in the
   official `swift` container image.
@@ -160,7 +161,7 @@ behavior checks first.
   is the same as in the commit prod was last deployed from. The job asks
   GitHub for the newest deploy to the `prod` environment that passed.
 
-When the check stops an app change, approve the waiting Backend deploy run,
+When the check stops an app change, approve the waiting Release run,
 or start one with the stage `prod`. After prod has passed, run the failed
 check again from the pull request, with Re-run failed jobs.
 
@@ -179,26 +180,45 @@ Conventions, carried over from WalkWorthy:
   reports.
 - Secrets live only in App Store Connect and GitHub, never in the repo.
 
-### Deploying the backend
+### The release chain
 
-`.github/workflows/backend-deploy.yml` runs when a push to `main` changes
-`backend/`, and the owner can start it by hand from the Actions tab. It has
-one job for each stage, and both jobs run the same steps, which are in
-`.github/actions/deploy-backend/action.yml`.
+The owner chose this order on 2026-11-25. A change on `main` goes through CI,
+then beta, then Xcode Cloud, and prod comes last. So whatever reaches prod
+has already been on beta.
 
-1. **Checks.** The backend type check, tests, and template build.
-2. **Deploy to beta.** Shows what will change, deploys the four backend
-   stacks to the beta account, and checks that the API turns away a request
-   with no sign in.
-3. **Deploy to prod.** Waits for the owner to approve the run, then does the
-   same in the prod account. It runs only after beta passed.
+`.github/workflows/backend-deploy.yml`, named Release, runs when a push to
+`main` changes `backend/`, `FinalApproach/`, or `Packages/`, and the owner can
+start it by hand from the Actions tab. Its jobs run in this order, and a job
+whose part of the repo did not change is skipped without stopping the rest.
+
+1. **What changed.** Compares the push with the commit `main` had before it.
+2. **Checks** and **App checks.** The backend checks when `backend/` changed,
+   and the core package and `ci_scripts` checks when the app changed.
+3. **Deploy to beta.** Shows what will change, deploys the backend stacks to
+   the beta account, and checks that the API turns away a request with no
+   sign in. The steps are in `.github/actions/deploy-backend/action.yml`.
+4. **Hand to Xcode Cloud.** When the app changed, moves the `testflight`
+   branch to this commit. The Xcode Cloud TestFlight workflow starts on a
+   change to that branch and on nothing else, so the app is never built
+   before beta holds the backend it needs. A failed beta deploy stops it.
+   The branch only moves forward, so a late run cannot take TestFlight back.
+5. **Deploy to prod.** When the backend changed, waits for the owner to
+   approve the run, then deploys the same way to the prod account. It runs
+   only after beta passed and after the hand to Xcode Cloud, so the owner
+   can try the TestFlight build before approving.
+
+A run started by hand deploys the backend to beta, stops there unless prod
+is chosen, and hands the commit to Xcode Cloud only when asked to.
 
 The prod job names the GitHub environment `prod`. That environment has the
 owner as a required reviewer, so GitHub holds the job and sends the owner a
 request to review it. Approving it deploys prod, and rejecting it or leaving
 it alone deploys nothing. Before it deploys, the job checks that `main` does
 not hold a newer backend than the run does, so approving an old run cannot
-take prod back. A run started by hand stops after beta unless prod is chosen.
+take prod back.
+
+The `testflight` branch is moved only by this workflow. Do not commit to it
+or open pull requests from it.
 
 Each stage deploys one at a time. Each has its own queue, so a prod deploy
 that waits for approval never holds up beta.

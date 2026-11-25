@@ -5,7 +5,7 @@
 #
 # A merge that changes the app starts an Xcode Cloud build, and that build
 # goes to TestFlight and talks to prod. The prod backend only changes when
-# the owner approves a Backend deploy run. So a pull request that changes the
+# the owner approves a Release run. So a pull request that changes the
 # app may merge only when the backend it would leave on main is the one prod
 # already holds. A backend change goes in its own pull request first, and is
 # approved to prod, before the app change that needs it.
@@ -85,7 +85,7 @@ prod_sha="${PROD_SHA:-}"
 if [ -z "${prod_sha}" ]; then
     if ! prod_sha="$(find_prod_sha)" || [ -z "${prod_sha}" ]; then
         say "No deploy to prod that passed was found, so this cannot tell what prod holds."
-        say "Run the Backend deploy workflow with the stage prod, approve it, and run this check again."
+        say "Run the Release workflow with the stage prod, approve it, and run this check again."
         exit 1
     fi
 fi
@@ -96,7 +96,7 @@ this_backend="$(git rev-parse "${HEAD_COMMIT}:${BACKEND_PATH}")"
 
 if [ "${prod_backend}" != "${this_backend}" ]; then
     say "Prod is behind. It was last deployed from ${prod_sha}, and main holds a newer backend."
-    say "Approve the waiting Backend deploy run, or start one with the stage prod. When prod has passed, run this check again."
+    say "Approve the waiting Release run, or start one with the stage prod. When prod has passed, run this check again."
     exit 1
 fi
 
