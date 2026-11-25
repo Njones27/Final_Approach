@@ -39,6 +39,7 @@ struct HTTPPostBackend: PostBackend {
                 // then shows as it did before.
                 guard let standing = post.standing else { continue }
                 listing.standings[post.photoID] = standing
+                listing.showings[post.photoID] = post.shownAt
             }
             listing.minimumVotes = page.minVotes
             guard let next = page.nextAfter else { return listing }
@@ -46,9 +47,33 @@ struct HTTPPostBackend: PostBackend {
         }
         throw PhotoBackendError.unreadableAnswer
     }
+
+    func show(photoID: String, at showing: SpotShowing) async throws -> SpotShowing {
+        let url = spotURL(forPhotoID: photoID)
+        // The body names a listed spot and the words to show beside the
+        // photo. It holds no position and nothing else about the photo.
+        let body = try JSONEncoder().encode(showing)
+        let answer: ShowAnswer = try api.decode(try await api.call("PUT", url, body: body))
+        guard answer.photoID == photoID else { throw PhotoBackendError.unreadableAnswer }
+        return answer.shownAt
+    }
+
+    func hide(photoID: String) async throws {
+        _ = try await api.call("DELETE", spotURL(forPhotoID: photoID))
+    }
+
+    private func spotURL(forPhotoID photoID: String) -> URL {
+        api.baseURL.appending(path: "posts").appending(path: photoID).appending(path: "spot")
+    }
 }
 
 // MARK: - What comes over the wire
+
+/// What the backend answers when a photo is put on a spot's page.
+private struct ShowAnswer: Decodable {
+    let photoID: String
+    let shownAt: SpotShowing
+}
 
 /// One post as its owner is told about it.
 private struct PostAnswer: Decodable {
@@ -60,6 +85,8 @@ private struct PostAnswer: Decodable {
     let status: String
     /// The grade from 0 to 100. The backend sends it only once it is final.
     let score: Int?
+    /// The spot's page the photo is shown on, when it is on one.
+    let shownAt: SpotShowing?
 
     /// The standing, or nil when a time cannot be read or the answer says
     /// the grade is final and gives none.

@@ -11,6 +11,15 @@ final class SamplePostBackend: PostBackend {
     private let minimumVotes: Int
     private let now: () -> Date
     private var standings: [String: PostStanding] = [:]
+    /// The spot's page each posted photo is shown on, by photo id.
+    private(set) var showings: [String: SpotShowing] = [:]
+    /// The spots a photo may be shown at. With nil every spot is listed.
+    var listedSpotIDs: Set<String>?
+    /// Makes the next request to show a photo at a spot fail with this,
+    /// once.
+    var nextShowFailure: PhotoBackendError?
+    /// How many times a photo was put on a spot's page.
+    private(set) var showCount = 0
 
     init(
         photos: SamplePhotoBackend,
@@ -44,7 +53,33 @@ final class SamplePostBackend: PostBackend {
         if photos.isAccountDeleted { throw PhotoBackendError.accountDeleted }
         // Deleting a photo takes its post down.
         let live = standings.filter { photos.photos[$0.key] != nil }
-        return PostListing(standings: live, minimumVotes: minimumVotes)
+        return PostListing(
+            standings: live,
+            showings: showings.filter { live[$0.key] != nil },
+            minimumVotes: minimumVotes
+        )
+    }
+
+    func show(photoID: String, at showing: SpotShowing) async throws -> SpotShowing {
+        if photos.isAccountDeleted { throw PhotoBackendError.accountDeleted }
+        if let failure = nextShowFailure {
+            nextShowFailure = nil
+            throw failure
+        }
+        if let listedSpotIDs, !listedSpotIDs.contains(showing.spotID) {
+            throw PhotoBackendError.unknownSpot
+        }
+        guard standings[photoID] != nil, photos.photos[photoID] != nil else {
+            throw PhotoBackendError.notPosted
+        }
+        showCount += 1
+        showings[photoID] = showing
+        return showing
+    }
+
+    func hide(photoID: String) async throws {
+        if photos.isAccountDeleted { throw PhotoBackendError.accountDeleted }
+        showings[photoID] = nil
     }
 
     /// Sets where a posted photo stands, as votes from other users would.

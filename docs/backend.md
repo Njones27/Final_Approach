@@ -208,8 +208,9 @@ airline, and with no photographer and no registration.
   posted, or the answer is `notPosted`. The two lines of text are trimmed,
   and each is plain text of up to 80 characters (`shownTextMaxLength`).
 - `DELETE /posts/{photoID}/spot` takes the photo off its spot and removes
-  everything that was shown. The app sends it when the owner marks the
-  photo undisclosed. Sending the first route again replaces what was shown.
+  everything that was shown. The app sends it when the owner takes the
+  photo off the page, and when a photo that is on a page turns out to be
+  undisclosed. Sending the first route again replaces what was shown.
 - The owner's `GET /posts` says where each photo is shown, under `shownAt`,
   so the app can keep the backend in line with the owner's choice.
 - A photo appears only once its grade is final. The post carries `spotKey`
@@ -233,7 +234,7 @@ Known limits.
   CloudFront in front of the images removes this.
 - A registration is never shown, because the backend does not hold the
   list of blocked registrations yet. The type and airline are the owner's
-  own text, and the app must leave them out for a blocked aircraft.
+  own text, and the app leaves them out for a blocked aircraft.
 - A spot's page holds its 30 best photos and has no second page.
 
 ## Sign in
@@ -430,6 +431,73 @@ a vote in stars.
   signing in, starts the screen over.
 - A build with no backend keeps the sample set on the same screen.
 
+## Spots in the app
+
+The Spots screen shows the backend's spots on a map, and each spot has a
+page with the graded photos people chose to show there.
+
+- `SpotBackend`, in `Services/Backend/`, is the protocol for the list of
+  spots, for one spot's photos, and for fetching an image from its link.
+  `HTTPSpotBackend` is the real one. `SampleSpotBackend` keeps the sample
+  spots and a few sample photos in memory, for previews, for tests, and for
+  a build with no backend.
+- `SpotsModel`, in `Models/`, asks for the list when the app opens, when
+  the Spots screen appears, and when the sign in changes. It hands the list
+  to `CollectionModel`, which uses it to say which spot a photo was taken
+  from. A build with a backend starts with no spots, because the sample
+  spots are made up. A list that cannot be fetched leaves the one in hand.
+- The backend lists spots for a signed in user, so a signed out user is
+  asked to sign in. While no spot is listed, the card under the map says so.
+- A photo is linked to the spot it was logged with while that spot is
+  listed, and otherwise to the listed spot nearest to where it was taken.
+  So a photo logged before its spot was listed still finds it.
+- A spot's photos are asked for each time the spot takes the card or its
+  page opens, because a link to an image works for a few minutes. The model
+  owns each request, so a screen that goes away does not cut one off.
+- All the app holds about another person's photo is the post's random id,
+  the image, the grade, and the aircraft type and airline its owner chose
+  to show. The tier is worked out from the grade with the app's thresholds.
+  There is no name, registration, or position to show.
+- The image is fetched with no token and made small for the screen, at most
+  1,200 pixels on its longest side. The full image is never kept. The small
+  copies live in memory only. A copy goes when its photo leaves the page,
+  and every copy goes when the user deletes one of their own photos,
+  deletes their account, or signs out, because a page may show the user's
+  own photo.
+
+Which page one of the user's photos is on is the owner's choice.
+
+- A photo is logged with "Show the spot to other people" on or off. A photo
+  logged with it off is undisclosed, and the app never sends it to a page.
+- Posting a disclosed photo taken at a listed spot also puts it on that
+  spot's page. The screen says so before the post, and the page shows the
+  photo only once it is graded. The post stands even when the page could
+  not be reached.
+- A photo posted before spots had pages was posted with the promise that
+  nobody sees where it was taken. Nothing puts such a photo on a page by
+  itself. Its own screen offers "Show it on the spot's page", and the owner
+  decides.
+- The photo's own screen says whether it is on a page and offers "Take it
+  off the spot's page". The post and its grade stay.
+- The app sends the spot's id, the aircraft type, and the airline. It sends
+  no position and no registration. For a blocked aircraft it sends neither
+  the type nor the airline. A line the backend would refuse, such as one
+  over 80 characters, is left out, by `ShownText` in the core package.
+- `GET /posts` says where each photo is shown, and the app saves that with
+  the library. After each sync the app brings the pages in line. A photo
+  whose aircraft details changed has the words beside it replaced, and an
+  undisclosed photo found on a page is taken off. A sync never puts a photo
+  on a page it was not on.
+
+Known limits.
+
+- The list of spots is kept in memory. A photo logged right after the app
+  opens with no network has no spot until the list arrives, and then finds
+  it by where it was taken.
+- A photo on a page cannot be opened larger yet.
+- A deleted photo can stay on a page until the delete reaches the backend,
+  which a sync does a few seconds later.
+
 ## Alarms and the budget
 
 Each stage tells its owner when something is wrong. Everything goes to one
@@ -618,11 +686,8 @@ change to those values in a deploy must be copied into the stage's file.
 ## Still to come
 
 - The first real spots in the list, which the owner supplies.
-- The app's side of spots. The Spots screen reads the list and each spot's
-  photos, and the app shows a disclosed photo at its spot and takes it off
-  when the owner marks it undisclosed. A photo posted before this existed
-  was posted with the promise that nobody sees where it was taken, so the
-  app must ask before it shows one of those.
+- A way to open a photo on a spot's page larger, and a way to change
+  whether a logged photo's spot shows.
 - Reputation, which gives a voter whose votes land near the final grades
   more weight. It needs a way to find a post's votes when the post closes.
 - A filter that keeps a photo with no aircraft out of the voting queue. It

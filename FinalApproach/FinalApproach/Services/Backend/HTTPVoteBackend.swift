@@ -19,20 +19,7 @@ struct HTTPVoteBackend: VoteBackend {
     }
 
     func image(from url: URL) async throws -> Data? {
-        // The link carries its own permission, so no token is sent with it.
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        let (data, response) = try await api.transport.send(request)
-        switch response.statusCode {
-        case 200..<300:
-            return data
-        case 403, 404:
-            // The storage answers this way for an image that is not there
-            // and for a link that ran out.
-            return nil
-        default:
-            throw PhotoBackendError.unavailable(status: response.statusCode)
-        }
+        try await api.linkedImage(from: url)
     }
 
     func cast(_ value: Int, onPostID postID: String) async throws {

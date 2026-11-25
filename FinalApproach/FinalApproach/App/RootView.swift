@@ -14,6 +14,7 @@ struct RootView: View {
     @State private var model: CollectionModel
     @State private var sync: SyncCoordinator
     @State private var voting: VotingModel
+    @State private var spots: SpotsModel
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage(AppearanceSetting.storageKey) private var appearance = AppearanceSetting.system
     @State private var selectedTab = AppTab.collection
@@ -22,10 +23,11 @@ struct RootView: View {
     @State private var arrivals: [AppTab: TabArrival] = [:]
     @State private var tabChanges = 0
 
-    init(model: CollectionModel, sync: SyncCoordinator, voting: VotingModel) {
+    init(model: CollectionModel, sync: SyncCoordinator, voting: VotingModel, spots: SpotsModel) {
         _model = State(initialValue: model)
         _sync = State(initialValue: sync)
         _voting = State(initialValue: voting)
+        _spots = State(initialValue: spots)
     }
 
     var body: some View {
@@ -51,12 +53,19 @@ struct RootView: View {
         .environment(model)
         .environment(sync)
         .environment(voting)
+        .environment(spots)
         .preferredColorScheme(appearance.colorScheme)
         // The photos are brought into line with the backend each time the
         // app opens or comes back to the front.
         .onChange(of: scenePhase, initial: true) { _, phase in
             guard phase == .active else { return }
             Task { await sync.appBecameActive(on: model) }
+        }
+        // The list of spots is asked for when the app opens and when the
+        // sign in changes, whichever tab is showing. Logging a photo needs
+        // it to say which spot the photo was taken from.
+        .task(id: sync.session.state) {
+            await spots.refresh(on: model)
         }
     }
 
@@ -83,5 +92,10 @@ struct RootView: View {
 
 #Preview {
     let sync = SyncCoordinator.preview()
-    RootView(model: SampleData.model(), sync: sync, voting: .preview(session: sync.session))
+    RootView(
+        model: SampleData.model(),
+        sync: sync,
+        voting: .preview(session: sync.session),
+        spots: .preview(session: sync.session)
+    )
 }

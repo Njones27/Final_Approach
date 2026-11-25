@@ -17,6 +17,10 @@ struct PhotoDetailView: View {
     @State private var isPosting = false
     /// Why the last try at posting did not work, or nil.
     @State private var postProblem: PostOutcome?
+    /// True while the photo is being put on its spot's page or taken off.
+    @State private var isChangingSpotPage = false
+    /// Why the last change to the spot's page did not work, or nil.
+    @State private var spotPageProblem: SpotShowOutcome?
 
     var body: some View {
         Group {
@@ -109,8 +113,10 @@ struct PhotoDetailView: View {
             }
         } message: {
             Text(
-                "Voters see the photo and nothing else. They do not see your name or where it was taken. "
-                    + "A post cannot be taken back, but deleting the photo removes it."
+                Self.postWarning(
+                    spotName: offeredSpotName(for: photo),
+                    showsAircraft: !photo.hasBlockedRegistration
+                )
             )
         }
         .sheet(isPresented: $isEditingDetails) {
@@ -330,6 +336,15 @@ struct PhotoDetailView: View {
                 .font(.subheadline)
                 .foregroundStyle(Theme.secondaryText)
 
+                // The owner chose to show the spot when the photo was
+                // logged. Posting is what puts it in front of people, so
+                // the screen says where it will be seen.
+                if let spotName = offeredSpotName(for: photo) {
+                    Text("You chose to show the spot. Once the photo is graded, it also goes on the page for \(spotName).")
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondaryText)
+                }
+
                 if sync.session.isSignedIn {
                     Button {
                         isConfirmingPost = true
@@ -368,6 +383,32 @@ struct PhotoDetailView: View {
             isPosting = false
             postProblem = outcome == .posted ? nil : outcome
         }
+    }
+
+    /// The name of the spot whose page the photo would go on, or nil when
+    /// it would go on none. A photo whose location is private has none.
+    private func offeredSpotName(for photo: SpottedPhoto) -> String? {
+        model.spotShowing(for: photo).flatMap { model.spot(id: $0.spotID)?.name }
+    }
+
+    /// What the user is told before a photo is posted.
+    ///
+    /// - Parameters:
+    ///   - spotName: The spot whose page the photo goes on once graded, or
+    ///     nil when it goes on none.
+    ///   - showsAircraft: False for a blocked aircraft, whose type and
+    ///     airline are left off the page.
+    static func postWarning(spotName: String?, showsAircraft: Bool) -> String {
+        var parts = ["Voters see the photo and nothing else. They do not see your name or where it was taken."]
+        if let spotName {
+            let shown = showsAircraft ? "its grade, aircraft type, and airline" : "its grade"
+            parts.append(
+                "Once it is graded, it also goes on the page for \(spotName) with \(shown). "
+                    + "Your name and the registration are never shown there."
+            )
+        }
+        parts.append("A post cannot be taken back, but deleting the photo removes it.")
+        return parts.joined(separator: " ")
     }
 
     /// What to tell the user when a photo was not posted.
@@ -460,15 +501,111 @@ struct PhotoDetailView: View {
                         .font(.subheadline)
                         .foregroundStyle(Theme.secondaryText)
                 }
+                spotPageRows(for: photo)
             }
         }
     }
 
     private func locationText(for photo: SpottedPhoto) -> String {
-        guard let spotID = photo.spotID, let spot = model.spot(id: spotID) else {
+        guard let spot = model.listedSpot(for: photo) else {
             return "Taken away from the listed spots"
         }
         return "Taken near \(spot.name)"
+    }
+
+    // MARK: The spot's page
+
+    /// Whether the photo is on its spot's page, with the way to put it
+    /// there or take it off.
+    ///
+    /// A photo goes on the page when it is posted with its spot showing.
+    /// A photo posted before spots had pages was posted with the promise
+    /// that nobody sees where it was taken, so it goes on only when its
+    /// owner asks here.
+    @ViewBuilder
+    private func spotPageRows(for photo: SpottedPhoto) -> some View {
+        // Only a posted photo can be on a spot's page, and a build with no
+        // backend has no pages to put it on.
+        if !photo.isSample, let sync, sync.offersPosting, sync.session.isSignedIn,
+           model.progress(for: photo).isPosted {
+            if let showing = model.spotShowings[photo.id] {
+                Label(
+                    Self.shownLine(
+                        spotName: model.spot(id: showing.spotID)?.name,
+                        isGraded: model.finalScore(for: photo) != nil
+                    ),
+                    systemImage: "eye"
+                )
+                .font(.subheadline)
+                .foregroundStyle(Theme.secondaryText)
+                Button("Take it off the spot's page") {
+                    changeSpotPage(for: photo, show: false)
+                }
+                .buttonStyle(.secondary)
+                .disabled(isChangingSpotPage)
+            } else if let spotName = offeredSpotName(for: photo) {
+                Text(Self.offerLine(spotName: spotName, showsAircraft: !photo.hasBlockedRegistration))
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.secondaryText)
+                Button("Show it on the spot's page") {
+                    changeSpotPage(for: photo, show: true)
+                }
+                .buttonStyle(.secondary)
+                .disabled(isChangingSpotPage)
+            }
+            if let spotPageProblem {
+                Text(Self.message(for: spotPageProblem))
+                    .font(.footnote)
+                    .foregroundStyle(Theme.ink)
+            }
+        }
+    }
+
+    private func changeSpotPage(for photo: SpottedPhoto, show: Bool) {
+        guard let sync, !isChangingSpotPage else { return }
+        isChangingSpotPage = true
+        spotPageProblem = nil
+        Task {
+            let outcome: SpotShowOutcome
+            if show {
+                outcome = await sync.showAtSpot(photoID: photo.id, on: model)
+            } else {
+                outcome = await sync.takeOffSpot(photoID: photo.id, on: model)
+            }
+            isChangingSpotPage = false
+            spotPageProblem = outcome == .done ? nil : outcome
+        }
+    }
+
+    /// What the owner reads about a photo that is on a spot's page.
+    static func shownLine(spotName: String?, isGraded: Bool) -> String {
+        let page = spotName.map { "the page for \($0)" } ?? "its spot's page"
+        return isGraded
+            ? "Shown on \(page)."
+            : "It goes on \(page) once it is graded."
+    }
+
+    /// What the owner reads before putting a photo on a spot's page.
+    static func offerLine(spotName: String, showsAircraft: Bool) -> String {
+        let shown = showsAircraft ? "its grade, aircraft type, and airline" : "its grade"
+        return "You can show this photo on the page for \(spotName). People who open the spot then see it with \(shown). "
+            + "They never see your name or the registration."
+    }
+
+    /// What to tell the user when the spot's page could not be changed.
+    static func message(for outcome: SpotShowOutcome) -> String {
+        switch outcome {
+        case .done:
+            "The spot's page is up to date."
+        case .signInNeeded:
+            "Sign in again on Profile, then try again."
+        case .cannotShow:
+            "Only a posted photo with its spot showing can go on a spot's page."
+        case .spotNotListed:
+            "This photo was not taken at a listed spot."
+        case .couldNotChange:
+            "That did not work. Check your connection and try again."
+        }
     }
 
     /// The settings a photo carries, each as a value over a label.
