@@ -67,6 +67,15 @@ public struct ShownCamera: Equatable, Codable, Sendable {
         CameraSettings(focalLength: focalLength, aperture: aperture, exposureTime: exposureTime, iso: iso)
     }
 
+    /// The settings on one line, such as "400 mm, f/5.6, 1/1000 s, ISO 200",
+    /// or nil when there is none to say.
+    public var summary: String? {
+        let worded = settings
+        let parts = [worded.focalLengthText, worded.apertureText, worded.shutterText, worded.isoText]
+            .compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: ", ")
+    }
+
     private static func number(
         in container: KeyedDecodingContainer<CodingKeys>,
         for key: CodingKeys

@@ -470,7 +470,8 @@ enum SampleData {
                     longitude: -84.3990,
                     accessNotes: "Park on the gravel beside the road and walk to the fence line.",
                     localRules: "Stay off the grass inside the fence, and keep the gate clear.",
-                    runwayNotes: "Looks at the two south runways. Arrivals use them when the wind is from the west."
+                    runwayNotes: "Looks at the two south runways. Arrivals use them when the wind is from the west.",
+                    viewBearing: 0
                 ),
                 Spot(
                     id: "atl-cargo-ramp",
@@ -493,7 +494,8 @@ enum SampleData {
                     name: "West road",
                     summary: "A quiet road beside the west end of the runways.",
                     latitude: 33.6395,
-                    longitude: -84.4575
+                    longitude: -84.4575,
+                    viewBearing: 90
                 ),
             ]
         ),
@@ -561,8 +563,61 @@ enum SampleData {
         )
     }
 
-    /// The sample spots with a few graded photos on their pages, for
-    /// previews and for a build with no backend. One spot has no photos.
+    /// One photo shown at a sample place, away from every listed spot.
+    private struct PlaceSample {
+        let latitude: Double
+        let longitude: Double
+        let imageName: String
+        let score: Int
+        var aircraftType: String?
+        var airline: String?
+        var camera: ShownCamera?
+    }
+
+    /// The photos shown at the sample places. The places and the grades
+    /// are invented. Two photos share one place, and one has no camera
+    /// settings, as a photo whose file carried none does.
+    private static let placeSamples: [PlaceSample] = [
+        PlaceSample(
+            latitude: 33.6312,
+            longitude: -84.4498,
+            imageName: "SampleF22",
+            score: 84,
+            aircraftType: "F-22 Raptor",
+            airline: "US Air Force",
+            camera: ShownCamera(focalLength: 400, aperture: 5.6, exposureTime: 1.0 / 1600, iso: 200)
+        ),
+        PlaceSample(
+            latitude: 33.6312,
+            longitude: -84.4498,
+            imageName: "SampleB737",
+            score: 69,
+            aircraftType: "Boeing 737 MAX 8",
+            airline: "Alaska Airlines",
+            camera: ShownCamera(focalLength: 250, aperture: 8, exposureTime: 1.0 / 1000, iso: 400)
+        ),
+        PlaceSample(
+            latitude: 33.6644,
+            longitude: -84.4012,
+            imageName: "SampleB2",
+            score: 79,
+            aircraftType: "B-2 Spirit",
+            airline: "US Air Force"
+        ),
+        PlaceSample(
+            latitude: 47.4631,
+            longitude: -122.3203,
+            imageName: "SampleE175",
+            score: 74,
+            aircraftType: "Embraer E175",
+            airline: "Delta Connection",
+            camera: ShownCamera(focalLength: 135, aperture: 7.1, exposureTime: 1.0 / 800, iso: 100)
+        ),
+    ]
+
+    /// The sample spots with a few graded photos on their pages, and a few
+    /// places away from them, for previews and for a build with no
+    /// backend. One spot has no photos.
     static func spotBackend() -> SampleSpotBackend {
         var images: [String: Data] = [:]
         var pages: [String: [SampleSpotBackend.Photo]] = [:]
@@ -583,7 +638,29 @@ enum SampleData {
                 )
             )
         }
-        return SampleSpotBackend(airports: airports, photos: pages)
+        let backend = SampleSpotBackend(airports: airports, photos: pages)
+        for (index, sample) in placeSamples.enumerated() {
+            if images[sample.imageName] == nil {
+                images[sample.imageName] = UIImage(named: sample.imageName)?.jpegData(compressionQuality: 0.8)
+            }
+            guard let image = images[sample.imageName],
+                  let taken = Coordinate(latitude: sample.latitude, longitude: sample.longitude)
+            else { continue }
+            // A place is kept by its cell, as the real backend keeps it.
+            backend.show(
+                SampleSpotBackend.Photo(
+                    id: "place-photo-\(index + 1)",
+                    image: image,
+                    score: sample.score,
+                    aircraftType: sample.aircraftType,
+                    airline: sample.airline,
+                    camera: sample.camera
+                ),
+                atPlaceID: placeGrid.placeID(at: taken),
+                middle: placeGrid.cellCenter(of: taken)
+            )
+        }
+        return backend
     }
 
     // MARK: Helpers

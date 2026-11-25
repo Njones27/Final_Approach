@@ -305,18 +305,29 @@ for deleting and for syncing, and how to deploy are in `docs/backend.md`.
    and directions. The backend for all four is described in
    `docs/backend.md` under Places and Camera settings.
 
-   The app side comes in parts. The first part is built. A posted photo
-   whose location shows goes on its listed spot's page as before, and one
-   taken away from every listed spot now goes on the map at its place. The
+   The app side came in three parts, and all three are built. A posted
+   photo whose location shows goes on its listed spot's page as before, and
+   one taken away from every listed spot goes on the map at its place. The
    app turns where the photo was taken into its cell on the phone and sends
    only the middle of that cell. A shown photo carries its focal length,
    aperture, shutter time, and ISO, and never the name of the camera or the
    lens. The screens say how exact a place is before anything is shown. A
    photo that was already shown keeps what it shows until its owner takes
    it off and shows it again. The core package also holds the sun and
-   golden hour math, which no screen uses yet. The map with photo pins and
-   counts, the ranked list, and the photo first page with the light are
-   still to come.
+   golden hour math, which no screen uses yet.
+
+   The second part fills the map. It asks the backend what is shown around
+   the point it came to rest at. A listed spot's pin carries its count, and
+   each place has a round pin with its top voted photo and its count. A
+   place's card shows its best photos and says how exact the pin is. "Top
+   spots here" opens the spots and places ranked by how many photos they
+   have.
+
+   The third part rebuilds the pages. A spot's page and a place's page open
+   on the top voted photo, and each photo shows how it was taken. Both
+   pages show today's light, which is golden hour, sunrise, and sunset, and
+   for a spot that says which way it looks, when the sun is behind the
+   photographer.
 10. **Flight data lookup.** The backend asks the flight data provider what
     was flying near a photo, with the per-camera clock correction. It is
     last of the features because it needs a paid plan and a check of the
