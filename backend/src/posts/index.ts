@@ -3,11 +3,12 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { S3Client } from '@aws-sdk/client-s3';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { numberSetting, setting } from '../shared/settings.ts';
-import { catalog, listedSpotIDs } from '../spots/catalog.ts';
+import { catalog, listedSpots } from '../spots/catalog.ts';
 import { makeAwsPostStore } from './awsStore.ts';
+import { cameraLimits } from './camera.ts';
 import { makePostsHandler } from './handler.ts';
 
-const spotIDs = listedSpotIDs(catalog);
+const spots = listedSpots(catalog);
 
 /** The function behind the post routes. */
 export const handler = makePostsHandler({
@@ -23,6 +24,11 @@ export const handler = makePostsHandler({
   rules: { scaleMax: numberSetting('VOTE_SCALE_MAX'), minVotes: numberSetting('MIN_VOTES') },
   now: () => new Date(),
   newPostID: randomUUID,
-  isListedSpot: (spotID) => spotIDs.has(spotID),
+  spotPoint: (spotID) => spots.get(spotID),
+  grid: {
+    placeCellsPerDegree: numberSetting('PLACE_CELLS_PER_DEGREE'),
+    areaTilesPerDegree: numberSetting('AREA_TILES_PER_DEGREE'),
+  },
   shownTextMaxLength: numberSetting('SHOWN_TEXT_MAX_LENGTH'),
+  cameraLimits,
 });

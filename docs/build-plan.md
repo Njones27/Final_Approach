@@ -294,6 +294,17 @@ for deleting and for syncing, and how to deploy are in `docs/backend.md`.
 9. **Spot map and spot pages.** Real spots from the backend, with the
    disclosed photos other people took there. An undisclosed photo never
    appears.
+
+   The owner decided on 2026-11-25 to rework Spots in four parts, backend
+   first. Disclosed photos fill the map as places even where no spot is
+   listed, grouped into cells of about 100 meters. A spot shows the light
+   there, which is golden hour and when the sun is behind the photographer.
+   A shown photo carries its camera settings. A spot's page opens on its
+   top voted photo, pins show a photo and a count, and the spots around a
+   point are ranked. Listed spots stay the only places with access notes
+   and directions. The backend for all four is described in
+   `docs/backend.md` under Places and Camera settings. The app side is not
+   built yet.
 10. **Flight data lookup.** The backend asks the flight data provider what
     was flying near a photo, with the per-camera clock correction. It is
     last of the features because it needs a paid plan and a check of the

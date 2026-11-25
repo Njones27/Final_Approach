@@ -12,9 +12,11 @@ import {
   type ApiResult,
 } from '../shared/http.ts';
 import { isUsablePhotoID } from '../shared/keys.ts';
+import { areaKeyAt, placeIDAt, pointIn, type PlaceGrid, type Point } from '../spots/places.ts';
 import { standingOf, type VotingRules } from '../votes/standing.ts';
+import { cameraIn, type CameraLimits } from './camera.ts';
 import { checkImageForLocation } from './imageCheck.ts';
-import type { PostStore, SpotShowing, StoredPost } from './store.ts';
+import type { PostStore, ShownWhere, SpotShowing, StoredPost } from './store.ts';
 
 export interface PostHandlerSettings {
   readonly store: PostStore;
@@ -24,10 +26,14 @@ export interface PostHandlerSettings {
   readonly now: () => Date;
   /** Makes the random id a new post is known by. */
   readonly newPostID: () => string;
-  /** True for the id of a spot that is listed. */
-  readonly isListedSpot: (spotID: string) => boolean;
+  /** Where a listed spot is, or nothing for a spot that is not listed. */
+  readonly spotPoint: (spotID: string) => Point | undefined;
+  /** The cells and tiles that shown photos are sorted into. */
+  readonly grid: PlaceGrid;
   /** The longest an aircraft type or an airline shown at a spot may be. */
   readonly shownTextMaxLength: number;
+  /** What counts as a real camera setting. */
+  readonly cameraLimits: CameraLimits;
 }
 
 const photoNotSaved = (): ApiResult =>
@@ -138,28 +144,57 @@ export function makePostsHandler(settings: PostHandlerSettings) {
   }
 
   /**
-   * Shows one of the user's posted photos on a spot's page. Only the spot,
-   * the aircraft type, and the airline are taken, and only these are ever
-   * shown. The app sends this for a photo whose owner disclosed its place.
+   * Shows one of the user's posted photos to other users, at a listed spot
+   * or at a place away from them. Only where it is shown, the aircraft
+   * type, the airline, and the camera settings are taken, and only these
+   * are ever shown. The app sends this for a photo whose owner disclosed
+   * its place.
+   *
+   * A place is sent as a position and kept as the cell it falls in. The
+   * position itself is dropped here, so nothing finer than the cell is
+   * ever stored or sent to anyone.
    */
   async function show(event: ApiEvent, userID: string, photoID: string): Promise<ApiResult> {
     const body = objectIn(bodyText(event));
     const spotID = body?.['spotID'];
-    if (typeof spotID !== 'string' || spotID === '') {
-      return problem(400, 'Name the spot to show the photo at.');
+    const place = body?.['place'];
+    const hasSpot = spotID !== undefined && spotID !== null;
+    const hasPlace = place !== undefined && place !== null;
+    if (hasSpot === hasPlace) {
+      return problem(400, 'Name one spot or one place to show the photo at.');
     }
-    if (!settings.isListedSpot(spotID)) return problem(404, 'This spot is not listed.', 'unknownSpot');
+
+    let where: ShownWhere;
+    let point: Point | undefined;
+    if (hasSpot) {
+      if (typeof spotID !== 'string' || spotID === '') {
+        return problem(400, 'Name the spot to show the photo at.');
+      }
+      point = settings.spotPoint(spotID);
+      if (!point) return problem(404, 'This spot is not listed.', 'unknownSpot');
+      where = { spotID };
+    } else {
+      const sent = typeof place === 'object' && !Array.isArray(place) ? (place as Record<string, unknown>) : {};
+      point = pointIn(sent['latitude'], sent['longitude']);
+      if (!point) return problem(400, 'A place is a latitude and a longitude on the map.');
+      where = { placeID: placeIDAt(point, settings.grid) };
+    }
+
     const aircraftType = shownText(body?.['aircraftType'], settings.shownTextMaxLength);
     const airline = shownText(body?.['airline'], settings.shownTextMaxLength);
     if (aircraftType === 'unusable' || airline === 'unusable') {
       return problem(400, `An aircraft type or an airline is plain text of up to ${settings.shownTextMaxLength} characters.`);
     }
+    const camera = cameraIn(body?.['camera'], settings.cameraLimits);
+    if (camera === 'unusable') return problem(400, 'A camera setting is a number a camera can be set to.');
+
     const showing: SpotShowing = {
-      spotID,
+      ...where,
       ...(aircraftType === undefined ? {} : { aircraftType }),
       ...(airline === undefined ? {} : { airline }),
+      ...(camera === undefined ? {} : { camera }),
     };
-    const outcome = await store.showAtSpot(userID, photoID, showing);
+    const outcome = await store.showAtSpot(userID, photoID, showing, areaKeyAt(point, settings.grid));
     if (outcome === 'notPosted') {
       return problem(409, 'Post the photo before showing it at a spot.', 'notPosted');
     }

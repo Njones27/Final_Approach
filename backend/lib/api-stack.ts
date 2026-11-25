@@ -10,7 +10,7 @@ import type { IBucket } from 'aws-cdk-lib/aws-s3';
 import type { ITopic } from 'aws-cdk-lib/aws-sns';
 import type { Construct } from 'constructs';
 import { alarmPeriod, countAlarm } from './alarms.ts';
-import { spotIndex, votingIndex } from '../src/shared/keys.ts';
+import { areaIndex, spotIndex, votingIndex } from '../src/shared/keys.ts';
 import { allow, backendFunction, userImages } from './functions.ts';
 import { deletedAccountMarkerSeconds, type StageSettings } from './stages.ts';
 
@@ -37,6 +37,10 @@ export class ApiStack extends Stack {
     const votingRules = {
       VOTE_SCALE_MAX: String(stage.voteScaleMax),
       MIN_VOTES: String(stage.minVotesToFinalize),
+    };
+    const placeGrid = {
+      PLACE_CELLS_PER_DEGREE: String(stage.placeCellsPerDegree),
+      AREA_TILES_PER_DEGREE: String(stage.areaTilesPerDegree),
     };
     const openPosts = `${table.tableArn}/index/${votingIndex.name}`;
 
@@ -72,6 +76,7 @@ export class ApiStack extends Stack {
         MAX_IMAGE_BYTES: String(stage.maxImageBytes),
         VOTING_WINDOW_HOURS: String(stage.votingWindowHours),
         SHOWN_TEXT_MAX_LENGTH: String(stage.shownTextMaxLength),
+        ...placeGrid,
         ...votingRules,
       },
     });
@@ -113,9 +118,9 @@ export class ApiStack extends Stack {
     // A voter reads a photo through a link this function signs.
     allow(votes, ['s3:GetObject'], images.arnForObjects(userImages));
 
-    // The list of spots is part of the function's own code. For a spot's
-    // page it reads the index of photos shown at spots and nothing else in
-    // the table, and it writes nothing.
+    // The list of spots is part of the function's own code. For a page and
+    // for the map it reads the two indexes of shown photos and nothing
+    // else in the table, and it writes nothing.
     const spots = backendFunction(this, 'Spots', {
       source: 'spots/index.ts',
       stage,
@@ -124,9 +129,13 @@ export class ApiStack extends Stack {
         ...storage,
         PHOTOS_PER_SPOT: String(stage.photosPerSpot),
         IMAGE_LINK_SECONDS: String(stage.imageLinkSeconds),
+        ...placeGrid,
+        AREA_READ_LIMIT: String(stage.areaReadLimit),
+        PLACES_PER_ANSWER: String(stage.placesPerAnswer),
       },
     });
     allow(spots, ['dynamodb:Query'], `${table.tableArn}/index/${spotIndex.name}`);
+    allow(spots, ['dynamodb:Query'], `${table.tableArn}/index/${areaIndex.name}`);
     // A visitor reads a photo through a link this function signs.
     allow(spots, ['s3:GetObject'], images.arnForObjects(userImages));
 
@@ -210,6 +219,12 @@ export class ApiStack extends Stack {
     this.api.addRoutes({ path: '/spots', methods: [HttpMethod.GET], integration: spotRoutes });
     this.api.addRoutes({
       path: '/spots/{spotID}/photos',
+      methods: [HttpMethod.GET],
+      integration: spotRoutes,
+    });
+    this.api.addRoutes({ path: '/places', methods: [HttpMethod.GET], integration: spotRoutes });
+    this.api.addRoutes({
+      path: '/places/{placeID}/photos',
       methods: [HttpMethod.GET],
       integration: spotRoutes,
     });

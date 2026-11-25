@@ -193,10 +193,24 @@ describe('reading an image to check it', () => {
 
 describe('showing a post at a spot', () => {
   const showing = { spotID: 'xyz-east-fence', aircraftType: 'Boeing 737-800', airline: 'Southwest' };
+  const area = 'AREA#20_40';
+  /** Every attribute a shown post can carry, as the update names them. */
+  const names = {
+    '#spotKey': 'spotKey',
+    '#areaKey': 'areaKey',
+    '#spotID': 'spotID',
+    '#placeID': 'placeID',
+    '#aircraftType': 'aircraftType',
+    '#airline': 'airline',
+    '#focalLength': 'focalLength',
+    '#aperture': 'aperture',
+    '#exposureTime': 'exposureTime',
+    '#iso': 'iso',
+  };
 
   test('the post is updated in its owner’s partition, and only if it is there', async () => {
     const { dynamo, store } = setUp();
-    assert.equal(await store.showAtSpot('u1', 'p1', showing), 'shown');
+    assert.equal(await store.showAtSpot('u1', 'p1', showing, area), 'shown');
     assert.deepEqual(dynamo.sent, [
       {
         name: 'UpdateCommand',
@@ -204,15 +218,12 @@ describe('showing a post at a spot', () => {
           TableName: 'records',
           Key: { pk: 'USER#u1', sk: 'POST#p1' },
           UpdateExpression:
-            'SET #spotKey = :spotKey, #spotID = :spotID, #aircraftType = :aircraftType, #airline = :airline',
-          ExpressionAttributeNames: {
-            '#spotKey': 'spotKey',
-            '#spotID': 'spotID',
-            '#aircraftType': 'aircraftType',
-            '#airline': 'airline',
-          },
+            'SET #spotKey = :spotKey, #areaKey = :areaKey, #spotID = :spotID, #aircraftType = :aircraftType, #airline = :airline' +
+            ' REMOVE #placeID, #focalLength, #aperture, #exposureTime, #iso',
+          ExpressionAttributeNames: names,
           ExpressionAttributeValues: {
             ':spotKey': 'SPOT#xyz-east-fence',
+            ':areaKey': 'AREA#20_40',
             ':spotID': 'xyz-east-fence',
             ':aircraftType': 'Boeing 737-800',
             ':airline': 'Southwest',
@@ -225,42 +236,69 @@ describe('showing a post at a spot', () => {
 
   test('a field that is left out is taken off the post', async () => {
     const { dynamo, store } = setUp();
-    await store.showAtSpot('u1', 'p1', { spotID: 'xyz-east-fence', airline: 'Delta' });
+    await store.showAtSpot('u1', 'p1', { spotID: 'xyz-east-fence', airline: 'Delta' }, area);
     const input = dynamo.sent[0]?.input;
     assert.equal(
       input.UpdateExpression,
-      'SET #spotKey = :spotKey, #spotID = :spotID, #airline = :airline REMOVE #aircraftType',
+      'SET #spotKey = :spotKey, #areaKey = :areaKey, #spotID = :spotID, #airline = :airline' +
+        ' REMOVE #placeID, #aircraftType, #focalLength, #aperture, #exposureTime, #iso',
     );
     assert.deepEqual(input.ExpressionAttributeValues, {
       ':spotKey': 'SPOT#xyz-east-fence',
+      ':areaKey': 'AREA#20_40',
       ':spotID': 'xyz-east-fence',
       ':airline': 'Delta',
     });
   });
 
+  test('a photo shown at a place sits under the place’s key, and its spot is taken off', async () => {
+    const { dynamo, store } = setUp();
+    await store.showAtSpot('u1', 'p1', { placeID: 'n33640w84428' }, 'AREA#67_-169');
+    const input = dynamo.sent[0]?.input;
+    assert.equal(
+      input.UpdateExpression,
+      'SET #spotKey = :spotKey, #areaKey = :areaKey, #placeID = :placeID' +
+        ' REMOVE #spotID, #aircraftType, #airline, #focalLength, #aperture, #exposureTime, #iso',
+    );
+    assert.deepEqual(input.ExpressionAttributeValues, {
+      ':spotKey': 'PLACE#n33640w84428',
+      ':areaKey': 'AREA#67_-169',
+      ':placeID': 'n33640w84428',
+    });
+  });
+
+  test('the camera settings that are shown are kept, each as its own number', async () => {
+    const { dynamo, store } = setUp();
+    await store.showAtSpot('u1', 'p1', { spotID: 'xyz-east-fence', camera: { focalLength: 400, iso: 200 } }, area);
+    const input = dynamo.sent[0]?.input;
+    assert.equal(
+      input.UpdateExpression,
+      'SET #spotKey = :spotKey, #areaKey = :areaKey, #spotID = :spotID, #focalLength = :focalLength, #iso = :iso' +
+        ' REMOVE #placeID, #aircraftType, #airline, #aperture, #exposureTime',
+    );
+    assert.equal(input.ExpressionAttributeValues[':focalLength'], 400);
+    assert.equal(input.ExpressionAttributeValues[':iso'], 200);
+  });
+
   test('a photo with no post is not shown, and no record is made for it', async () => {
     const { store } = setUp({ UpdateCommand: [awsError('ConditionalCheckFailedException')] });
-    assert.equal(await store.showAtSpot('u1', 'p1', showing), 'notPosted');
+    assert.equal(await store.showAtSpot('u1', 'p1', showing, area), 'notPosted');
   });
 
   test('any other failure is passed on', async () => {
     const { store } = setUp({ UpdateCommand: [awsError('ProvisionedThroughputExceededException')] });
-    await assert.rejects(store.showAtSpot('u1', 'p1', showing), /ProvisionedThroughputExceeded/);
+    await assert.rejects(store.showAtSpot('u1', 'p1', showing, area), /ProvisionedThroughputExceeded/);
   });
 
-  test('taking a post off its spot removes the index key and everything shown', async () => {
+  test('taking a post off removes both index keys and everything shown', async () => {
     const { dynamo, store } = setUp();
     await store.hideFromSpots('u1', 'p1');
     assert.deepEqual(dynamo.sent[0]?.input, {
       TableName: 'records',
       Key: { pk: 'USER#u1', sk: 'POST#p1' },
-      UpdateExpression: 'REMOVE #spotKey, #spotID, #aircraftType, #airline',
-      ExpressionAttributeNames: {
-        '#spotKey': 'spotKey',
-        '#spotID': 'spotID',
-        '#aircraftType': 'aircraftType',
-        '#airline': 'airline',
-      },
+      UpdateExpression:
+        'REMOVE #spotKey, #areaKey, #spotID, #placeID, #aircraftType, #airline, #focalLength, #aperture, #exposureTime, #iso',
+      ExpressionAttributeNames: names,
       ConditionExpression: 'attribute_exists(pk)',
     });
   });
@@ -273,11 +311,26 @@ describe('showing a post at a spot', () => {
   });
 
   test('a post is read with where it is shown', async () => {
-    const item = { pk: 'USER#u1', sk: 'POST#p1', ...post, spotKey: 'SPOT#xyz-east-fence', ...showing };
+    const item = { pk: 'USER#u1', sk: 'POST#p1', ...post, spotKey: 'SPOT#xyz-east-fence', areaKey: area, ...showing };
     const plain = { pk: 'USER#u1', sk: 'POST#p2', ...post, photoID: 'p2' };
-    const { store } = setUp({ QueryCommand: [{ Items: [item, plain] }] });
+    const atPlace = {
+      pk: 'USER#u1',
+      sk: 'POST#p3',
+      ...post,
+      photoID: 'p3',
+      spotKey: 'PLACE#n33640w84428',
+      areaKey: 'AREA#67_-169',
+      placeID: 'n33640w84428',
+      focalLength: 400,
+      exposureTime: 0.001,
+    };
+    const { store } = setUp({ QueryCommand: [{ Items: [item, plain, atPlace] }] });
     const page = await store.list('u1');
     assert.deepEqual(page.posts[0]?.shownAt, showing);
     assert.equal(page.posts[1]?.shownAt, undefined);
+    assert.deepEqual(page.posts[2]?.shownAt, {
+      placeID: 'n33640w84428',
+      camera: { focalLength: 400, exposureTime: 0.001 },
+    });
   });
 });
