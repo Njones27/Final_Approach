@@ -68,6 +68,12 @@ export interface StageSettings {
   readonly appleAudience: string;
   /** The oldest Apple identity token that sign in accepts. */
   readonly maxAppleTokenAgeSeconds: number;
+  /**
+   * True lets a test account sign in with a name and a password. Only the
+   * owner can make such an account, by hand, because a sign up still needs
+   * Apple's token. False leaves Apple as the only way in.
+   */
+  readonly testAccountSignIn: boolean;
   /** True keeps the table, the bucket, and the user pool when a stack is deleted. */
   readonly keepDataOnStackDelete: boolean;
   /** How long a link to upload one image works. */
@@ -137,6 +143,7 @@ export interface StageSettings {
 const shared = {
   appleAudience: 'com.finalapproach.app',
   maxAppleTokenAgeSeconds: 600,
+  testAccountSignIn: true,
   uploadLinkSeconds: 300,
   imageLinkSeconds: 900,
   maxImageBytes: 8 * 1024 * 1024,

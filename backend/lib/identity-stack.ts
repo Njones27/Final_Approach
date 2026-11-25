@@ -11,9 +11,12 @@ export interface IdentityStackProps extends StackProps {
 }
 
 /**
- * The user pool. It has no passwords in use. A user signs in with Apple,
- * and four small functions check Apple's token on the pool's behalf. See
- * `src/auth/triggers.ts`.
+ * The user pool. A user signs in with Apple, and four small functions check
+ * Apple's token on the pool's behalf. See `src/auth/triggers.ts`.
+ *
+ * A stage may also let a test account sign in with a password. Nobody can
+ * sign up for one, because a sign up needs Apple's token. The owner makes
+ * each test account by hand, as `docs/backend.md` describes.
  */
 export class IdentityStack extends Stack {
   readonly users: UserPool;
@@ -54,9 +57,11 @@ export class IdentityStack extends Stack {
     });
 
     this.appClient = this.users.addClient('App', {
-      // The custom flow is the only way in, so the password a sign up must
-      // carry can never be used.
-      authFlows: { custom: true },
+      // The custom flow is how a user of Sign in with Apple gets in. The
+      // password such a sign up must carry is made at random by the app and
+      // kept nowhere. The password flow is for test accounts, and it is one
+      // plain request, so the app still needs no AWS library.
+      authFlows: { custom: true, userPassword: stage.testAccountSignIn },
       disableOAuth: true,
       generateSecret: false,
       preventUserExistenceErrors: true,
