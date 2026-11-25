@@ -344,7 +344,7 @@ final class CollectionModel {
         guard let store else { return }
         do {
             if let image, let data = image.jpegData(compressionQuality: storedImageQuality) {
-                try store.saveImage(data, forPhotoID: photo.id)
+                try store.saveImage(Self.withoutMetadata(data), forPhotoID: photo.id)
             }
             try saveLibrary(to: store)
         } catch {
@@ -476,13 +476,20 @@ final class CollectionModel {
         }
     }
 
-    /// The image of a logged photo as it is sent to the backend. It is the
-    /// saved file, which carries no metadata and so no location.
+    /// The image of a logged photo as it is sent to the backend. Any
+    /// metadata is taken out on the way, so the image never says where it
+    /// was taken, whatever wrote the saved file.
     func storedImageData(forPhotoID id: String) -> Data? {
-        if let saved = store?.imageData(forPhotoID: id) {
-            return saved
-        }
-        return loadedImages[id]?.jpegData(compressionQuality: storedImageQuality)
+        let saved = store?.imageData(forPhotoID: id)
+            ?? loadedImages[id]?.jpegData(compressionQuality: storedImageQuality)
+        return saved.map(Self.withoutMetadata)
+    }
+
+    /// The image file with its Exif, XMP, and IPTC blocks removed. Bytes
+    /// that are not a JPEG come back as they were, and the backend refuses
+    /// them if they are posted.
+    static func withoutMetadata(_ data: Data) -> Data {
+        JPEGMetadata.removed(from: data) ?? data
     }
 
     /// Takes the backend's copy of a photo, from another device or after an
