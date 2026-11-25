@@ -676,7 +676,7 @@ the environment's settings keep other branches out and ask for the approval.
 5. Save the stack's `DeployRoleArn` output as the repository variable
    `PROD_DEPLOY_ROLE_ARN`. From then on every run goes on to prod and waits
    for the approval.
-6. Start the first deploy from the Actions tab. Choose Backend deploy, Run
+6. Start the first deploy from the Actions tab. Choose Release, Run
    workflow, and the stage `prod`. Approve it when GitHub asks. The deploy
    step prints the API URL, the user pool id, and the app client id.
 7. Put those three values in the table at the top of this page and in a new
