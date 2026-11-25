@@ -14,6 +14,9 @@ struct VoteView: View {
     /// set.
     @Environment(VotingModel.self) private var voting: VotingModel?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// True while the photo is shown on its own, as large as the screen.
+    @State private var showsPhotoAlone = false
+    @Namespace private var photoZoom
 
     /// The model that votes against the backend, or nil when this build
     /// keeps the sample set.
@@ -177,17 +180,34 @@ struct VoteView: View {
                     }
 
                     // The whole photo shows, because a voter judges the
-                    // framing too. A tall photo is held to part of the
-                    // screen so the stars stay in view.
-                    image
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxWidth: .infinity)
-                        .frame(height: Self.photoHeight(for: imageSize, in: proxy.size))
-                        .background(Theme.surface)
-                        .accessibilityLabel("The photo to vote on")
-                        .id(id)
-                        .transition(photoTransition)
+                    // framing too. It takes the full width, so a tall
+                    // photo runs as far down the screen as it needs and
+                    // the stars follow under it. A tap shows it alone.
+                    Button {
+                        showsPhotoAlone = true
+                    } label: {
+                        image
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxWidth: .infinity)
+                            .frame(height: Self.photoHeight(for: imageSize, in: proxy.size))
+                            .background(Theme.surface)
+                            .overlay(alignment: .bottomTrailing) {
+                                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                                    .font(.footnote.weight(.semibold))
+                                    .foregroundStyle(Theme.onPhoto)
+                                    .frame(width: 32, height: 32)
+                                    .background(Theme.scrim.opacity(0.5), in: Circle())
+                                    .padding(10)
+                                    .accessibilityHidden(true)
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .matchedTransitionSource(id: id, in: photoZoom)
+                    .accessibilityLabel("The photo to vote on")
+                    .accessibilityHint("Shows the photo on its own")
+                    .id(id)
+                    .transition(photoTransition)
 
                     StarBallot(scale: scale, isBusy: isBusy, problem: problem, cast: cast)
                         // A new photo starts with no stars picked.
@@ -198,17 +218,21 @@ struct VoteView: View {
                 }
             }
         }
+        .fullScreenCover(isPresented: $showsPhotoAlone) {
+            PhotoViewer(image: image, label: "The photo to vote on")
+                .navigationTransition(.zoom(sourceID: id, in: photoZoom))
+        }
     }
 
-    /// The most of the screen's height a photo takes.
-    private static let photoShare: CGFloat = 0.55
+    /// The share of the screen a photo of unknown shape takes.
+    private static let unknownShare: CGFloat = 0.55
 
-    /// How tall the photo is drawn. A wide photo takes the full width. A
-    /// tall one is held to a share of the screen, and narrows to fit.
+    /// How tall the photo is drawn. It takes the full width at its own
+    /// shape, so a tall photo is taller than a wide one. No photo is drawn
+    /// taller than the screen, and one that would be narrows to fit.
     static func photoHeight(for image: CGSize, in screen: CGSize) -> CGFloat {
-        let limit = screen.height * photoShare
-        guard image.width > 0, image.height > 0 else { return limit }
-        return min(screen.width * image.height / image.width, limit)
+        guard image.width > 0, image.height > 0 else { return screen.height * unknownShare }
+        return min(screen.width * image.height / image.width, screen.height)
     }
 
     /// What VoiceOver reads for one star.

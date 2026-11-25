@@ -501,14 +501,38 @@ struct VotingTests {
         #expect(height == 260)
     }
 
-    @Test func aTallPhotoIsHeldToPartOfTheScreen() {
+    @Test func aTallPhotoTakesTheFullWidthToo() {
         let screen = CGSize(width: 390, height: 700)
 
         let height = VoteView.photoHeight(for: CGSize(width: 2000, height: 3000), in: screen)
 
-        #expect(height < 390 * 1.5)
+        #expect(height == 585)
+    }
+
+    @Test func noPhotoIsDrawnTallerThanTheScreen() {
+        let screen = CGSize(width: 390, height: 700)
+
+        let height = VoteView.photoHeight(for: CGSize(width: 1000, height: 3000), in: screen)
+
+        #expect(height == 700)
+    }
+
+    @Test func aPhotoOfUnknownShapeTakesPartOfTheScreen() {
+        let screen = CGSize(width: 390, height: 700)
+
+        let height = VoteView.photoHeight(for: .zero, in: screen)
+
+        #expect(height > 0)
         #expect(height < screen.height)
-        #expect(height == VoteView.photoHeight(for: .zero, in: screen))
+    }
+
+    @Test func aWidePhotoOnAPhoneOnItsSideFitsTheHeight() {
+        let height = VoteView.photoHeight(
+            for: CGSize(width: 3000, height: 2000),
+            in: CGSize(width: 844, height: 300)
+        )
+
+        #expect(height == 300)
     }
 
     @Test func eachStarIsReadWithItsCount() {
