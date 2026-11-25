@@ -7,13 +7,13 @@ check that works on Linux. This is the same split the WalkWorthy repo uses.
 | --- | --- | --- |
 | Core package tests (`Packages/FinalApproachCore`) | GitHub Actions, Linux | Every pull request and push to `main` |
 | `ci_scripts` lint and behavior checks | GitHub Actions, Linux | Every pull request and push to `main` |
-| App build and unit tests in the simulator | Xcode Cloud | Merge to `main` |
+| App build and unit tests in the simulator | Xcode Cloud, Pull Request workflow | Every pull request, and every new commit on one |
+| App build and unit tests in the simulator | Xcode Cloud, TestFlight workflow | Merge to `main` |
 | Archive and internal TestFlight | Xcode Cloud, TestFlight workflow | Merge to `main` |
 | Archive, external TestFlight, App Store | Xcode Cloud, Release workflow | Version tag such as `v1.0.0` |
 | Backend type check, tests, and template build (`backend/`) | GitHub Actions, Linux | Every pull request and push to `main` |
 | Backend deploy to beta | GitHub Actions, Linux | Push to `main` that changes `backend/`, or by hand from the Actions tab |
 | Backend deploy to prod | GitHub Actions, Linux | After the beta deploy of the same run passes, and only once the owner approves it |
-| Prod holds this backend | GitHub Actions, Linux | Every pull request. It stops an app change while prod is behind `main` |
 
 ## Environments
 
@@ -29,9 +29,9 @@ Xcode needs no setup to find beta.
 Two things follow from it.
 
 - A merge that changes the app sends it to TestFlight at once, while a
-  backend change waits for the approval before it reaches prod. So the
-  backend goes first. The check named Prod holds this backend, described
-  under GitHub Actions below, stops an app change until prod has caught up.
+  backend change waits for the approval before it reaches prod. When an app
+  change needs a new backend, approve the backend's prod deploy before
+  merging the app change.
 - What is saved from the phone is saved in the prod account. Deleting the
   account in Profile removes it.
 
@@ -45,8 +45,9 @@ record. The environment is a build setting.
    stage, which is the API host, the host the app signs in at, and the id
    the user pool gave the app. `beta.xcconfig` and `prod.xcconfig` both
    exist.
-3. Each Xcode Cloud workflow sets the `APP_ENVIRONMENT` environment variable
-   to `prod`.
+3. Each Xcode Cloud workflow sets the `APP_ENVIRONMENT` environment variable.
+   The TestFlight and Release workflows set `prod`, and the Pull Request
+   workflow sets `beta`.
 4. `FinalApproach/ci_scripts/ci_post_clone.sh` runs after Xcode Cloud clones
    the repo and writes `Config/Environment.generated.xcconfig`, which
    `App.xcconfig` includes when it exists. The generated file includes the
@@ -78,6 +79,28 @@ repo. These steps are done once in Xcode.
 4. Choose Product > Xcode Cloud > Create Workflow, pick the Final Approach app,
    and grant Xcode Cloud access to the `Njones27/Final_Approach` repository
    when asked.
+
+### Pull Request workflow
+
+The owner asked on 2026-11-25 for an Xcode build on every pull request. This
+workflow builds the app and runs its tests in a simulator, and shows the
+result on the pull request in GitHub. It archives nothing and sends nothing
+to TestFlight.
+
+| Setting | Value |
+| --- | --- |
+| Name | Pull Request |
+| Environment, Xcode version | Latest Release |
+| Environment, macOS version | Latest Release |
+| Environment variable | `APP_ENVIRONMENT` = `beta` |
+| Start condition | Pull Request Changes, source branch Any Branch, target branch `main` |
+| Start condition, auto-cancel builds | On |
+| Action 1 | Build, scheme `FinalApproach`, platform iOS |
+| Action 2 | Test, scheme `FinalApproach`, platform iOS Simulator, one recommended iPhone |
+| Post-action | None |
+
+To make a red build stop a merge, add the workflow's check to the rule for
+`main` under Settings, Branches, once it has reported on one pull request.
 
 ### TestFlight workflow
 
@@ -119,7 +142,10 @@ does not need to change by hand. Bump `MARKETING_VERSION` for each release.
 
 The Apple Developer Program includes 25 Xcode Cloud compute hours a month.
 
-- Pull requests never start an Xcode Cloud build. The Linux checks cover them.
+- The Pull Request workflow builds and tests only, with no archive. It is the
+  one that spends the most hours, since it runs on every commit pushed to a
+  pull request. If the hours run short, give it the same files and folders
+  condition as the TestFlight workflow.
 - The files and folders condition keeps docs and backend changes from starting
   an app build.
 - Auto-cancel stops a build when a newer commit lands.
@@ -128,9 +154,8 @@ The Apple Developer Program includes 25 Xcode Cloud compute hours a month.
 ## GitHub Actions
 
 `.github/workflows/ci.yml` runs on every pull request and on pushes to `main`.
-It calls two reusable workflows. `.github/workflows/core-checks.yml` has two
-jobs, and `.github/workflows/backend-checks.yml` has one. It also has one job
-of its own, which runs on pull requests only.
+It calls two reusable workflows. `.github/workflows/core-checks.yml` has
+three jobs, and `.github/workflows/backend-checks.yml` has one.
 `.github/workflows/backend-deploy.yml` is separate and deploys the backend to
 beta. It is described below.
 
@@ -141,35 +166,7 @@ beta. It is described below.
 - **Backend tests and templates** type checks `backend/`, runs its tests, and
   builds the templates for both stages in the official `node` container image.
   It needs no AWS account.
-- **Prod holds this backend** keeps the app from getting ahead of prod. It
-  is described next.
-
-### Prod before the app
-
-An app change reaches TestFlight as soon as it merges, and that build talks
-to prod. A backend change reaches prod only after the owner approves it. The
-check named Prod holds this backend keeps the two in order. Its rules are in
-`.github/scripts/prod-holds-backend.sh`, and the job runs that script's own
-behavior checks first.
-
-- A pull request that changes nothing in `FinalApproach/` or `Packages/`
-  starts no app build, so it always passes.
-- A pull request may not change the app and `backend/` together. The
-  backend change goes in its own pull request first.
-- A pull request that changes the app passes only when `backend/` on `main`
-  is the same as in the commit prod was last deployed from. The job asks
-  GitHub for the newest deploy to the `prod` environment that passed.
-
-When the check stops an app change, approve the waiting Backend deploy run,
-or start one with the stage `prod`. After prod has passed, run the failed
-check again from the pull request, with Re-run failed jobs.
-
-The check is a rule only once `main` requires it. Under Settings, Branches,
-add a rule for `main` that requires status checks to pass, choose Prod holds
-this backend, and turn on Require branches to be up to date before merging.
-The last setting matters, because the check reads `main` as it was when the
-check ran. Without the rule the check still shows red, and a merge is still
-possible.
+- **Tools tests** runs the tests of the scripts in `tools/`.
 
 Conventions, carried over from WalkWorthy:
 
