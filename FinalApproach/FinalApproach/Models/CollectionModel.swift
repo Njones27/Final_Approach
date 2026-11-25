@@ -482,13 +482,13 @@ final class CollectionModel {
     func storedImageData(forPhotoID id: String) -> Data? {
         let saved = store?.imageData(forPhotoID: id)
             ?? loadedImages[id]?.jpegData(compressionQuality: storedImageQuality)
-        return saved.map(Self.withoutMetadata)
+        return saved.map { Self.withoutMetadata($0) }
     }
 
     /// The image file with its Exif, XMP, and IPTC blocks removed. Bytes
     /// that are not a JPEG come back as they were, and the backend refuses
     /// them if they are posted.
-    static func withoutMetadata(_ data: Data) -> Data {
+    nonisolated static func withoutMetadata(_ data: Data) -> Data {
         JPEGMetadata.removed(from: data) ?? data
     }
 
