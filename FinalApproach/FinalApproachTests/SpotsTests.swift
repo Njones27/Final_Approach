@@ -6,8 +6,8 @@ import UIKit
 @testable import FinalApproach
 
 /// Spots. The client for the spot routes, the list of spots in the
-/// collection, which spot's page a posted photo is shown on, and the photos
-/// a spot's page holds.
+/// collection, which spot's page or place on the map a posted photo is
+/// shown at, and the photos a spot's page holds.
 @MainActor
 final class SpotsTests {
     private let base = URL(string: "https://api.example.test")!
@@ -35,7 +35,9 @@ final class SpotsTests {
         _ id: String = "imported-1",
         isPrivate: Bool = false,
         isBlocked: Bool = false,
-        spotID: String? = "atl-south-approach"
+        spotID: String? = "atl-south-approach",
+        coordinate: Coordinate? = Coordinate(latitude: 33.6220, longitude: -84.3995),
+        camera: CameraSettings? = nil
     ) -> SpottedPhoto {
         SpottedPhoto(
             id: id,
@@ -45,8 +47,9 @@ final class SpotsTests {
             isRegistrationBlocked: isBlocked,
             airline: "Southwest Airlines",
             activity: "",
+            camera: camera,
             loggedAt: posted,
-            captureCoordinate: Coordinate(latitude: 33.6220, longitude: -84.3995),
+            captureCoordinate: coordinate,
             spotID: spotID,
             isLocationUndisclosed: isPrivate,
             status: .logged
@@ -55,6 +58,41 @@ final class SpotsTests {
 
     private var southApproach: SpotShowing {
         SpotShowing(spotID: "atl-south-approach", aircraftType: "Boeing 737-800", airline: "Southwest Airlines")
+    }
+
+    /// Somewhere far from every sample spot. It falls in the cell named
+    /// by `awayPlaceID`, well inside its edges.
+    private var away: Coordinate? {
+        Coordinate(latitude: 34.2001, longitude: -84.9002)
+    }
+
+    private let awayPlaceID = "n34200w84900"
+
+    /// A photo taken away from every listed spot, with its location
+    /// showing unless it is made private.
+    private func awayPhoto(isPrivate: Bool = false, camera: CameraSettings? = nil) -> SpottedPhoto {
+        photo(isPrivate: isPrivate, spotID: nil, coordinate: away, camera: camera)
+    }
+
+    private var awayPlace: SpotShowing {
+        SpotShowing(placeID: awayPlaceID, aircraftType: "Boeing 737-800", airline: "Southwest Airlines")
+    }
+
+    /// The settings of a photo taken with a long lens, with the gear named.
+    private var longLens: CameraSettings {
+        CameraSettings(
+            cameraMake: "Canon",
+            cameraModel: "Canon EOS R5",
+            lensModel: "RF100-500mm F4.5-7.1 L IS USM",
+            focalLength: 400,
+            aperture: 5.6,
+            exposureTime: 0.001,
+            iso: 200
+        )
+    }
+
+    private var longLensShown: ShownCamera {
+        ShownCamera(focalLength: 400, aperture: 5.6, exposureTime: 0.001, iso: 200)
     }
 
     private func tinyImage() -> UIImage {
@@ -84,7 +122,12 @@ final class SpotsTests {
     }
 
     private func postClient(_ transport: ScriptedTransport) -> HTTPPostBackend {
-        HTTPPostBackend(baseURL: base, transport: transport, accessToken: { "token-1" })
+        HTTPPostBackend(
+            baseURL: base,
+            transport: transport,
+            placeGrid: SampleData.placeGrid,
+            accessToken: { "token-1" }
+        )
     }
 
     private func spotAnswer(_ id: String, latitude: Double, notes: Bool) -> [String: Any] {
@@ -248,6 +291,58 @@ final class SpotsTests {
         }
     }
 
+    @Test func showingAPhotoAtAPlaceSendsTheMiddleOfItsCellAndTheCameraSettings() async throws {
+        let transport = ScriptedTransport([
+            .init(body: try json([
+                "photoID": "imported-1",
+                "shownAt": ["placeID": awayPlaceID, "camera": ["focalLength": 400, "iso": 200]] as [String: Any],
+            ])),
+        ])
+        let showing = SpotShowing(placeID: awayPlaceID, camera: ShownCamera(focalLength: 400, iso: 200))
+
+        let kept = try await postClient(transport).show(photoID: "imported-1", at: showing)
+
+        let body = try #require(transport.requests.first?.httpBody)
+        let object = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+        let sent = try #require(object)
+        // The place's id is not sent, and neither is a spot.
+        #expect(sent.keys.sorted() == ["camera", "place"])
+        // The position is the middle of the cell, which is all the place's
+        // id can give. Where the photo was taken never reaches this client.
+        let place = sent["place"] as? [String: Double]
+        #expect(place?.keys.sorted() == ["latitude", "longitude"])
+        #expect(abs((place?["latitude"] ?? 0) - 34.2) < 1e-9)
+        #expect(abs((place?["longitude"] ?? 0) + 84.9) < 1e-9)
+        let camera = sent["camera"] as? [String: Double]
+        #expect(camera == ["focalLength": 400, "iso": 200])
+        #expect(kept == showing)
+    }
+
+    @Test func aPlaceThatNamesNoCellIsNotSent() async throws {
+        let transport = ScriptedTransport([])
+
+        await #expect(throws: PhotoBackendError.unknownSpot) {
+            _ = try await self.postClient(transport).show(
+                photoID: "imported-1",
+                at: SpotShowing(placeID: "behind-the-fence")
+            )
+        }
+        #expect(transport.requests.isEmpty)
+    }
+
+    @Test func anAnswerThatNamesNowhereIsNotTrusted() async throws {
+        let transport = ScriptedTransport([
+            .init(body: try json(["photoID": "imported-1", "shownAt": ["airline": "Southwest Airlines"]])),
+        ])
+
+        await #expect(throws: PhotoBackendError.unreadableAnswer) {
+            _ = try await self.postClient(transport).show(
+                photoID: "imported-1",
+                at: SpotShowing(spotID: "atl-south-approach")
+            )
+        }
+    }
+
     @Test func aPhotoThatIsNotPostedOrASpotThatIsNotListedIsRefused() async throws {
         let transport = ScriptedTransport([
             .init(status: 409, body: try json(["message": "Post the photo first.", "code": "notPosted"])),
@@ -301,7 +396,47 @@ final class SpotsTests {
         ])
     }
 
-    // MARK: Which page a photo may go on
+    @Test func aListingReadsAPlaceAndLeavesOutSomewhereItDoesNotKnow() async throws {
+        func post(_ photoID: String, shownAt: [String: Any]) -> [String: Any] {
+            [
+                "photoID": photoID,
+                "postedAt": "2027-01-15T08:00:00.000Z",
+                "closesAt": "2027-01-18T08:00:00.000Z",
+                "voteCount": 0,
+                "status": "voting",
+                "shownAt": shownAt,
+            ]
+        }
+        let atPlace = post("imported-1", shownAt: [
+            "placeID": awayPlaceID,
+            "aircraftType": "Boeing 737-800",
+            "camera": ["focalLength": 400, "aperture": 5.6, "exposureTime": 0.001, "iso": 200],
+        ])
+        let somewhereNew = post("imported-2", shownAt: ["regionID": "north-georgia"])
+        let transport = ScriptedTransport([.init(body: try json(["posts": [atPlace, somewhereNew], "minVotes": 5]))])
+
+        let listing = try await postClient(transport).listPosts()
+
+        // Both posts are read. Only the one this version can place is
+        // said to be shown.
+        #expect(listing.standings.count == 2)
+        #expect(listing.showings == [
+            "imported-1": SpotShowing(placeID: awayPlaceID, aircraftType: "Boeing 737-800", camera: longLensShown),
+        ])
+    }
+
+    @Test func aShowingSavedBeforePlacesExistedStillReads() throws {
+        let old = Data(#"{"spotID":"atl-south-approach","airline":"Southwest Airlines"}"#.utf8)
+        let read = try JSONDecoder().decode(SpotShowing.self, from: old)
+        #expect(read == SpotShowing(spotID: "atl-south-approach", airline: "Southwest Airlines"))
+
+        let place = SpotShowing(placeID: awayPlaceID, aircraftType: "Boeing 737-800", camera: longLensShown)
+        let saved = try JSONEncoder().encode(place)
+        let reread = try JSONDecoder().decode(SpotShowing.self, from: saved)
+        #expect(reread == place)
+    }
+
+    // MARK: Where a photo may be shown
 
     @Test func aPhotoWithItsSpotShowingMayGoOnThatSpotsPage() {
         let model = SampleData.model()
@@ -330,6 +465,47 @@ final class SpotsTests {
         #expect(model.spotShowing(for: photo(isBlocked: true)) == SpotShowing(spotID: "atl-south-approach"))
     }
 
+    @Test func aPhotoTakenAwayFromEverySpotMayGoOnTheMapAtItsPlace() {
+        let model = SampleData.model()
+
+        // It is not near a listed spot, so its owner sees none for it.
+        #expect(model.listedSpot(for: awayPhoto()) == nil)
+        #expect(model.spotShowing(for: awayPhoto()) == awayPlace)
+    }
+
+    @Test func everyPhotoTakenInOneCellIsShownAtTheSamePlace() {
+        let model = SampleData.model()
+        let corner = photo(spotID: nil, coordinate: Coordinate(latitude: 34.2004, longitude: -84.8996))
+
+        #expect(model.spotShowing(for: corner)?.placeID == awayPlaceID)
+        #expect(model.spotShowing(for: awayPhoto())?.placeID == awayPlaceID)
+    }
+
+    @Test func aPrivatePhotoTakenAwayFromEverySpotIsShownNowhere() {
+        let model = SampleData.model()
+
+        #expect(model.spotShowing(for: awayPhoto(isPrivate: true)) == nil)
+    }
+
+    @Test func aPhotoWithNoSpotAndNoLocationIsShownNowhere() {
+        let model = SampleData.model()
+
+        #expect(model.spotShowing(for: photo(spotID: nil, coordinate: nil)) == nil)
+    }
+
+    @Test func theCameraSettingsAreShownWithoutTheGear() {
+        let model = SampleData.model()
+
+        #expect(model.spotShowing(for: photo(camera: longLens))?.camera == longLensShown)
+        #expect(model.spotShowing(for: awayPhoto(camera: longLens))?.camera == longLensShown)
+        // A blocked aircraft is not named, and its settings name nothing.
+        #expect(model.spotShowing(for: photo(isBlocked: true, camera: longLens))
+            == SpotShowing(spotID: "atl-south-approach", camera: longLensShown))
+        // A photo that names only its gear shows no settings.
+        let gearOnly = CameraSettings(cameraModel: "Canon EOS R5")
+        #expect(model.spotShowing(for: photo(camera: gearOnly))?.camera == nil)
+    }
+
     @Test func aLineTheBackendWouldRefuseIsLeftOut() {
         let model = SampleData.model()
         let long = SpottedPhoto(
@@ -351,7 +527,9 @@ final class SpotsTests {
         let model = SampleData.model(airports: [])
         #expect(model.airports.isEmpty)
         #expect(model.listedSpot(for: photo(spotID: nil)) == nil)
-        #expect(model.spotShowing(for: photo(spotID: nil)) == nil)
+        // With no spot listed near it, the photo would go on the map.
+        #expect(model.spotShowing(for: photo(spotID: nil))?.spotID == nil)
+        #expect(model.spotShowing(for: photo(spotID: nil))?.placeID != nil)
 
         model.takeSpotCatalog(SampleData.airports)
 
@@ -555,10 +733,38 @@ final class SpotsTests {
         #expect(rig.posts.showCount == 0)
     }
 
-    @Test func aPhotoTakenAwayFromEverySpotGoesOnNoPage() async throws {
+    @Test func postingAPhotoTakenAwayFromEverySpotPutsItOnTheMapAtItsPlace() async throws {
+        let rig = try await makeRig()
+        let phone = SampleData.model()
+        phone.add(awayPhoto(camera: longLens), image: tinyImage())
+
+        let outcome = await rig.sync.post(photoID: "imported-1", on: phone)
+
+        var wanted = awayPlace
+        wanted.camera = longLensShown
+        #expect(outcome == .posted)
+        #expect(rig.posts.showings == ["imported-1": wanted])
+        #expect(phone.spotShowings == ["imported-1": wanted])
+    }
+
+    @Test func postingAPrivatePhotoTakenAwayFromEverySpotShowsItNowhere() async throws {
+        let rig = try await makeRig()
+        let phone = SampleData.model()
+        phone.add(awayPhoto(isPrivate: true), image: tinyImage())
+
+        let outcome = await rig.sync.post(photoID: "imported-1", on: phone)
+        let asked = await rig.sync.showAtSpot(photoID: "imported-1", on: phone)
+
+        #expect(outcome == .posted)
+        #expect(asked == .cannotShow)
+        #expect(rig.posts.showCount == 0)
+        #expect(phone.spotShowings.isEmpty)
+    }
+
+    @Test func aPhotoWithNoSpotAndNoLocationHasNowhereToBeShown() async throws {
         let rig = try await makeRig()
         let phone = SampleData.model(airports: [])
-        phone.add(photo(), image: tinyImage())
+        phone.add(photo(spotID: nil, coordinate: nil), image: tinyImage())
 
         let outcome = await rig.sync.post(photoID: "imported-1", on: phone)
         let asked = await rig.sync.showAtSpot(photoID: "imported-1", on: phone)
@@ -566,6 +772,64 @@ final class SpotsTests {
         #expect(outcome == .posted)
         #expect(asked == .spotNotListed)
         #expect(rig.posts.showCount == 0)
+    }
+
+    @Test func theOwnerCanTakeAPhotoOffTheMapAndPutItBack() async throws {
+        let rig = try await makeRig()
+        let phone = SampleData.model()
+        phone.add(awayPhoto(), image: tinyImage())
+        let outcome = await rig.sync.post(photoID: "imported-1", on: phone)
+        #expect(outcome == .posted)
+
+        let takenOff = await rig.sync.takeOffSpot(photoID: "imported-1", on: phone)
+        #expect(takenOff == .done)
+        #expect(rig.posts.showings.isEmpty)
+        #expect(phone.spotShowings.isEmpty)
+
+        let putBack = await rig.sync.showAtSpot(photoID: "imported-1", on: phone)
+        #expect(putBack == .done)
+        #expect(rig.posts.showings == ["imported-1": awayPlace])
+    }
+
+    @Test func anEditToTheAircraftKeepsThePlaceAndTheSettingsAsTheyWereShown() async throws {
+        let rig = try await makeRig()
+        let phone = SampleData.model()
+        phone.add(awayPhoto(camera: longLens), image: tinyImage())
+        let outcome = await rig.sync.post(photoID: "imported-1", on: phone)
+        #expect(outcome == .posted)
+        // The backend holds the photo as it was shown before camera
+        // settings were shown, with none beside it.
+        _ = try await rig.posts.show(photoID: "imported-1", at: awayPlace)
+
+        phone.updateDetails(
+            forPhotoID: "imported-1",
+            aircraftType: "Boeing 737-700",
+            registration: nil,
+            airline: ""
+        )
+        await rig.sync.sync(on: phone)
+
+        // The words change. The place stays, and no settings are added
+        // that the owner did not choose to show.
+        let wanted = SpotShowing(placeID: awayPlaceID, aircraftType: "Boeing 737-700")
+        #expect(rig.posts.showings == ["imported-1": wanted])
+        #expect(phone.spotShowings == ["imported-1": wanted])
+    }
+
+    @Test func aPrivatePhotoFoundOnTheMapIsTakenOff() async throws {
+        let rig = try await makeRig()
+        let phone = SampleData.model()
+        phone.add(awayPhoto(isPrivate: true), image: tinyImage())
+        let outcome = await rig.sync.post(photoID: "imported-1", on: phone)
+        #expect(outcome == .posted)
+        // The backend holds a place for it, as a mistake elsewhere could
+        // leave one.
+        _ = try await rig.posts.show(photoID: "imported-1", at: awayPlace)
+
+        await rig.sync.sync(on: phone)
+
+        #expect(rig.posts.showings.isEmpty)
+        #expect(phone.spotShowings.isEmpty)
     }
 
     @Test func aSpotTheBackendNoLongerListsTakesNoPhoto() async throws {
@@ -878,9 +1142,9 @@ final class SpotsTests {
     // MARK: Wording
 
     @Test func theWarningBeforeAPostSaysWhereThePhotoWillBeSeen() {
-        let plain = PhotoDetailView.postWarning(spotName: nil, showsAircraft: true)
-        let shown = PhotoDetailView.postWarning(spotName: "South approach", showsAircraft: true)
-        let blocked = PhotoDetailView.postWarning(spotName: "South approach", showsAircraft: false)
+        let plain = PhotoDetailView.postWarning(shownAt: nil, showsAircraft: true)
+        let shown = PhotoDetailView.postWarning(shownAt: .spot(name: "South approach"), showsAircraft: true)
+        let blocked = PhotoDetailView.postWarning(shownAt: .spot(name: "South approach"), showsAircraft: false)
 
         #expect(plain == "Voters see the photo and nothing else. They do not see your name or where it was taken. "
             + "A post cannot be taken back, but deleting the photo removes it.")
@@ -892,21 +1156,87 @@ final class SpotsTests {
         #expect(!blocked.contains("aircraft type"))
     }
 
+    @Test func theWarningBeforeAPostSaysHowExactAPlaceOnTheMapIs() {
+        let place = PhotoDetailView.postWarning(shownAt: .place(meters: 100), showsAircraft: true)
+        let blocked = PhotoDetailView.postWarning(shownAt: .place(meters: 100), showsAircraft: false)
+
+        #expect(place.contains("it also goes on the map with its grade, aircraft type, and airline."))
+        #expect(place.contains("People see where it was taken to about 100 meters."))
+        #expect(place.contains("Your name, the registration, and the exact place are never shown there."))
+        #expect(blocked.contains("it also goes on the map with its grade."))
+        #expect(!blocked.contains("aircraft type"))
+    }
+
+    @Test func theWarningBeforeAPostNamesTheCameraSettingsOnlyWhenTheyAreShown() {
+        let with = PhotoDetailView.postWarning(
+            shownAt: .spot(name: "South approach"),
+            showsAircraft: true,
+            showsCamera: true
+        )
+        let blocked = PhotoDetailView.postWarning(shownAt: .place(meters: 100), showsAircraft: false, showsCamera: true)
+        let without = PhotoDetailView.postWarning(shownAt: .spot(name: "South approach"), showsAircraft: true)
+        let shownNowhere = PhotoDetailView.postWarning(shownAt: nil, showsAircraft: true, showsCamera: true)
+
+        #expect(with.contains("with its grade, aircraft type, airline, and camera settings."))
+        #expect(blocked.contains("with its grade and camera settings."))
+        #expect(!without.contains("camera settings"))
+        // A photo that is shown nowhere shows no settings either.
+        #expect(!shownNowhere.contains("camera settings"))
+    }
+
     @Test func theOwnerIsToldWhetherAPhotoIsOnItsPageYet() {
-        #expect(PhotoDetailView.shownLine(spotName: "South approach", isGraded: true)
+        #expect(PhotoDetailView.shownLine(shownAt: .spot(name: "South approach"), isGraded: true)
             == "Shown on the page for South approach.")
-        #expect(PhotoDetailView.shownLine(spotName: "South approach", isGraded: false)
+        #expect(PhotoDetailView.shownLine(shownAt: .spot(name: "South approach"), isGraded: false)
             == "It goes on the page for South approach once it is graded.")
-        #expect(PhotoDetailView.shownLine(spotName: nil, isGraded: true) == "Shown on its spot's page.")
+        #expect(PhotoDetailView.shownLine(shownAt: .spot(name: nil), isGraded: true) == "Shown on its spot's page.")
+    }
+
+    @Test func theOwnerIsToldWhetherAPhotoIsOnTheMapYet() {
+        #expect(PhotoDetailView.shownLine(shownAt: .place(meters: 100), isGraded: true)
+            == "Shown on the map, to about 100 meters.")
+        #expect(PhotoDetailView.shownLine(shownAt: .place(meters: 100), isGraded: false)
+            == "It goes on the map, to about 100 meters, once it is graded.")
     }
 
     @Test func theOfferSaysWhatOtherPeopleWillSee() {
-        let offer = PhotoDetailView.offerLine(spotName: "South approach", showsAircraft: true)
-        let blocked = PhotoDetailView.offerLine(spotName: "South approach", showsAircraft: false)
+        let offer = PhotoDetailView.offerLine(shownAt: .spot(name: "South approach"), showsAircraft: true)
+        let blocked = PhotoDetailView.offerLine(shownAt: .spot(name: "South approach"), showsAircraft: false)
 
         #expect(offer.contains("its grade, aircraft type, and airline"))
         #expect(offer.contains("They never see your name or the registration."))
         #expect(!blocked.contains("aircraft type"))
+    }
+
+    @Test func theOfferForAPlaceSaysHowExactItIs() {
+        let offer = PhotoDetailView.offerLine(shownAt: .place(meters: 100), showsAircraft: true, showsCamera: true)
+
+        #expect(offer.contains("You can show this photo on the map."))
+        #expect(offer.contains("its grade, aircraft type, airline, and camera settings"))
+        #expect(offer.contains("where it was taken to about 100 meters"))
+        #expect(offer.contains("They never see your name, the registration, or the exact place."))
+    }
+
+    @Test func theButtonsSayWhereThePhotoGoes() {
+        #expect(PhotoDetailView.showTitle(shownAt: .spot(name: "South approach")) == "Show it on the spot's page")
+        #expect(PhotoDetailView.takeOffTitle(shownAt: .spot(name: nil)) == "Take it off the spot's page")
+        #expect(PhotoDetailView.showTitle(shownAt: .place(meters: 100)) == "Show it on the map")
+        #expect(PhotoDetailView.takeOffTitle(shownAt: .place(meters: 100)) == "Take it off the map")
+    }
+
+    @Test func theChoiceMadeWhenAPhotoWasLoggedIsSaidBack() {
+        #expect(PhotoDetailView.choiceLine(shownAt: .spot(name: "South approach"))
+            == "You chose to show the spot. Once the photo is graded, it also goes on the page for South approach.")
+        #expect(PhotoDetailView.choiceLine(shownAt: .place(meters: 100))
+            == "You chose to show where this was taken. Once the photo is graded, it also goes on the map, "
+            + "to about 100 meters.")
+    }
+
+    @Test func theLocationSwitchSaysHowExactAPlaceIs() {
+        let detail = AddPhotoView.locationSwitchDetail(placeMeters: 100)
+
+        #expect(detail.contains("on the map to about 100 meters"))
+        #expect(detail.contains("Turn this off to keep the location private."))
     }
 
     @Test func everyOutcomeOfChangingAPageHasSomethingToSay() {

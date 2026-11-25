@@ -54,8 +54,9 @@ final class CollectionModel {
     /// The fewest votes a grade needs, as the backend last said. It is nil
     /// until the backend has been asked.
     private(set) var backendMinimumVotes: Int?
-    /// The spot's page each posted photo is shown on, by photo id, as the
-    /// backend last said. A photo that is on no page is left out.
+    /// Where each posted photo is shown to other people, by photo id, as
+    /// the backend last said. It is a listed spot's page or a place on the
+    /// map. A photo that is shown nowhere is left out.
     private(set) var spotShowings: [String: SpotShowing] = [:]
     /// Called after one of the user's own photos leaves the device, or all
     /// of them do. Anything that keeps a copy of a photo clears it then.
@@ -97,6 +98,12 @@ final class CollectionModel {
     /// The longest an aircraft type or an airline may be to go on a spot's
     /// page. The backend refuses a longer one.
     let shownTextMaxLength: Int
+    /// The grid of small cells a photo's place is kept by when it is shown
+    /// away from the listed spots. It matches the backend's own grid.
+    let placeGrid: PlaceGrid
+    /// The smallest and largest a camera setting may be to go beside a
+    /// shown photo. The backend refuses one outside them.
+    let shownCameraLimits: ShownCameraLimits
     /// How strongly a saved image is compressed, from 0 to 1.
     let storedImageQuality: Double
     /// How each country writes its registrations, used to find one in the
@@ -127,6 +134,8 @@ final class CollectionModel {
         votingRules: VotingRules = .launch,
         spotMatchRadius: Double,
         shownTextMaxLength: Int,
+        placeGrid: PlaceGrid,
+        shownCameraLimits: ShownCameraLimits,
         storedImageQuality: Double,
         registrationFormats: [RegistrationFormat],
         flightRankingRules: FlightRankingRules,
@@ -136,6 +145,8 @@ final class CollectionModel {
     ) {
         self.spotMatchRadius = spotMatchRadius
         self.shownTextMaxLength = shownTextMaxLength
+        self.placeGrid = placeGrid
+        self.shownCameraLimits = shownCameraLimits
         self.storedImageQuality = storedImageQuality
         self.registrationFormats = registrationFormats
         self.flightRankingRules = flightRankingRules
@@ -575,8 +586,8 @@ final class CollectionModel {
         savePostStandings()
     }
 
-    /// Takes the spot's page a posted photo is now shown on, or nil once it
-    /// is on none.
+    /// Takes where a posted photo is now shown, or nil once it is shown
+    /// nowhere.
     func takeSpotShowing(_ showing: SpotShowing?, forPhotoID id: String) {
         guard postStandings[id] != nil || showing == nil, spotShowings[id] != showing else { return }
         spotShowings[id] = showing
@@ -737,7 +748,7 @@ final class CollectionModel {
     }
 
     /// The aircraft type and airline other people may read beside a photo
-    /// on a spot's page.
+    /// where it is shown.
     ///
     /// A blocked aircraft shows neither, because either one can help name
     /// it. A line the backend would refuse is left out.
@@ -749,17 +760,44 @@ final class CollectionModel {
         )
     }
 
-    /// The spot's page a photo may be shown on, with what is read beside
-    /// it there. It is nil for a sample photo, for a photo whose owner kept
-    /// the location private, and for one taken away from every listed spot.
+    /// The camera settings other people may read beside a photo, or nil
+    /// when it carries none that may be shown. Only the four numbers are
+    /// shown, and never the name of the camera or the lens.
+    func shownCamera(for photo: SpottedPhoto) -> ShownCamera? {
+        photo.camera.flatMap { ShownCamera(showing: $0, within: shownCameraLimits) }
+    }
+
+    /// Where a photo may be shown to other people, with what is read beside
+    /// it there.
+    ///
+    /// A photo taken at a listed spot goes on that spot's page. One taken
+    /// away from every listed spot goes on the map at its place, which is
+    /// the cell of `placeGrid` it was taken in. The cell's id is all that
+    /// is kept of where it was taken. It is nil for a sample photo, for a
+    /// photo whose owner kept the location private, and for one that has no
+    /// listed spot and no saved location.
     func spotShowing(for photo: SpottedPhoto) -> SpotShowing? {
         guard !photo.isSample, !photo.isLocationUndisclosed else { return nil }
+        let details = shownDetails(for: photo)
+        let camera = shownCamera(for: photo)
         // Only what the owner disclosed is read here.
         let listed = photo.publicSpotID.flatMap { spot(id: $0) }
             ?? photo.publicCaptureCoordinate.flatMap { nearestSpot(to: $0) }
-        guard let listed else { return nil }
-        let details = shownDetails(for: photo)
-        return SpotShowing(spotID: listed.id, aircraftType: details.aircraftType, airline: details.airline)
+        if let listed {
+            return SpotShowing(
+                spotID: listed.id,
+                aircraftType: details.aircraftType,
+                airline: details.airline,
+                camera: camera
+            )
+        }
+        guard let taken = photo.publicCaptureCoordinate else { return nil }
+        return SpotShowing(
+            placeID: placeGrid.placeID(at: taken),
+            aircraftType: details.aircraftType,
+            airline: details.airline,
+            camera: camera
+        )
     }
 
     /// The photos logged with no aircraft type, newest first. They fill no

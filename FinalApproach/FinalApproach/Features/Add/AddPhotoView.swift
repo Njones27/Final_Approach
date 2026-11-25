@@ -223,7 +223,7 @@ struct AddPhotoView: View {
                     Text("Show the spot to other people")
                         .font(.body)
                         .foregroundStyle(Theme.ink)
-                    Text("Turn this off to keep the location private.")
+                    Text(Self.locationSwitchDetail(placeMeters: model.placeGrid.roughCellMeters))
                         .font(.footnote)
                         .foregroundStyle(Theme.secondaryText)
                 }
@@ -255,6 +255,14 @@ struct AddPhotoView: View {
             return nearestSpot.map { "Pinned near \($0.name)" } ?? "Pinned on the map"
         }
         return nearestSpot.map { "Near \($0.name)" } ?? "Location saved"
+    }
+
+    /// What the switch that shows a photo's location tells the user. A
+    /// photo taken away from the listed spots is shown at a place, so the
+    /// line says how exact a place is.
+    static func locationSwitchDetail(placeMeters: Int) -> String {
+        "A posted photo goes on the page of the spot it was taken from, or on the map to about \(placeMeters) meters. "
+            + "Turn this off to keep the location private."
     }
 
     private var locationDetail: String {

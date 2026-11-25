@@ -114,8 +114,9 @@ struct PhotoDetailView: View {
         } message: {
             Text(
                 Self.postWarning(
-                    spotName: offeredSpotName(for: photo),
-                    showsAircraft: !photo.hasBlockedRegistration
+                    shownAt: offeredShowing(for: photo),
+                    showsAircraft: !photo.hasBlockedRegistration,
+                    showsCamera: model.shownCamera(for: photo) != nil
                 )
             )
         }
@@ -339,8 +340,8 @@ struct PhotoDetailView: View {
                 // The owner chose to show the spot when the photo was
                 // logged. Posting is what puts it in front of people, so
                 // the screen says where it will be seen.
-                if let spotName = offeredSpotName(for: photo) {
-                    Text("You chose to show the spot. Once the photo is graded, it also goes on the page for \(spotName).")
+                if let shownAt = offeredShowing(for: photo) {
+                    Text(Self.choiceLine(shownAt: shownAt))
                         .font(.subheadline)
                         .foregroundStyle(Theme.secondaryText)
                 }
@@ -385,30 +386,90 @@ struct PhotoDetailView: View {
         }
     }
 
-    /// The name of the spot whose page the photo would go on, or nil when
-    /// it would go on none. A photo whose location is private has none.
-    private func offeredSpotName(for photo: SpottedPhoto) -> String? {
-        model.spotShowing(for: photo).flatMap { model.spot(id: $0.spotID)?.name }
+    /// Where other people see a shown photo.
+    enum ShownAt: Equatable {
+        /// On the page of a listed spot. The name is nil for a spot that is
+        /// no longer listed.
+        case spot(name: String?)
+        /// On the map at a place, which says where the photo was taken to
+        /// about this many meters.
+        case place(meters: Int)
+    }
+
+    /// Where a showing puts a photo, in the words this screen uses.
+    private func whereShown(_ showing: SpotShowing) -> ShownAt {
+        if let spotID = showing.spotID {
+            return .spot(name: model.spot(id: spotID)?.name)
+        }
+        return .place(meters: model.placeGrid.roughCellMeters)
+    }
+
+    /// Where the photo would be shown if its owner asked, or nil when it
+    /// would be shown nowhere. A photo whose location is private has none.
+    private func offeredShowing(for photo: SpottedPhoto) -> ShownAt? {
+        model.spotShowing(for: photo).map { whereShown($0) }
+    }
+
+    /// What other people read beside a shown photo, as a list in a
+    /// sentence.
+    ///
+    /// - Parameters:
+    ///   - showsAircraft: False for a blocked aircraft, whose type and
+    ///     airline are left out.
+    ///   - showsCamera: True when the photo carries camera settings that
+    ///     are shown.
+    static func shownList(showsAircraft: Bool, showsCamera: Bool) -> String {
+        switch (showsAircraft, showsCamera) {
+        case (true, true): "its grade, aircraft type, airline, and camera settings"
+        case (true, false): "its grade, aircraft type, and airline"
+        case (false, true): "its grade and camera settings"
+        case (false, false): "its grade"
+        }
     }
 
     /// What the user is told before a photo is posted.
     ///
     /// - Parameters:
-    ///   - spotName: The spot whose page the photo goes on once graded, or
-    ///     nil when it goes on none.
+    ///   - shownAt: Where the photo is shown once graded, or nil when it is
+    ///     shown nowhere.
     ///   - showsAircraft: False for a blocked aircraft, whose type and
-    ///     airline are left off the page.
-    static func postWarning(spotName: String?, showsAircraft: Bool) -> String {
+    ///     airline are left out.
+    ///   - showsCamera: True when the photo carries camera settings that
+    ///     are shown.
+    static func postWarning(shownAt: ShownAt?, showsAircraft: Bool, showsCamera: Bool = false) -> String {
         var parts = ["Voters see the photo and nothing else. They do not see your name or where it was taken."]
-        if let spotName {
-            let shown = showsAircraft ? "its grade, aircraft type, and airline" : "its grade"
+        let shown = shownList(showsAircraft: showsAircraft, showsCamera: showsCamera)
+        switch shownAt {
+        case .spot(let name)?:
+            let page = name.map { "the page for \($0)" } ?? "its spot's page"
             parts.append(
-                "Once it is graded, it also goes on the page for \(spotName) with \(shown). "
+                "Once it is graded, it also goes on \(page) with \(shown). "
                     + "Your name and the registration are never shown there."
             )
+        case .place(let meters)?:
+            parts.append(
+                "Once it is graded, it also goes on the map with \(shown). "
+                    + "People see where it was taken to about \(meters) meters. "
+                    + "Your name, the registration, and the exact place are never shown there."
+            )
+        case nil:
+            break
         }
         parts.append("A post cannot be taken back, but deleting the photo removes it.")
         return parts.joined(separator: " ")
+    }
+
+    /// What the owner reads above the post button about the choice they
+    /// made when the photo was logged.
+    static func choiceLine(shownAt: ShownAt) -> String {
+        switch shownAt {
+        case .spot(let name):
+            let page = name.map { "the page for \($0)" } ?? "its spot's page"
+            return "You chose to show the spot. Once the photo is graded, it also goes on \(page)."
+        case .place(let meters):
+            return "You chose to show where this was taken. Once the photo is graded, it also goes on the map, "
+                + "to about \(meters) meters."
+        }
     }
 
     /// What to tell the user when a photo was not posted.
@@ -513,15 +574,15 @@ struct PhotoDetailView: View {
         return "Taken near \(spot.name)"
     }
 
-    // MARK: The spot's page
+    // MARK: Where the photo is shown
 
-    /// Whether the photo is on its spot's page, with the way to put it
-    /// there or take it off.
+    /// Whether the photo is on its spot's page or on the map, with the way
+    /// to put it there or take it off.
     ///
-    /// A photo goes on the page when it is posted with its spot showing.
-    /// A photo posted before spots had pages was posted with the promise
-    /// that nobody sees where it was taken, so it goes on only when its
-    /// owner asks here.
+    /// A photo is shown when it is posted with its location showing. A
+    /// photo posted before then was posted with the promise that nobody
+    /// sees where it was taken, so it is shown only when its owner asks
+    /// here.
     @ViewBuilder
     private func spotPageRows(for photo: SpottedPhoto) -> some View {
         // Only a posted photo can be on a spot's page, and a build with no
@@ -529,25 +590,29 @@ struct PhotoDetailView: View {
         if !photo.isSample, let sync, sync.offersPosting, sync.session.isSignedIn,
            model.progress(for: photo).isPosted {
             if let showing = model.spotShowings[photo.id] {
+                let shownAt = whereShown(showing)
                 Label(
-                    Self.shownLine(
-                        spotName: model.spot(id: showing.spotID)?.name,
-                        isGraded: model.finalScore(for: photo) != nil
-                    ),
+                    Self.shownLine(shownAt: shownAt, isGraded: model.finalScore(for: photo) != nil),
                     systemImage: "eye"
                 )
                 .font(.subheadline)
                 .foregroundStyle(Theme.secondaryText)
-                Button("Take it off the spot's page") {
+                Button(Self.takeOffTitle(shownAt: shownAt)) {
                     changeSpotPage(for: photo, show: false)
                 }
                 .buttonStyle(.secondary)
                 .disabled(isChangingSpotPage)
-            } else if let spotName = offeredSpotName(for: photo) {
-                Text(Self.offerLine(spotName: spotName, showsAircraft: !photo.hasBlockedRegistration))
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.secondaryText)
-                Button("Show it on the spot's page") {
+            } else if let shownAt = offeredShowing(for: photo) {
+                Text(
+                    Self.offerLine(
+                        shownAt: shownAt,
+                        showsAircraft: !photo.hasBlockedRegistration,
+                        showsCamera: model.shownCamera(for: photo) != nil
+                    )
+                )
+                .font(.subheadline)
+                .foregroundStyle(Theme.secondaryText)
+                Button(Self.showTitle(shownAt: shownAt)) {
                     changeSpotPage(for: photo, show: true)
                 }
                 .buttonStyle(.secondary)
@@ -577,32 +642,63 @@ struct PhotoDetailView: View {
         }
     }
 
-    /// What the owner reads about a photo that is on a spot's page.
-    static func shownLine(spotName: String?, isGraded: Bool) -> String {
-        let page = spotName.map { "the page for \($0)" } ?? "its spot's page"
-        return isGraded
-            ? "Shown on \(page)."
-            : "It goes on \(page) once it is graded."
+    /// What the owner reads about a photo that is shown to other people.
+    static func shownLine(shownAt: ShownAt, isGraded: Bool) -> String {
+        switch shownAt {
+        case .spot(let name):
+            let page = name.map { "the page for \($0)" } ?? "its spot's page"
+            return isGraded
+                ? "Shown on \(page)."
+                : "It goes on \(page) once it is graded."
+        case .place(let meters):
+            return isGraded
+                ? "Shown on the map, to about \(meters) meters."
+                : "It goes on the map, to about \(meters) meters, once it is graded."
+        }
     }
 
-    /// What the owner reads before putting a photo on a spot's page.
-    static func offerLine(spotName: String, showsAircraft: Bool) -> String {
-        let shown = showsAircraft ? "its grade, aircraft type, and airline" : "its grade"
-        return "You can show this photo on the page for \(spotName). People who open the spot then see it with \(shown). "
-            + "They never see your name or the registration."
+    /// What the owner reads before showing a photo to other people.
+    static func offerLine(shownAt: ShownAt, showsAircraft: Bool, showsCamera: Bool = false) -> String {
+        let shown = shownList(showsAircraft: showsAircraft, showsCamera: showsCamera)
+        switch shownAt {
+        case .spot(let name):
+            let page = name.map { "the page for \($0)" } ?? "its spot's page"
+            return "You can show this photo on \(page). People who open the spot then see it with \(shown). "
+                + "They never see your name or the registration."
+        case .place(let meters):
+            return "You can show this photo on the map. People then see it with \(shown), "
+                + "and where it was taken to about \(meters) meters. "
+                + "They never see your name, the registration, or the exact place."
+        }
+    }
+
+    /// The button that shows a photo to other people.
+    static func showTitle(shownAt: ShownAt) -> String {
+        switch shownAt {
+        case .spot: "Show it on the spot's page"
+        case .place: "Show it on the map"
+        }
+    }
+
+    /// The button that takes a shown photo down.
+    static func takeOffTitle(shownAt: ShownAt) -> String {
+        switch shownAt {
+        case .spot: "Take it off the spot's page"
+        case .place: "Take it off the map"
+        }
     }
 
     /// What to tell the user when the spot's page could not be changed.
     static func message(for outcome: SpotShowOutcome) -> String {
         switch outcome {
         case .done:
-            "The spot's page is up to date."
+            "That is up to date."
         case .signInNeeded:
             "Sign in again on Profile, then try again."
         case .cannotShow:
-            "Only a posted photo with its spot showing can go on a spot's page."
+            "Only a posted photo with its location showing can be shown to other people."
         case .spotNotListed:
-            "This photo was not taken at a listed spot."
+            "This photo has no spot or place to be shown at."
         case .couldNotChange:
             "That did not work. Check your connection and try again."
         }

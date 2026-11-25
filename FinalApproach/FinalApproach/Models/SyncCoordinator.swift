@@ -63,7 +63,8 @@ enum PostOutcome: Equatable {
     case couldNotPost
 }
 
-/// What came of asking to put a photo on a spot's page, or to take it off.
+/// What came of asking to show a photo on a spot's page or on the map, or
+/// to take it off.
 enum SpotShowOutcome: Equatable {
     case done
     /// No one is signed in, or the sign in no longer works.
@@ -71,8 +72,8 @@ enum SpotShowOutcome: Equatable {
     /// The photo is not posted, is gone, or its owner kept the location
     /// private.
     case cannotShow
-    /// The photo was taken away from every listed spot, or its spot is no
-    /// longer listed.
+    /// The photo has no listed spot and no saved location to be shown at,
+    /// or its spot is no longer listed.
     case spotNotListed
     case couldNotChange
 }
@@ -316,10 +317,10 @@ final class SyncCoordinator {
             guard model.timesCleared == cleared, case .signedIn(let current) = session.state, current == userID
             else { return .couldNotPost }
             model.takePostStanding(standing, forPhotoID: photoID)
-            // A photo whose owner disclosed its spot goes on that spot's
-            // page, which shows it once it is graded. The post stands
-            // whether or not this works, and the photo's own screen offers
-            // it again.
+            // A photo whose owner disclosed where it was taken goes on
+            // its spot's page, or on the map at its place, and is shown
+            // there once it is graded. The post stands whether or not this
+            // works, and the photo's own screen offers it again.
             _ = await showAtSpot(photoID: photoID, on: model)
             return .posted
         } catch PhotoBackendError.notSignedIn {
@@ -344,12 +345,16 @@ final class SyncCoordinator {
 
     // MARK: Showing a photo at its spot
 
-    /// Puts one posted photo on the page of the spot it was taken from.
+    /// Puts one posted photo on the page of the spot it was taken from, or
+    /// on the map at its place when it was taken away from every listed
+    /// spot.
     ///
-    /// The owner chose this, by posting a photo whose spot they disclosed
-    /// or by asking for it on the photo's screen. The backend is sent the
-    /// spot's id, the aircraft type, and the airline, and nothing else. A
-    /// photo whose location is private is never sent.
+    /// The owner chose this, by posting a photo whose location they
+    /// disclosed or by asking for it on the photo's screen. The backend is
+    /// sent the spot's id or the middle of the place's cell, with the
+    /// aircraft type, the airline, and the camera settings, and nothing
+    /// else. Where the photo was taken is never sent, and a photo whose
+    /// location is private is never shown.
     func showAtSpot(photoID: String, on model: CollectionModel) async -> SpotShowOutcome {
         guard let posts, case .signedIn(let userID) = session.state else { return .signInNeeded }
         guard let photo = model.photo(id: photoID), !photo.isLocationUndisclosed,
@@ -378,7 +383,8 @@ final class SyncCoordinator {
         }
     }
 
-    /// Takes one photo off its spot's page. The post and its grade stay.
+    /// Takes one photo off its spot's page or off the map. The post and
+    /// its grade stay.
     func takeOffSpot(photoID: String, on model: CollectionModel) async -> SpotShowOutcome {
         guard let posts, case .signedIn(let userID) = session.state else { return .signInNeeded }
         let cleared = model.timesCleared
@@ -399,24 +405,25 @@ final class SyncCoordinator {
         }
     }
 
-    /// Brings each spot's page in line with the photo it shows, after the
-    /// backend has said where the user's photos are shown.
+    /// Brings each shown photo in line with what its owner has since
+    /// changed, after the backend has said where the user's photos are
+    /// shown.
     ///
     /// A photo whose location is private is taken off. A photo whose
     /// aircraft details changed, or whose aircraft is now blocked, has the
-    /// words beside it replaced. The spot itself is left as the owner set
-    /// it, and nothing here puts a photo on a page it was not on.
+    /// words beside it replaced. The spot or the place is left as the owner
+    /// set it, and so are the camera settings, so a photo shown before
+    /// settings were shown gains none here. Nothing here shows a photo
+    /// that was not shown.
     private func bringShowingsInLine(for userID: String, on model: CollectionModel) async {
         guard let posts else { return }
         let cleared = model.timesCleared
         for (photoID, showing) in model.spotShowings {
             guard let photo = model.photo(id: photoID) else { continue }
             let details = model.shownDetails(for: photo)
-            let wanted = SpotShowing(
-                spotID: showing.spotID,
-                aircraftType: details.aircraftType,
-                airline: details.airline
-            )
+            var wanted = showing
+            wanted.aircraftType = details.aircraftType
+            wanted.airline = details.airline
             guard photo.isLocationUndisclosed || wanted != showing else { continue }
             do {
                 var kept: SpotShowing?
@@ -527,6 +534,7 @@ extension SyncCoordinator {
             posts = HTTPPostBackend(
                 baseURL: apiURL,
                 transport: transport,
+                placeGrid: SampleData.placeGrid,
                 accessToken: { try await session.accessToken() }
             )
         }

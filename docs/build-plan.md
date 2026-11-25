@@ -303,8 +303,20 @@ for deleting and for syncing, and how to deploy are in `docs/backend.md`.
    top voted photo, pins show a photo and a count, and the spots around a
    point are ranked. Listed spots stay the only places with access notes
    and directions. The backend for all four is described in
-   `docs/backend.md` under Places and Camera settings. The app side is not
-   built yet.
+   `docs/backend.md` under Places and Camera settings.
+
+   The app side comes in parts. The first part is built. A posted photo
+   whose location shows goes on its listed spot's page as before, and one
+   taken away from every listed spot now goes on the map at its place. The
+   app turns where the photo was taken into its cell on the phone and sends
+   only the middle of that cell. A shown photo carries its focal length,
+   aperture, shutter time, and ISO, and never the name of the camera or the
+   lens. The screens say how exact a place is before anything is shown. A
+   photo that was already shown keeps what it shows until its owner takes
+   it off and shows it again. The core package also holds the sun and
+   golden hour math, which no screen uses yet. The map with photo pins and
+   counts, the ranked list, and the photo first page with the light are
+   still to come.
 10. **Flight data lookup.** The backend asks the flight data provider what
     was flying near a photo, with the per-camera clock correction. It is
     last of the features because it needs a paid plan and a check of the

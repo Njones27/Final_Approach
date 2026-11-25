@@ -50,6 +50,13 @@ enum SampleData {
     /// The longest an aircraft type or an airline may be to go on a spot's
     /// page. It matches the backend's own limit.
     static let shownTextMaxLength = 80
+    /// The grid a shown photo's place is kept by. 1,000 cells in a degree
+    /// makes a cell about 100 meters across. It matches the backend's
+    /// `placeCellsPerDegree`, and neither may change once photos are shown.
+    static let placeGrid = PlaceGrid(cellsPerDegree: 1000)!
+    /// The limits a shown camera setting must sit inside. They match the
+    /// backend's own.
+    static let shownCameraLimits = ShownCameraLimits.launch
 
     /// The one test account the sample identity service knows, for previews.
     static let testAccountName = "test-one"
@@ -155,6 +162,8 @@ enum SampleData {
             fixTargetScore: fixTargetScore,
             spotMatchRadius: spotMatchRadius,
             shownTextMaxLength: shownTextMaxLength,
+            placeGrid: placeGrid,
+            shownCameraLimits: shownCameraLimits,
             storedImageQuality: storedImageQuality,
             registrationFormats: registrationFormats,
             flightRankingRules: flightRankingRules,
