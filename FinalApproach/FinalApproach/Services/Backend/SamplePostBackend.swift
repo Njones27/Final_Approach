@@ -15,6 +15,11 @@ final class SamplePostBackend: PostBackend {
     private(set) var showings: [String: SpotShowing] = [:]
     /// The spots a photo may be shown at. With nil every spot is listed.
     var listedSpotIDs: Set<String>?
+    /// How many of the next posts are refused because the image carries a
+    /// location.
+    var imageRefusalsLeft = 0
+    /// How many posts were asked for.
+    private(set) var postAttempts = 0
     /// Makes the next request to show a photo at a spot fail with this,
     /// once.
     var nextShowFailure: PhotoBackendError?
@@ -37,6 +42,11 @@ final class SamplePostBackend: PostBackend {
         if photos.deletedIDs.contains(photoID) { throw PhotoBackendError.photoDeleted }
         guard photos.photos[photoID] != nil, photos.images[photoID] != nil else {
             throw PhotoBackendError.photoNotSaved
+        }
+        postAttempts += 1
+        if imageRefusalsLeft > 0 {
+            imageRefusalsLeft -= 1
+            throw PhotoBackendError.imageHasLocation
         }
         if let existing = standings[photoID] { return existing }
         let posted = now()

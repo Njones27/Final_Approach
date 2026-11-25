@@ -1,3 +1,4 @@
+import FinalApproachCore
 import Foundation
 import Observation
 
@@ -312,7 +313,7 @@ final class SyncCoordinator {
         await syncAndWait(on: model)
         let cleared = model.timesCleared
         do {
-            let standing = try await posts.post(photoID: photoID)
+            let standing = try await postSendingACleanImageIfRefused(photo, with: posts, on: model)
             guard model.timesCleared == cleared, case .signedIn(let current) = session.state, current == userID
             else { return .couldNotPost }
             model.takePostStanding(standing, forPhotoID: photoID)
@@ -339,6 +340,26 @@ final class SyncCoordinator {
             print("SyncCoordinator: The photo could not be posted. \(error)")
             #endif
             return .couldNotPost
+        }
+    }
+
+    /// Posts the photo. When the backend refuses the image it holds for
+    /// carrying a location, the image is sent again with its metadata taken
+    /// out and the post is tried once more. An image saved by an older
+    /// build, or one whose file the system wrote metadata into, is put
+    /// right this way without the user adding the photo again.
+    private func postSendingACleanImageIfRefused(
+        _ photo: SpottedPhoto,
+        with posts: any PostBackend,
+        on model: CollectionModel
+    ) async throws -> PostStanding {
+        do {
+            return try await posts.post(photoID: photo.id)
+        } catch PhotoBackendError.imageHasLocation {
+            guard let backend, let image = model.storedImageData(forPhotoID: photo.id),
+                  try await backend.savePhoto(photo, image: image).imageSent
+            else { throw PhotoBackendError.imageHasLocation }
+            return try await posts.post(photoID: photo.id)
         }
     }
 

@@ -342,6 +342,42 @@ final class PostingTests {
         #expect(!phone.canBePosted(loggedPhoto()))
     }
 
+    @Test func aRefusedImageIsSentAgainCleanAndThenPosted() async throws {
+        let rig = try await makeRig()
+        rig.posts.imageRefusalsLeft = 1
+        let phone = SampleData.model()
+        phone.add(loggedPhoto(), image: tinyImage())
+
+        let outcome = await rig.sync.post(photoID: "imported-1", on: phone)
+
+        #expect(outcome == .posted)
+        #expect(rig.posts.postAttempts == 2)
+        #expect(phone.postStandings["imported-1"] == standing())
+    }
+
+    @Test func anImageRefusedTwiceIsReportedAndNotTriedForever() async throws {
+        let rig = try await makeRig()
+        rig.posts.imageRefusalsLeft = 2
+        let phone = SampleData.model()
+        phone.add(loggedPhoto(), image: tinyImage())
+
+        let outcome = await rig.sync.post(photoID: "imported-1", on: phone)
+
+        #expect(outcome == .imageHasLocation)
+        #expect(rig.posts.postAttempts == 2)
+    }
+
+    @Test func theImageSentToTheBackendCarriesNoMetadata() throws {
+        // An Exif block in front of the picture data, as a camera writes it.
+        let exif: [UInt8] = [0xFF, 0xE1, 0x00, 0x0B] + Array("Exif\0\0gps".utf8)
+        let scan: [UInt8] = [0xFF, 0xDA, 0x00, 0x02, 0x11, 0xFF, 0xD9]
+        let written = Data([0xFF, 0xD8] + exif + scan)
+
+        #expect(CollectionModel.withoutMetadata(written) == Data([0xFF, 0xD8] + scan))
+        // Bytes that are not a JPEG are left as they were.
+        #expect(CollectionModel.withoutMetadata(Data("text".utf8)) == Data("text".utf8))
+    }
+
     @Test func aPhotoWithNoImageOnTheBackendIsNotPosted() async throws {
         let rig = try await makeRig()
         let phone = SampleData.model()
