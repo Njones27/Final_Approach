@@ -22,7 +22,7 @@ approved the run. A change to `backend/` reaches beta when it reaches
 | Stack | Holds |
 | --- | --- |
 | `FinalApproach-<stage>-Alerts` | The topic that alarms and the budget tell, and the month's budget |
-| `FinalApproach-<stage>-Storage` | The DynamoDB table of records with its index of posts open for votes and its index of photos shown at spots, the S3 bucket of images, and the sweeper function |
+| `FinalApproach-<stage>-Storage` | The DynamoDB table of records with its index of posts open for votes, its index of photos shown at each spot or place, and its index of photos shown in each tile of the map, the S3 bucket of images, and the sweeper function |
 | `FinalApproach-<stage>-Identity` | The Cognito user pool and the four functions that check Sign in with Apple |
 | `FinalApproach-<stage>-Api` | The HTTP API, the functions behind its routes, and the closer that runs on a schedule |
 | `FinalApproach-<stage>-Deploy` | The role that lets GitHub Actions deploy the stage. The owner deploys it by hand |
@@ -34,9 +34,9 @@ between stages, and every limit that may need tuning, is data in
 ## Routes
 
 Every route needs a signed in user. A user reaches only their own data. The
-voting routes and a spot's page are the exceptions. The voting routes show
-another user's photo with nothing else about it. A spot's page shows a graded
-photo with what its owner chose to show there.
+voting routes, a spot's or a place's page, and the map are the exceptions.
+The voting routes show another user's photo with nothing else about it. The
+others show a graded photo with what its owner chose to show.
 
 | Route | What it does |
 | --- | --- |
@@ -47,10 +47,12 @@ photo with what its owner chose to show there.
 | `GET /posts` | Lists the user's own posts, each with its voting window, how many votes are in, and its score once the grade is final |
 | `GET /votes/queue` | Hands the user some photos to vote on, each as a random id and a link to the image |
 | `PUT /votes/{postID}` | Counts the user's vote on one post, a whole number of stars from 1 to 5 |
-| `PUT /posts/{photoID}/spot` | Shows one of the user's posted photos at a listed spot, with its aircraft type and airline |
-| `DELETE /posts/{photoID}/spot` | Takes the photo off its spot |
+| `PUT /posts/{photoID}/spot` | Shows one of the user's posted photos at a listed spot or at a place away from them, with its aircraft type, airline, and camera settings |
+| `DELETE /posts/{photoID}/spot` | Takes the photo off its spot or place |
 | `GET /spots` | Lists the spots the app shows, grouped by airport. The list is the same for every user |
 | `GET /spots/{spotID}/photos` | Lists the graded photos shown at one spot, best first |
+| `GET /places` | Lists what is shown around a point of the map. Each listed spot and each place comes with its photo count and its top voted photo |
+| `GET /places/{placeID}/photos` | Lists the graded photos shown at one place, best first |
 | `DELETE /account` | Deletes every image and record the user has, and their sign in |
 
 A refusal carries a `message`. It also carries a `code` when the app acts on
@@ -62,9 +64,11 @@ The app reads the code and never the message.
 A photo record is the app's own saved photo, kept as it is and returned only
 to its owner. The backend does not read inside it yet. It can hold where the
 photo was taken. A route that shows a photo to another user builds its
-answer from named fields and never sends this record. A spot's page, under
-Spots below, is the one route that says where a photo was taken, and only
-for a photo whose owner put it there.
+answer from named fields and never sends this record. A spot's page, a
+place's page, and the map, under Spots and Places below, are the routes
+that say where a photo was taken, and only for a photo whose owner put it
+there. A place says it to the nearest cell of about 100 meters and no
+finer.
 
 ## Posting
 
@@ -194,6 +198,9 @@ are chosen by hand at launch, so there is no route that adds one.
   spot by it.
 - `GET /spots` answers with `airports`, each with its `spots`. The answer
   is built from named fields and says nothing about any user or photo.
+- A spot may carry a `viewBearing`, the compass direction a photographer
+  faces to see the aircraft. With it the app can say when the sun is behind
+  them. A spot that looks more than one way leaves it out.
 
 A spot's page shows graded photos taken there. The owner decided on
 2026-11-24 that a photo shows with its grade, its aircraft type, and its
@@ -223,8 +230,60 @@ airline, and with no photographer and no registration.
   the post's random id, a link to the image, the score, and the type and
   airline when the owner gave them. The owner's id and the photo's id are
   used to sign the link and are not sent as fields.
-- The Spots function may read that one index and sign links to images. It
-  cannot read the table of every user's records, and it writes nothing.
+- The Spots function may read that index, and the `Area` index under
+  Places below, and sign links to images. It cannot read the table of every
+  user's records, and it writes nothing.
+
+### Places
+
+The owner decided on 2026-11-25 that the map fills itself. A photo whose
+owner shows where it was taken appears on the map even when no listed spot
+is near, so the map is not empty while the list of spots is. Every photo
+shown for a spot or a place is the one the votes graded highest there.
+
+- A place is one cell of a grid over the map. `placeCellsPerDegree` is
+  1,000, so a cell is about 110 meters tall and about 90 meters wide at
+  Atlanta. Its id is the cell, such as `n33640w84428`.
+- `PUT /posts/{photoID}/spot` takes either a `spotID` or a `place`, which
+  is a `latitude` and a `longitude`. Both together, or neither, is refused.
+  The handler turns the position into its cell at once and drops the
+  position. Only the cell is stored, and only the middle of the cell is
+  ever sent to anyone. The app sends a place only for a photo whose owner
+  disclosed where it was taken.
+- A photo shown at a place carries `spotKey` as `PLACE#<id>`, so it sits in
+  the `Spot` index beside the listed spots and `GET /places/{placeID}/photos`
+  reads it the way a spot's page is read. A cell with nothing shown in it
+  has an empty page. An id that names no cell is refused.
+- A place has no name, no access notes, and no directions. Those belong to
+  a listed spot, which someone has checked.
+- Every shown photo also carries `areaKey`, the tile of the map it is in,
+  from the spot's pin or from the place's cell. `areaTilesPerDegree` is 2,
+  so a tile is about 55 kilometers tall. The `Area` index holds a post only
+  while it has `areaKey` and `finalScore`, so it fills and empties by
+  itself the way the `Spot` index does.
+- `GET /places?latitude=&longitude=` reads the four tiles nearest the
+  point, which reach at least a quarter of a degree from it in every
+  direction, up to 200 photos from each, best first (`areaReadLimit`). It
+  answers with `spots` and `places`. A spot comes as its `spotID`, a
+  `photoCount`, and a `bestPhoto`. A place comes as its `id`, the middle of
+  its cell, a `photoCount`, and a `bestPhoto`. Both are best first, and an
+  answer holds up to 60 places (`placesPerAnswer`). A photo at a spot that
+  is no longer listed is left out.
+- The cell size and the tile size must not change once photos are shown,
+  because each photo names its place and its tile by them.
+
+### Camera settings
+
+A shown photo can carry how it was taken, so a visitor can see what lens a
+spot needs.
+
+- `PUT /posts/{photoID}/spot` takes an optional `camera` with any of
+  `focalLength` in millimeters, `aperture` as an f-number, `exposureTime`
+  in seconds, and `iso`. Each is a number inside the limits in
+  `backend/src/posts/camera.ts`. Anything else sent with them is dropped.
+- A page and the map send `camera` with a photo that has any of the four.
+- Showing a photo again replaces its settings, and taking it off removes
+  them.
 
 Known limits.
 
@@ -235,7 +294,15 @@ Known limits.
 - A registration is never shown, because the backend does not hold the
   list of blocked registrations yet. The type and airline are the owner's
   own text, and the app leaves them out for a blocked aircraft.
-- A spot's page holds its 30 best photos and has no second page.
+- A spot's or a place's page holds its 30 best photos and has no second
+  page.
+- The map counts the photos it read. A tile with more than 200 shown
+  photos gives counts of its best 200, and a place whose photos all rank
+  below them is missing until the map reads by a smaller tile.
+- A place is as exact as its cell. An owner who shows a photo taken at
+  home shows that cell, so the app must say so before it sends a place.
+- The app does not send a place or camera settings yet. That is the next
+  app change, and it waits for this backend to reach prod.
 
 ## Sign in
 
@@ -766,6 +833,8 @@ change to those values in a deploy must be copied into the stage's file.
 ## Still to come
 
 - The first real spots in the list, which the owner supplies.
+- The app side of places, the light at a spot, and camera settings. The
+  backend for them is under Places and Camera settings above.
 - A way to open a photo on a spot's page larger, and a way to change
   whether a logged photo's spot shows.
 - Reputation, which gives a voter whose votes land near the final grades

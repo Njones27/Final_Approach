@@ -13,6 +13,12 @@ export interface Spot {
   readonly localRules: string;
   /** Which runways the spot sees, and from which side. */
   readonly runwayNotes: string;
+  /**
+   * The compass direction a photographer faces to see the aircraft, in
+   * degrees clockwise from north. With it the app can say when the sun is
+   * behind them. A spot that looks more than one way leaves it out.
+   */
+  readonly viewBearing?: number;
 }
 
 /** An airport and the spots around it. */
@@ -38,9 +44,9 @@ export interface Airport {
  */
 export const catalog: readonly Airport[] = [];
 
-/** The id of every spot in a list. */
-export function listedSpotIDs(airports: readonly Airport[]): ReadonlySet<string> {
-  return new Set(airports.flatMap((airport) => airport.spots.map((spot) => spot.id)));
+/** Every spot in a list, by its id. */
+export function listedSpots(airports: readonly Airport[]): ReadonlyMap<string, Spot> {
+  return new Map(airports.flatMap((airport) => airport.spots.map((spot) => [spot.id, spot] as const)));
 }
 
 /** What a listing must keep to. */
@@ -116,6 +122,9 @@ export function problemsIn(airports: readonly Airport[], limits: CatalogLimits =
       // A spot must say what is asked of photographers there, even if it is nothing.
       text(name, 'local rule', spot.localRules, limits.maxNoteLength, false);
       text(name, 'runway note', spot.runwayNotes, limits.maxNoteLength, true);
+      if (spot.viewBearing !== undefined && !(spot.viewBearing >= 0 && spot.viewBearing < 360)) {
+        problems.push(`${name} has a view bearing that is not from 0 up to 360.`);
+      }
       if (!isLatitude(spot.latitude) || !isLongitude(spot.longitude)) {
         problems.push(`${name} has a pin that is not on the map.`);
       } else if (airportPinIsUsable && kilometersBetween(airport, spot) > limits.maxKmFromAirport) {

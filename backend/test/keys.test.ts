@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
+  areaKey,
   imageKey,
   isUsablePhotoID,
   parseImageKey,
   partitionKey,
   photoSortKey,
+  placeKey,
+  spotKey,
   userFolder,
 } from '../src/shared/keys.ts';
 
@@ -32,6 +35,12 @@ describe('where data lives', () => {
   test('records are keyed by user and photo', () => {
     assert.equal(partitionKey('u1'), 'USER#u1');
     assert.equal(photoSortKey('p1'), 'PHOTO#p1');
+  });
+
+  test('a spot, a place, and a tile of the map each have their own kind of key', () => {
+    assert.equal(spotKey('atl-south-approach'), 'SPOT#atl-south-approach');
+    assert.equal(placeKey('n33640w84428'), 'PLACE#n33640w84428');
+    assert.equal(areaKey(67, -169), 'AREA#67_-169');
   });
 
   test('an image key reads back to its user and photo', () => {

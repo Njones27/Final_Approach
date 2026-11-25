@@ -75,6 +75,34 @@ export function spotKey(spotID: string): string {
   return `SPOT#${spotID}`;
 }
 
+/**
+ * A photo shown away from the listed spots sits in the same index under
+ * its place, which is one small cell of the map. The cell is all that is
+ * kept of where the photo was taken.
+ */
+export function placeKey(placeID: string): string {
+  return `PLACE#${placeID}`;
+}
+
+/**
+ * The index that finds every graded photo shown in one large tile of the
+ * map, best first, whether it is at a listed spot or at a place.
+ *
+ * A post carries `areaKey` only while its owner shows it, and `finalScore`
+ * only once its grade is final, so the index fills and empties by itself
+ * the way the `Spot` index does.
+ */
+export const areaIndex = {
+  name: 'Area',
+  partitionKey: 'areaKey',
+  sortKey: 'finalScore',
+} as const;
+
+/** The key of one tile, named by how many tiles it is north and east of zero. */
+export function areaKey(latitudeIndex: number, longitudeIndex: number): string {
+  return `AREA#${latitudeIndex}_${longitudeIndex}`;
+}
+
 /** The folder that holds every image a user uploaded. */
 export function userFolder(userID: string): string {
   return `users/${userID}/`;

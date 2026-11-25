@@ -20,4 +20,10 @@ export const handler = makeSpotsHandler({
   }),
   photosPerSpot: numberSetting('PHOTOS_PER_SPOT'),
   imageLinkSeconds,
+  grid: {
+    placeCellsPerDegree: numberSetting('PLACE_CELLS_PER_DEGREE'),
+    areaTilesPerDegree: numberSetting('AREA_TILES_PER_DEGREE'),
+  },
+  areaReadLimit: numberSetting('AREA_READ_LIMIT'),
+  placesPerAnswer: numberSetting('PLACES_PER_ANSWER'),
 });

@@ -6,6 +6,7 @@ export interface EventParts {
   readonly body?: string;
   readonly photoID?: string;
   readonly spotID?: string;
+  readonly placeID?: string;
   readonly query?: Record<string, string>;
   readonly isBase64Encoded?: boolean;
 }
@@ -24,7 +25,9 @@ export function apiEvent(parts: EventParts): ApiEvent {
         ? { photoID: parts.photoID }
         : parts.spotID !== undefined
           ? { spotID: parts.spotID }
-          : undefined,
+          : parts.placeID !== undefined
+            ? { placeID: parts.placeID }
+            : undefined,
     queryStringParameters: parts.query,
     requestContext: { authorizer: claims ? { jwt: { claims, scopes: [] } } : undefined },
   } as unknown as ApiEvent;
