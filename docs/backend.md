@@ -289,6 +289,34 @@ app could choose that password for its own new account, and could then sign
 in to that one account without Apple. It gains nothing else, since a sign up
 is accepted only with Apple's token for that same account.
 
+### Photos to vote on
+
+Nobody is shown their own photos in the Vote screen, so a stage with one
+real user has an empty queue until another account posts. The script
+`tools/seed-posts.mjs` posts a folder of JPEGs from a test account. Use a
+different test account from the one that votes.
+
+```sh
+node tools/seed-posts.mjs --account test-one --folder ~/Pictures/planes
+```
+
+It asks for the account's password with the typing hidden, or reads it from
+`FA_TEST_PASSWORD`. It reads the stage's backend from
+`FinalApproach/Config/Stages/`, and posts to beta unless `--stage prod` is
+given. `--only f22-,pax-` keeps files whose names start that way, `--limit`
+caps the count, and `--dry-run` lists the files and sends nothing.
+
+For each file it takes the same three steps as the app. It saves a photo
+record, sends the image to the upload link, and posts the photo. Exif, XMP,
+and IPTC blocks are taken out of the image first, because a post that
+carries a place is refused. A photo's id comes from the account and the
+file name, so a second run posts nothing twice. The record it saves is not
+one the app can read, so the photos do not show in that account's
+collection in the app. Deleting the account removes them and their images.
+
+On prod these are real posts. Every other user is asked to vote on them
+for the 72 hours they stay open.
+
 ## Deleting
 
 Deleting a photo or an account must remove the stored images. Four things

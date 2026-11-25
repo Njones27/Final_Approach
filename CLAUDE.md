@@ -35,6 +35,8 @@ for decisions and milestones before starting a feature.
 - `backend/` is the AWS backend, defined with the CDK in TypeScript. `lib/`
   holds the stacks and the stage settings, `src/` holds the Lambda functions,
   and `test/` holds their tests. Read `docs/backend.md` before changing it.
+- `tools/` holds scripts the owner runs by hand, in plain Node with no
+  packages, each with a test beside it.
 
 ## Build and test
 
@@ -44,6 +46,9 @@ swift test --package-path Packages/FinalApproachCore
 
 # Backend, runs anywhere with Node 22
 (cd backend && npm ci && npm run typecheck && npm test && npx cdk synth --quiet -c stage=beta)
+
+# Tools, runs anywhere with Node 22
+node --test tools/*.test.mjs
 
 # App build and tests, macOS only
 xcodebuild build -project FinalApproach/FinalApproach.xcodeproj -scheme FinalApproach \

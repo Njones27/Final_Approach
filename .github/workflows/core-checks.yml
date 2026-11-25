@@ -104,3 +104,15 @@ jobs:
           if CI_PRIMARY_REPOSITORY_PATH="$workdir" APP_ENVIRONMENT=staging FinalApproach/ci_scripts/ci_post_clone.sh; then
             echo "expected a failure for an unknown environment"; exit 1
           fi
+
+  tools:
+    name: Tools tests
+    runs-on: ubuntu-latest
+    # Official Node.js image, the same version the backend checks use.
+    container: node:22
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Test
+        run: node --test tools/*.test.mjs
