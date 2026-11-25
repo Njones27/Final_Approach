@@ -49,6 +49,7 @@ swift test --package-path Packages/FinalApproachCore
 
 # Tools, runs anywhere with Node 22
 node --test tools/*.test.mjs
+sh tools/seed-vote-queue.test.sh
 
 # App build and tests, macOS only
 xcodebuild build -project FinalApproach/FinalApproach.xcodeproj -scheme FinalApproach \

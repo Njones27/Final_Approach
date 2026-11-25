@@ -116,3 +116,6 @@ jobs:
 
       - name: Test
         run: node --test tools/*.test.mjs
+
+      - name: Test the shell scripts
+        run: sh tools/seed-vote-queue.test.sh

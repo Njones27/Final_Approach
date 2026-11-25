@@ -314,6 +314,18 @@ file name, so a second run posts nothing twice. The record it saves is not
 one the app can read, so the photos do not show in that account's
 collection in the app. Deleting the account removes them and their images.
 
+`tools/seed-vote-queue.sh` does the whole job in one step. It makes the
+account `test-poster` in the stage's pool, gives it a random password that
+is used for that one run and kept nowhere, and runs the script above.
+
+```sh
+tools/seed-vote-queue.sh beta ~/Pictures/planes
+```
+
+The first word is the stage and the second is the folder. A third, such as
+`f22-,pax-`, keeps only files whose names start that way. It uses the AWS
+profile `fa_beta` or `fa_prod`.
+
 On prod these are real posts. Every other user is asked to vote on them
 for the 72 hours they stay open.
 
